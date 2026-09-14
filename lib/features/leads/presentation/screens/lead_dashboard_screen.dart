@@ -249,11 +249,13 @@ class _LeadDashboardView extends StatelessWidget {
             : isTablet
             ? 3
             : 3;
-        final childAspectRatio = isMobile
-            ? 1.35
+        final childAspectRatio = constraints.maxWidth < 360
+            ? 1.15
+            : isMobile
+            ? 1.3
             : isTablet
-            ? 1.5
-            : 1.8;
+            ? 1.35
+            : 1.6;
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),

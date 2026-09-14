@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../domain/entities/lead.dart';
-import 'lead_list_card.dart';
+import '../utils/lead_display_formatters.dart';
 
 class LeadDataTable extends StatelessWidget {
   final List<Lead> leads;

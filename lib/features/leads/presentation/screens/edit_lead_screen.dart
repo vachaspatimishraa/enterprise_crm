@@ -5,7 +5,7 @@ import '../../domain/entities/lead_draft.dart';
 import '../../domain/repositories/lead_repository.dart';
 import '../bloc/lead_form_cubit.dart';
 import '../bloc/lead_form_state.dart';
-import '../widgets/lead_list_card.dart';
+import '../utils/lead_display_formatters.dart';
 
 class EditLeadScreen extends StatelessWidget {
   final Lead lead;

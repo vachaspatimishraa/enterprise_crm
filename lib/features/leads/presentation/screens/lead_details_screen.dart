@@ -4,7 +4,7 @@ import '../../domain/entities/lead.dart';
 import '../../domain/repositories/lead_repository.dart';
 import '../bloc/lead_details_cubit.dart';
 import '../bloc/lead_details_state.dart';
-import '../widgets/lead_list_card.dart';
+import '../utils/lead_display_formatters.dart';
 
 class LeadDetailsScreen extends StatelessWidget {
   final String leadId;
