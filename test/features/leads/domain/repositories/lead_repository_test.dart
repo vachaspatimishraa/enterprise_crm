@@ -7,6 +7,7 @@ import 'package:enterprise_crm/features/leads/domain/entities/lead_import.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_page.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_query.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_source.dart';
+import 'package:enterprise_crm/features/leads/domain/entities/lead_summary.dart';
 import 'package:enterprise_crm/features/leads/domain/repositories/lead_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -55,6 +56,16 @@ class _FakeLeadRepository implements LeadRepository {
         fileReference: 'mock-export',
         fileName: 'leads.xlsx',
       );
+
+  @override
+  Future<LeadSummary> getLeadSummary() async => const LeadSummary(
+    totalLeads: 0,
+    assignedLeads: 0,
+    unassignedLeads: 0,
+    manualLeads: 0,
+    excelLeads: 0,
+    csvLeads: 0,
+  );
 
   @override
   Future<List<LeadAssignee>> getAssignableUsers() async => const [];

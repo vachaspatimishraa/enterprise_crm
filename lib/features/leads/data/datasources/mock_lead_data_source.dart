@@ -8,6 +8,7 @@ import '../../domain/entities/lead_page.dart';
 import '../../domain/entities/lead_query.dart';
 import '../../domain/entities/lead_source.dart';
 import '../../domain/entities/lead_status.dart';
+import '../../domain/entities/lead_summary.dart';
 
 class MockLeadDataSource {
   MockLeadDataSource({
@@ -197,6 +198,54 @@ class MockLeadDataSource {
       pageSize: pageSize,
       totalItems: totalItems,
       hasNext: hasNext,
+    );
+  }
+
+  Future<LeadSummary> getLeadSummary() async {
+    if (_leads.isEmpty) {
+      return const LeadSummary(
+        totalLeads: 0,
+        assignedLeads: 0,
+        unassignedLeads: 0,
+        manualLeads: 0,
+        excelLeads: 0,
+        csvLeads: 0,
+      );
+    }
+
+    int assigned = 0;
+    int unassigned = 0;
+    int manual = 0;
+    int excel = 0;
+    int csv = 0;
+
+    for (final lead in _leads) {
+      if (lead.isAssigned) {
+        assigned++;
+      } else {
+        unassigned++;
+      }
+
+      switch (lead.source) {
+        case LeadSource.manual:
+          manual++;
+          break;
+        case LeadSource.excel:
+          excel++;
+          break;
+        case LeadSource.csv:
+          csv++;
+          break;
+      }
+    }
+
+    return LeadSummary(
+      totalLeads: _leads.length,
+      assignedLeads: assigned,
+      unassignedLeads: unassigned,
+      manualLeads: manual,
+      excelLeads: excel,
+      csvLeads: csv,
     );
   }
 

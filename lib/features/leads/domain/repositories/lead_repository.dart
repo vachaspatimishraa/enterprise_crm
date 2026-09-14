@@ -6,9 +6,12 @@ import '../entities/lead_export.dart';
 import '../entities/lead_import.dart';
 import '../entities/lead_page.dart';
 import '../entities/lead_query.dart';
+import '../entities/lead_summary.dart';
 
 abstract class LeadRepository {
   Future<LeadPage> getLeads([LeadQuery query = const LeadQuery()]);
+
+  Future<LeadSummary> getLeadSummary();
 
   Future<Lead?> getLeadById(String leadId);
 

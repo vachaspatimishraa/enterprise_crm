@@ -1,5 +1,6 @@
 import 'package:enterprise_crm/features/leads/data/datasources/mock_lead_data_source.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
+import 'package:enterprise_crm/features/leads/domain/entities/lead.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_assignment_request.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_draft.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_export.dart';
@@ -258,5 +259,116 @@ void main() {
       expect(result.fileName, 'mock_leads_export.xlsx');
       expect(result.fileReference, 'mock-export-ref-excel');
     });
+  });
+
+  group('MockLeadRepository - Lead Summary & Pagination Independence', () {
+    test(
+      'aggregates summary across all leads even when total leads > page size',
+      () async {
+        // Create 25 leads (where default LeadQuery pageSize is 20)
+        // Page 1 (first 20 items):
+        // - 12 assigned (agent-1), 8 unassigned
+        // - 8 manual, 7 excel, 5 csv
+        // Page 2 (items 21..25):
+        // - 3 assigned (agent-2), 2 unassigned
+        // - 2 manual, 2 excel, 1 csv
+        // Full dataset totals:
+        // - Total: 25
+        // - Assigned: 15 (12 + 3)
+        // - Unassigned: 10 (8 + 2)
+        // - Manual: 10 (8 + 2)
+        // - Excel: 9 (7 + 2)
+        // - CSV: 6 (5 + 1)
+        final customLeads = <Lead>[
+          ...List.generate(
+            8,
+            (i) => Lead(
+              id: 'lead-p1-man-asg-$i',
+              source: LeadSource.manual,
+              assignedUserId: 'agent-1',
+            ),
+          ),
+          ...List.generate(
+            4,
+            (i) => Lead(
+              id: 'lead-p1-exc-asg-$i',
+              source: LeadSource.excel,
+              assignedUserId: 'agent-1',
+            ),
+          ),
+          ...List.generate(
+            3,
+            (i) => Lead(
+              id: 'lead-p1-exc-unasg-$i',
+              source: LeadSource.excel,
+              assignedUserId: null,
+            ),
+          ),
+          ...List.generate(
+            5,
+            (i) => Lead(
+              id: 'lead-p1-csv-unasg-$i',
+              source: LeadSource.csv,
+              assignedUserId: null,
+            ),
+          ),
+          // Records beyond page 1 (indexes 20..24):
+          ...List.generate(
+            2,
+            (i) => Lead(
+              id: 'lead-p2-man-asg-$i',
+              source: LeadSource.manual,
+              assignedUserId: 'agent-2',
+            ),
+          ),
+          ...List.generate(
+            1,
+            (i) => Lead(
+              id: 'lead-p2-exc-asg-$i',
+              source: LeadSource.excel,
+              assignedUserId: 'agent-2',
+            ),
+          ),
+          ...List.generate(
+            1,
+            (i) => Lead(
+              id: 'lead-p2-exc-unasg-$i',
+              source: LeadSource.excel,
+              assignedUserId: null,
+            ),
+          ),
+          ...List.generate(
+            1,
+            (i) => Lead(
+              id: 'lead-p2-csv-unasg-$i',
+              source: LeadSource.csv,
+              assignedUserId: null,
+            ),
+          ),
+        ];
+
+        expect(customLeads.length, 25);
+
+        final largeRepo = MockLeadRepository(
+          dataSource: MockLeadDataSource(initialLeads: customLeads),
+        );
+
+        // Verify that standard getLeads only returns first page of 20
+        final page1 = await largeRepo.getLeads();
+        expect(page1.items.length, 20);
+        expect(page1.totalItems, 25);
+        expect(page1.hasNext, isTrue);
+
+        // Verify that getLeadSummary aggregates the full dataset of 25 leads,
+        // not just the 20 items on page 1.
+        final summary = await largeRepo.getLeadSummary();
+        expect(summary.totalLeads, 25);
+        expect(summary.assignedLeads, 15);
+        expect(summary.unassignedLeads, 10);
+        expect(summary.manualLeads, 10);
+        expect(summary.excelLeads, 9);
+        expect(summary.csvLeads, 6);
+      },
+    );
   });
 }

@@ -6,6 +6,7 @@ import '../../domain/entities/lead_export.dart';
 import '../../domain/entities/lead_import.dart';
 import '../../domain/entities/lead_page.dart';
 import '../../domain/entities/lead_query.dart';
+import '../../domain/entities/lead_summary.dart';
 import '../../domain/repositories/lead_repository.dart';
 import '../datasources/mock_lead_data_source.dart';
 
@@ -18,6 +19,11 @@ class MockLeadRepository implements LeadRepository {
   @override
   Future<LeadPage> getLeads([LeadQuery query = const LeadQuery()]) {
     return _dataSource.getLeads(query);
+  }
+
+  @override
+  Future<LeadSummary> getLeadSummary() {
+    return _dataSource.getLeadSummary();
   }
 
   @override

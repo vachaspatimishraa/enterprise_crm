@@ -7,6 +7,7 @@ import 'package:enterprise_crm/features/leads/domain/entities/lead_import.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_page.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_query.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_source.dart';
+import 'package:enterprise_crm/features/leads/domain/entities/lead_summary.dart';
 import 'package:enterprise_crm/features/leads/domain/repositories/lead_repository.dart';
 import 'package:enterprise_crm/features/leads/presentation/bloc/lead_dashboard_cubit.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_dashboard_screen.dart';
@@ -68,6 +69,42 @@ class _FakeLeadRepository implements LeadRepository {
   @override
   Future<LeadExportResult> exportLeads(LeadExportRequest request) async =>
       const LeadExportResult(fileReference: '', fileName: '');
+
+  @override
+  Future<LeadSummary> getLeadSummary() async {
+    if (shouldThrow) throw Exception('Unable to load leads');
+    int assigned = 0;
+    int unassigned = 0;
+    int manual = 0;
+    int excel = 0;
+    int csv = 0;
+    for (final l in leads) {
+      if (l.isAssigned) {
+        assigned++;
+      } else {
+        unassigned++;
+      }
+      switch (l.source) {
+        case LeadSource.manual:
+          manual++;
+          break;
+        case LeadSource.excel:
+          excel++;
+          break;
+        case LeadSource.csv:
+          csv++;
+          break;
+      }
+    }
+    return LeadSummary(
+      totalLeads: leads.length,
+      assignedLeads: assigned,
+      unassignedLeads: unassigned,
+      manualLeads: manual,
+      excelLeads: excel,
+      csvLeads: csv,
+    );
+  }
 }
 
 void main() {
