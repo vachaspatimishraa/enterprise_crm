@@ -23,9 +23,11 @@ class _FakeLeadRepository implements LeadRepository {
   bool shouldThrow = false;
   int getLeadsCallCount = 0;
   Completer<LeadPage>? completer;
+  LeadQuery? lastQuery;
 
   @override
   Future<LeadPage> getLeads([LeadQuery query = const LeadQuery()]) async {
+    lastQuery = query;
     getLeadsCallCount++;
     if (completer != null) return completer!.future;
     if (shouldThrow) throw Exception('Unable to connect to lead service');
@@ -508,5 +510,316 @@ void main() {
 
       expect(repository.getLeadsCallCount, greaterThan(initialCallCount));
     });
+  });
+
+  group('LeadListScreen - Search', () {
+    testWidgets('renders search input field with hint and search icon', (
+      tester,
+    ) async {
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads();
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TextField), findsOneWidget);
+      expect(
+        find.text('Search leads by name, phone, or email'),
+        findsOneWidget,
+      );
+      expect(find.byIcon(Icons.search), findsOneWidget);
+      expect(find.byTooltip('Search'), findsOneWidget);
+    });
+
+    testWidgets(
+      'submitting search by tapping Search icon applies query with page 1',
+      (tester) async {
+        repository.leads = [
+          const Lead(id: '1', name: 'Alice Smith'),
+          const Lead(id: '2', name: 'Bob Jones'),
+        ];
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(find.byType(TextField), 'alice');
+        await tester.pump();
+        await tester.tap(find.byTooltip('Search'));
+        await tester.pumpAndSettle();
+
+        expect(repository.lastQuery?.searchText, equals('alice'));
+        expect(repository.lastQuery?.page, equals(1));
+        expect(find.text('Results for "alice"'), findsOneWidget);
+      },
+    );
+
+    testWidgets('submitting search by pressing Enter applies query', (
+      tester,
+    ) async {
+      repository.leads = [const Lead(id: '1', name: 'Bob Jones')];
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads();
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'bob');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+
+      expect(repository.lastQuery?.searchText, equals('bob'));
+      expect(repository.lastQuery?.page, equals(1));
+      expect(find.text('Results for "bob"'), findsOneWidget);
+    });
+
+    testWidgets(
+      'submitting search with leading/trailing whitespace trims before applying',
+      (tester) async {
+        repository.leads = [const Lead(id: '1', name: 'Alice')];
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(find.byType(TextField), '   Alice   ');
+        await tester.tap(find.byTooltip('Search'));
+        await tester.pumpAndSettle();
+
+        expect(repository.lastQuery?.searchText, equals('Alice'));
+        expect(repository.lastQuery?.page, equals(1));
+      },
+    );
+
+    testWidgets(
+      'submitting empty or whitespace-only search clears searchText and reloads',
+      (tester) async {
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads(query: const LeadQuery(searchText: 'alice'));
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        expect(repository.lastQuery?.searchText, equals('alice'));
+
+        await tester.enterText(find.byType(TextField), '   ');
+        await tester.tap(find.byTooltip('Search'));
+        await tester.pumpAndSettle();
+
+        expect(repository.lastQuery?.searchText, isNull);
+        expect(repository.lastQuery?.page, equals(1));
+        expect(find.text('Results for "alice"'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'tapping clear icon button clears text and resets query with page 1',
+      (tester) async {
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads(query: const LeadQuery(searchText: 'alice'));
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        final clearButton = find.byTooltip('Clear Search');
+        expect(clearButton, findsOneWidget);
+        await tester.tap(clearButton);
+        await tester.pumpAndSettle();
+
+        final textField = tester.widget<TextField>(find.byType(TextField));
+        expect(textField.controller?.text, isEmpty);
+        expect(repository.lastQuery?.searchText, isNull);
+        expect(repository.lastQuery?.page, equals(1));
+      },
+    );
+
+    testWidgets(
+      'displays search-specific empty state when search returns zero leads',
+      (tester) async {
+        repository.leads = [];
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads(
+          query: const LeadQuery(searchText: 'nonexistent'),
+        );
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        expect(find.text('No matching leads'), findsOneWidget);
+        expect(
+          find.text(
+            'No leads match "nonexistent".\nTry a different name, phone number, or email.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.byIcon(Icons.search_off_outlined), findsOneWidget);
+        expect(
+          find.widgetWithText(OutlinedButton, 'Clear Search'),
+          findsOneWidget,
+        );
+        // Base empty state copy should NOT be shown
+        expect(find.text('No leads found'), findsNothing);
+        expect(
+          find.text('Add a lead manually or import leads from Excel/CSV.'),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('tapping Clear Search in empty state restores full lead list', (
+      tester,
+    ) async {
+      repository.leads = [];
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads(query: const LeadQuery(searchText: 'nonexistent'));
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      expect(find.text('No matching leads'), findsOneWidget);
+
+      repository.leads = [const Lead(id: '1', name: 'Existing Lead')];
+      final clearButton = find.widgetWithText(OutlinedButton, 'Clear Search');
+      await tester.tap(clearButton);
+      await tester.pumpAndSettle();
+
+      expect(repository.lastQuery?.searchText, isNull);
+      expect(repository.lastQuery?.page, equals(1));
+      expect(find.text('Existing Lead'), findsOneWidget);
+    });
+
+    testWidgets(
+      'search retains query text during failure, and retry re-executes search',
+      (tester) async {
+        repository.leads = [const Lead(id: '1', name: 'Alice')];
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        // Perform search that fails
+        repository.shouldThrow = true;
+        await tester.enterText(find.byType(TextField), 'alice');
+        await tester.tap(find.byTooltip('Search'));
+        await tester.pumpAndSettle();
+
+        // Verify failure state rendered but search field still visible with 'alice'
+        expect(find.text('Failed to load leads'), findsOneWidget);
+        final textField = tester.widget<TextField>(find.byType(TextField));
+        expect(textField.controller?.text, equals('alice'));
+
+        // Retry should retry with active search
+        repository.shouldThrow = false;
+        await tester.tap(find.text('Retry'));
+        await tester.pumpAndSettle();
+
+        expect(repository.lastQuery?.searchText, equals('alice'));
+        expect(find.text('Alice'), findsOneWidget);
+      },
+    );
+
+    testWidgets('preserves non-search query values when searching', (
+      tester,
+    ) async {
+      const existingQuery = LeadQuery(
+        source: LeadSource.manual,
+        status: LeadStatus('Negotiation'),
+        assignedUserId: 'u42',
+        isAssigned: true,
+        page: 3,
+      );
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads(query: existingQuery);
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'target');
+      await tester.tap(find.byTooltip('Search'));
+      await tester.pumpAndSettle();
+
+      final query = repository.lastQuery!;
+      expect(query.searchText, equals('target'));
+      expect(query.page, equals(1)); // page reset to 1
+      expect(query.source, equals(LeadSource.manual));
+      expect(query.status, equals(const LeadStatus('Negotiation')));
+      expect(query.assignedUserId, equals('u42'));
+      expect(query.isAssigned, isTrue);
+    });
+
+    testWidgets('renders cleanly without overflow across mobile sizes', (
+      tester,
+    ) async {
+      final mobileSizes = [
+        const Size(320, 568),
+        const Size(360, 640),
+        const Size(390, 844),
+      ];
+
+      for (final size in mobileSizes) {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1.0;
+
+        repository.leads = [
+          const Lead(
+            id: '1',
+            name: 'Mobile Search Lead With Long Details',
+            source: LeadSource.manual,
+          ),
+        ];
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit, size: size));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(TextField), findsOneWidget);
+        expect(find.byTooltip('Search'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
+
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    testWidgets(
+      'renders constrained search bar alongside data table on desktop (1200x800)',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        repository.leads = [
+          const Lead(id: '1', name: 'Desktop Lead', source: LeadSource.manual),
+        ];
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(
+          buildTestWidget(cubit: cubit, size: const Size(1200, 800)),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadDataTable), findsOneWidget);
+        expect(find.byType(TextField), findsOneWidget);
+        expect(find.byTooltip('Search'), findsOneWidget);
+
+        // ConstrainedBox with maxWidth: 480 should wrap the TextField
+        final constrainedBox = tester.widget<ConstrainedBox>(
+          find
+              .ancestor(
+                of: find.byType(TextField),
+                matching: find.byType(ConstrainedBox),
+              )
+              .first,
+        );
+        expect(constrainedBox.constraints.maxWidth, equals(480));
+        expect(tester.takeException(), isNull);
+      },
+    );
   });
 }
