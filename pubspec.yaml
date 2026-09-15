@@ -36,6 +36,8 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_bloc: ^8.1.6
   file_picker: ^13.0.0
+  csv: ^8.0.0
+  excel: ^4.0.6
 
 dev_dependencies:
   flutter_test:
