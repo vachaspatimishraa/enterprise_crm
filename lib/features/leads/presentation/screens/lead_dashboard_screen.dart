@@ -5,6 +5,7 @@ import '../bloc/lead_dashboard_cubit.dart';
 import '../bloc/lead_dashboard_state.dart';
 import '../widgets/lead_quick_action.dart';
 import '../widgets/lead_summary_card.dart';
+import 'lead_import_workflow_screen.dart';
 
 class LeadDashboardScreen extends StatelessWidget {
   final LeadDashboardCubit? cubit;
@@ -37,6 +38,7 @@ class LeadDashboardScreen extends StatelessWidget {
           onImportLeads: onImportLeads,
           onDistributeLeads: onDistributeLeads,
           onExportLeads: onExportLeads,
+          repository: repository,
         ),
       );
     }
@@ -50,6 +52,7 @@ class LeadDashboardScreen extends StatelessWidget {
           onImportLeads: onImportLeads,
           onDistributeLeads: onDistributeLeads,
           onExportLeads: onExportLeads,
+          repository: repository,
         ),
       );
     }
@@ -61,6 +64,7 @@ class LeadDashboardScreen extends StatelessWidget {
       onImportLeads: onImportLeads,
       onDistributeLeads: onDistributeLeads,
       onExportLeads: onExportLeads,
+      repository: repository,
     );
   }
 }
@@ -71,6 +75,7 @@ class _LeadDashboardView extends StatelessWidget {
   final VoidCallback? onImportLeads;
   final VoidCallback? onDistributeLeads;
   final VoidCallback? onExportLeads;
+  final LeadRepository? repository;
 
   const _LeadDashboardView({
     this.onViewLeads,
@@ -78,6 +83,7 @@ class _LeadDashboardView extends StatelessWidget {
     this.onImportLeads,
     this.onDistributeLeads,
     this.onExportLeads,
+    this.repository,
   });
 
   void _showComingSoon(BuildContext context, String actionName) {
@@ -87,6 +93,29 @@ class _LeadDashboardView extends StatelessWidget {
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  Future<void> _openImportWorkflow(BuildContext context) async {
+    LeadRepository? repo = repository;
+    if (repo == null) {
+      try {
+        repo = context.read<LeadRepository>();
+      } catch (_) {}
+    }
+    if (repo == null) {
+      _showComingSoon(context, 'Import Leads');
+      return;
+    }
+
+    final dashboardCubit = context.read<LeadDashboardCubit>();
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => LeadImportWorkflowScreen(repository: repo!),
+      ),
+    );
+    if (result == true && context.mounted) {
+      dashboardCubit.loadDashboard();
+    }
   }
 
   @override
@@ -180,8 +209,7 @@ class _LeadDashboardView extends StatelessWidget {
                 ),
                 OutlinedButton.icon(
                   onPressed:
-                      onImportLeads ??
-                      () => _showComingSoon(context, 'Import Leads'),
+                      onImportLeads ?? () => _openImportWorkflow(context),
                   icon: const Icon(Icons.upload_file),
                   label: const Text('Import Leads'),
                 ),
@@ -359,8 +387,7 @@ class _LeadDashboardView extends StatelessWidget {
                     label: 'Import Leads',
                     icon: Icons.upload_file_outlined,
                     onPressed:
-                        onImportLeads ??
-                        () => _showComingSoon(context, 'Import Leads'),
+                        onImportLeads ?? () => _openImportWorkflow(context),
                   ),
                   LeadQuickAction(
                     label: 'Distribute Leads',

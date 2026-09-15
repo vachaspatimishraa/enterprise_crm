@@ -14,6 +14,7 @@ import '../widgets/lead_data_table.dart';
 import '../widgets/lead_filter_sheet.dart';
 import '../widgets/lead_list_card.dart';
 import '../widgets/lead_pagination_controls.dart';
+import 'lead_import_workflow_screen.dart';
 
 class LeadListScreen extends StatelessWidget {
   final LeadListCubit? cubit;
@@ -50,6 +51,7 @@ class LeadListScreen extends StatelessWidget {
             onViewLead: onViewLead,
             onAddLead: onAddLead,
             onImportLeads: onImportLeads,
+            repository: repo,
           ),
         );
       }
@@ -65,6 +67,7 @@ class LeadListScreen extends StatelessWidget {
             onViewLead: onViewLead,
             onAddLead: onAddLead,
             onImportLeads: onImportLeads,
+            repository: repo,
           ),
         );
       }
@@ -74,6 +77,7 @@ class LeadListScreen extends StatelessWidget {
           onViewLead: onViewLead,
           onAddLead: onAddLead,
           onImportLeads: onImportLeads,
+          repository: repo,
         ),
       );
     }
@@ -91,6 +95,7 @@ class LeadListScreen extends StatelessWidget {
           onViewLead: onViewLead,
           onAddLead: onAddLead,
           onImportLeads: onImportLeads,
+          repository: repo,
         ),
       );
     }
@@ -99,6 +104,7 @@ class LeadListScreen extends StatelessWidget {
       onViewLead: onViewLead,
       onAddLead: onAddLead,
       onImportLeads: onImportLeads,
+      repository: repo,
     );
   }
 }
@@ -107,8 +113,14 @@ class _LeadListView extends StatefulWidget {
   final void Function(Lead lead)? onViewLead;
   final VoidCallback? onAddLead;
   final VoidCallback? onImportLeads;
+  final LeadRepository? repository;
 
-  const _LeadListView({this.onViewLead, this.onAddLead, this.onImportLeads});
+  const _LeadListView({
+    this.onViewLead,
+    this.onAddLead,
+    this.onImportLeads,
+    this.repository,
+  });
 
   @override
   State<_LeadListView> createState() => _LeadListViewState();
@@ -247,6 +259,29 @@ class _LeadListViewState extends State<_LeadListView> {
     );
   }
 
+  Future<void> _openImportWorkflow(BuildContext context) async {
+    LeadRepository? repo = widget.repository;
+    if (repo == null) {
+      try {
+        repo = context.read<LeadRepository>();
+      } catch (_) {}
+    }
+    if (repo == null) {
+      _showComingSoon(context, 'Import Leads');
+      return;
+    }
+
+    final listCubit = context.read<LeadListCubit>();
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => LeadImportWorkflowScreen(repository: repo!),
+      ),
+    );
+    if (result == true && mounted) {
+      listCubit.refreshLeads();
+    }
+  }
+
   LeadQuery _getQueryFromState(LeadListState state) {
     return switch (state) {
       LeadListInitial() => context.read<LeadListCubit>().currentQuery,
@@ -273,12 +308,13 @@ class _LeadListViewState extends State<_LeadListView> {
               context.read<LeadListCubit>().refreshLeads();
             },
           ),
-          if (widget.onImportLeads != null)
-            IconButton(
-              icon: const Icon(Icons.upload_file),
-              tooltip: 'Import Leads',
-              onPressed: widget.onImportLeads,
-            ),
+          IconButton(
+            key: const Key('lead_list_import_button'),
+            icon: const Icon(Icons.upload_file),
+            tooltip: 'Import Leads',
+            onPressed:
+                widget.onImportLeads ?? () => _openImportWorkflow(context),
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: FilledButton.icon(
@@ -757,7 +793,7 @@ class _LeadListViewState extends State<_LeadListView> {
                 OutlinedButton.icon(
                   onPressed:
                       widget.onImportLeads ??
-                      () => _showComingSoon(context, 'Import Leads'),
+                      () => _openImportWorkflow(context),
                   icon: const Icon(Icons.upload_file),
                   label: const Text('Import Leads'),
                 ),

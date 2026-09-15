@@ -14,6 +14,7 @@ import 'package:enterprise_crm/features/leads/domain/entities/lead_summary.dart'
 import 'package:enterprise_crm/features/leads/domain/repositories/lead_repository.dart';
 import 'package:enterprise_crm/features/leads/presentation/bloc/lead_filter_cubit.dart';
 import 'package:enterprise_crm/features/leads/presentation/bloc/lead_list_cubit.dart';
+import 'package:enterprise_crm/features/leads/presentation/screens/lead_import_workflow_screen.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_list_screen.dart';
 import 'package:enterprise_crm/features/leads/presentation/widgets/lead_active_filters.dart';
 import 'package:enterprise_crm/features/leads/presentation/widgets/lead_data_table.dart';
@@ -1921,5 +1922,68 @@ void main() {
         },
       );
     }
+  });
+
+  group('LeadListScreen - Lead Import Workflow Integration', () {
+    testWidgets('exactly one import button in AppBar in loaded state', (
+      tester,
+    ) async {
+      repository.leads = [const Lead(id: '1', name: 'Lead 1')];
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads();
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('lead_list_import_button')), findsOneWidget);
+    });
+
+    testWidgets('tapping AppBar import button opens LeadImportWorkflowScreen', (
+      tester,
+    ) async {
+      repository.leads = [const Lead(id: '1', name: 'Lead 1')];
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads();
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('lead_list_import_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LeadImportWorkflowScreen), findsOneWidget);
+    });
+
+    testWidgets('successful import pops true and refreshes leads', (
+      tester,
+    ) async {
+      repository.leads = [const Lead(id: '1', name: 'Lead 1')];
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads();
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('lead_list_import_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LeadImportWorkflowScreen), findsOneWidget);
+
+      // Simulate repository receiving new lead during import
+      repository.leads = [
+        const Lead(id: '1', name: 'Lead 1'),
+        const Lead(id: '2', name: 'Imported Lead'),
+      ];
+
+      // Simulate workflow popping true
+      Navigator.of(
+        tester.element(find.byType(LeadImportWorkflowScreen)),
+      ).pop(true);
+      await tester.pumpAndSettle();
+
+      // Verified: back to list screen and list refreshed!
+      expect(find.byType(LeadListScreen), findsOneWidget);
+      expect(find.text('Imported Lead'), findsOneWidget);
+    });
   });
 }

@@ -10,7 +10,9 @@ import 'package:enterprise_crm/features/leads/domain/entities/lead_source.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_summary.dart';
 import 'package:enterprise_crm/features/leads/domain/repositories/lead_repository.dart';
 import 'package:enterprise_crm/features/leads/presentation/bloc/lead_dashboard_cubit.dart';
+import 'package:enterprise_crm/features/leads/presentation/bloc/lead_dashboard_state.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_dashboard_screen.dart';
+import 'package:enterprise_crm/features/leads/presentation/screens/lead_import_workflow_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -121,14 +123,14 @@ void main() {
     VoidCallback? onImportLeads,
     VoidCallback? onDistributeLeads,
     VoidCallback? onExportLeads,
-    Size size = const Size(800, 600),
+    Size size = const Size(1200, 800),
   }) {
     return MaterialApp(
       home: MediaQuery(
         data: MediaQueryData(size: size),
         child: LeadDashboardScreen(
           cubit: cubit,
-          repository: cubit == null ? repository : null,
+          repository: repository,
           onViewLeads: onViewLeads,
           onAddLead: onAddLead,
           onImportLeads: onImportLeads,
@@ -259,5 +261,37 @@ void main() {
       await tester.pumpAndSettle();
       expect(addTapped, isTrue);
     });
+
+    testWidgets(
+      'import quick action opens workflow and refreshes dashboard on success',
+      (tester) async {
+        repository.leads = [const Lead(id: '1', source: LeadSource.manual)];
+        final cubit = LeadDashboardCubit(repository);
+        await cubit.loadDashboard();
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Import Leads'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadImportWorkflowScreen), findsOneWidget);
+
+        // Simulate repository update and workflow pop true
+        repository.leads = [
+          const Lead(id: '1', source: LeadSource.manual),
+          const Lead(id: '2', source: LeadSource.csv),
+        ];
+
+        Navigator.of(
+          tester.element(find.byType(LeadImportWorkflowScreen)),
+        ).pop(true);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadDashboardScreen), findsOneWidget);
+        expect(cubit.state, isA<LeadDashboardLoaded>());
+        expect((cubit.state as LeadDashboardLoaded).metrics.totalLeads, 2);
+      },
+    );
   });
 }
