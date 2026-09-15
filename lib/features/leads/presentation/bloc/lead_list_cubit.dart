@@ -27,6 +27,8 @@ class LeadListCubit extends Cubit<LeadListState> {
             query: _currentQuery,
             hasNext: page.hasNext,
             totalItems: page.totalItems,
+            currentPage: page.currentPage,
+            pageSize: page.pageSize,
           ),
         );
       }

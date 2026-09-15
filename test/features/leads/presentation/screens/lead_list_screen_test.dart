@@ -28,6 +28,9 @@ class _FakeLeadRepository implements LeadRepository {
   int getLeadsCallCount = 0;
   Completer<LeadPage>? completer;
   LeadQuery? lastQuery;
+  int? overrideCurrentPage;
+  int? overrideTotalItems;
+  bool? overrideHasNext;
 
   @override
   Future<LeadPage> getLeads([LeadQuery query = const LeadQuery()]) async {
@@ -37,10 +40,10 @@ class _FakeLeadRepository implements LeadRepository {
     if (shouldThrow) throw Exception('Unable to connect to lead service');
     return LeadPage(
       items: leads,
-      currentPage: 1,
+      currentPage: overrideCurrentPage ?? query.page,
       pageSize: query.pageSize,
-      totalItems: leads.length,
-      hasNext: false,
+      totalItems: overrideTotalItems ?? leads.length,
+      hasNext: overrideHasNext ?? false,
     );
   }
 
@@ -1448,6 +1451,473 @@ void main() {
           expect(find.byKey(const Key('lead_sort_button')), findsOneWidget);
           expect(find.byKey(const Key('lead_filter_button')), findsOneWidget);
           expect(find.text('Sort: Newest Created'), findsOneWidget);
+        },
+      );
+    }
+  });
+
+  group('LeadListScreen - Pagination', () {
+    testWidgets('renders pagination footer with result range and page text', (
+      tester,
+    ) async {
+      repository.leads = List.generate(
+        20,
+        (i) => Lead(id: 'lead-$i', name: 'Lead $i'),
+      );
+      repository.overrideTotalItems = 53;
+      repository.overrideHasNext = true;
+
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads();
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('pagination_range_text')), findsOneWidget);
+      expect(find.text('1–20 of 53 leads'), findsOneWidget);
+      expect(find.byKey(const Key('pagination_page_text')), findsOneWidget);
+      expect(find.text('Page 1 of 3'), findsOneWidget);
+      expect(
+        find.byKey(const Key('pagination_previous_button')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('pagination_next_button')), findsOneWidget);
+    });
+
+    testWidgets(
+      'Previous button is disabled on page 1 and tapping does not issue request',
+      (tester) async {
+        repository.leads = List.generate(
+          20,
+          (i) => Lead(id: 'lead-$i', name: 'Lead $i'),
+        );
+        repository.overrideTotalItems = 53;
+        repository.overrideHasNext = true;
+
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        final initialCalls = repository.getLeadsCallCount;
+
+        final prevButton = tester.widget<OutlinedButton>(
+          find.byKey(const Key('pagination_previous_button')),
+        );
+        expect(prevButton.onPressed, isNull);
+
+        await tester.tap(find.byKey(const Key('pagination_previous_button')));
+        await tester.pumpAndSettle();
+
+        expect(repository.getLeadsCallCount, initialCalls);
+        expect(cubit.currentQuery.page, 1);
+      },
+    );
+
+    testWidgets(
+      'Next button is enabled when hasNext is true and tapping navigates to page 2',
+      (tester) async {
+        repository.leads = List.generate(
+          20,
+          (i) => Lead(id: 'lead-$i', name: 'Lead $i'),
+        );
+        repository.overrideTotalItems = 53;
+        repository.overrideHasNext = true;
+
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        // Tap Next
+        await tester.tap(find.byKey(const Key('pagination_next_button')));
+        await tester.pumpAndSettle();
+
+        expect(cubit.currentQuery.page, 2);
+        expect(repository.lastQuery!.page, 2);
+        expect(find.text('21–40 of 53 leads'), findsOneWidget);
+        expect(find.text('Page 2 of 3'), findsOneWidget);
+      },
+    );
+
+    testWidgets('tapping Previous on page 2 navigates back to page 1', (
+      tester,
+    ) async {
+      repository.leads = List.generate(
+        20,
+        (i) => Lead(id: 'lead-$i', name: 'Lead $i'),
+      );
+      repository.overrideTotalItems = 53;
+      repository.overrideHasNext = true;
+
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads(query: const LeadQuery(page: 2));
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Page 2 of 3'), findsOneWidget);
+
+      // Tap Previous
+      await tester.tap(find.byKey(const Key('pagination_previous_button')));
+      await tester.pumpAndSettle();
+
+      expect(cubit.currentQuery.page, 1);
+      expect(repository.lastQuery!.page, 1);
+      expect(find.text('Page 1 of 3'), findsOneWidget);
+    });
+
+    testWidgets(
+      'Next button is disabled when hasNext is false and does not trigger request',
+      (tester) async {
+        repository.leads = List.generate(
+          13,
+          (i) => Lead(id: 'lead-$i', name: 'Lead $i'),
+        );
+        repository.overrideTotalItems = 53;
+        repository.overrideHasNext = false;
+
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads(query: const LeadQuery(page: 3));
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Page 3 of 3'), findsOneWidget);
+
+        final nextButton = tester.widget<OutlinedButton>(
+          find.byKey(const Key('pagination_next_button')),
+        );
+        expect(nextButton.onPressed, isNull);
+
+        final callsBefore = repository.getLeadsCallCount;
+        await tester.tap(find.byKey(const Key('pagination_next_button')));
+        await tester.pumpAndSettle();
+
+        expect(repository.getLeadsCallCount, callsBefore);
+        expect(cubit.currentQuery.page, 3);
+      },
+    );
+
+    testWidgets('search preservation: Next preserves active search text', (
+      tester,
+    ) async {
+      repository.leads = [const Lead(id: '1', name: 'Alice')];
+      repository.overrideTotalItems = 30;
+      repository.overrideHasNext = true;
+
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads(
+        query: const LeadQuery(searchText: 'Alice', page: 1),
+      );
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('pagination_next_button')));
+      await tester.pumpAndSettle();
+
+      expect(cubit.currentQuery.searchText, 'Alice');
+      expect(cubit.currentQuery.page, 2);
+    });
+
+    testWidgets('filter preservation: Next preserves active filters', (
+      tester,
+    ) async {
+      repository.leads = [const Lead(id: '1', name: 'Lead 1')];
+      repository.overrideTotalItems = 30;
+      repository.overrideHasNext = true;
+
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads(
+        query: const LeadQuery(
+          source: LeadSource.manual,
+          isAssigned: true,
+          assignedUserId: 'agent-1',
+          page: 1,
+        ),
+      );
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('pagination_next_button')));
+      await tester.pumpAndSettle();
+
+      expect(cubit.currentQuery.source, LeadSource.manual);
+      expect(cubit.currentQuery.isAssigned, isTrue);
+      expect(cubit.currentQuery.assignedUserId, 'agent-1');
+      expect(cubit.currentQuery.page, 2);
+    });
+
+    testWidgets('sort preservation: Next preserves active sort', (
+      tester,
+    ) async {
+      repository.leads = [const Lead(id: '1', name: 'Lead 1')];
+      repository.overrideTotalItems = 30;
+      repository.overrideHasNext = true;
+
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads(
+        query: const LeadQuery(
+          sort: LeadSort(
+            field: LeadSortField.name,
+            direction: LeadSortDirection.ascending,
+          ),
+          page: 1,
+        ),
+      );
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('pagination_next_button')));
+      await tester.pumpAndSettle();
+
+      expect(
+        cubit.currentQuery.sort,
+        equals(
+          const LeadSort(
+            field: LeadSortField.name,
+            direction: LeadSortDirection.ascending,
+          ),
+        ),
+      );
+      expect(cubit.currentQuery.page, 2);
+    });
+
+    testWidgets(
+      'MANDATORY REGRESSION TEST: Combined query preservation across pagination',
+      (tester) async {
+        repository.leads = [const Lead(id: '1', name: 'Lead 1')];
+        repository.overrideTotalItems = 100;
+        repository.overrideHasNext = true;
+
+        const complexQuery = LeadQuery(
+          searchText: 'Acme',
+          status: LeadStatus('Qualified'),
+          source: LeadSource.manual,
+          isAssigned: true,
+          assignedUserId: 'agent-1',
+          sort: LeadSort(
+            field: LeadSortField.name,
+            direction: LeadSortDirection.ascending,
+          ),
+          pageSize: 20,
+          page: 1,
+        );
+
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads(query: complexQuery);
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        // Navigate Next
+        await tester.tap(find.byKey(const Key('pagination_next_button')));
+        await tester.pumpAndSettle();
+
+        // Verify ONLY page changed
+        expect(cubit.currentQuery.page, 2);
+        expect(cubit.currentQuery.searchText, complexQuery.searchText);
+        expect(cubit.currentQuery.status, complexQuery.status);
+        expect(cubit.currentQuery.source, complexQuery.source);
+        expect(cubit.currentQuery.isAssigned, complexQuery.isAssigned);
+        expect(cubit.currentQuery.assignedUserId, complexQuery.assignedUserId);
+        expect(cubit.currentQuery.sort, complexQuery.sort);
+        expect(cubit.currentQuery.pageSize, complexQuery.pageSize);
+
+        // Navigate Previous
+        await tester.tap(find.byKey(const Key('pagination_previous_button')));
+        await tester.pumpAndSettle();
+
+        // Verify back to page 1 with all original fields
+        expect(cubit.currentQuery, equals(complexQuery));
+      },
+    );
+
+    testWidgets('search change resets page to 1', (tester) async {
+      repository.leads = [const Lead(id: '1', name: 'Lead 1')];
+      repository.overrideTotalItems = 100;
+      repository.overrideHasNext = true;
+
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads(query: const LeadQuery(page: 4));
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      expect(cubit.currentQuery.page, 4);
+
+      // Enter search
+      await tester.enterText(find.byType(TextField), 'New Search');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+
+      expect(cubit.currentQuery.page, 1);
+      expect(cubit.currentQuery.searchText, 'New Search');
+    });
+
+    testWidgets('filter change resets page to 1', (tester) async {
+      repository.leads = [
+        const Lead(id: '1', name: 'Lead 1', source: LeadSource.manual),
+      ];
+      repository.overrideTotalItems = 100;
+      repository.overrideHasNext = true;
+
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads(
+        query: const LeadQuery(source: LeadSource.manual, page: 3),
+      );
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      expect(cubit.currentQuery.page, 3);
+
+      // Remove source chip
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const Key('active_filter_source_chip')),
+          matching: find.byIcon(Icons.close),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(cubit.currentQuery.page, 1);
+      expect(cubit.currentQuery.source, isNull);
+    });
+
+    testWidgets('sort change resets page to 1', (tester) async {
+      repository.leads = [const Lead(id: '1', name: 'Lead 1')];
+      repository.overrideTotalItems = 100;
+      repository.overrideHasNext = true;
+
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads(query: const LeadQuery(page: 2));
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      expect(cubit.currentQuery.page, 2);
+
+      // Change sort
+      await tester.tap(find.byKey(const Key('lead_sort_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Name A–Z'));
+      await tester.pumpAndSettle();
+
+      expect(cubit.currentQuery.page, 1);
+      expect(
+        cubit.currentQuery.sort,
+        equals(
+          const LeadSort(
+            field: LeadSortField.name,
+            direction: LeadSortDirection.ascending,
+          ),
+        ),
+      );
+    });
+
+    testWidgets(
+      'failure state on page 2 preserves page 2 and Retry re-executes query with page 2',
+      (tester) async {
+        repository.leads = [const Lead(id: '1', name: 'Lead 1')];
+        repository.overrideTotalItems = 50;
+        repository.overrideHasNext = true;
+
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads(
+          query: const LeadQuery(
+            page: 2,
+            searchText: 'Acme',
+            source: LeadSource.manual,
+          ),
+        );
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        // Simulate failure on next reload
+        repository.shouldThrow = true;
+        cubit.refreshLeads();
+        await tester.pumpAndSettle();
+
+        expect(find.text('Failed to load leads'), findsOneWidget);
+        expect(find.text('Retry'), findsOneWidget);
+
+        // Tap Retry
+        repository.shouldThrow = false;
+        await tester.tap(find.text('Retry'));
+        await tester.pumpAndSettle();
+
+        expect(repository.lastQuery!.page, 2);
+        expect(repository.lastQuery!.searchText, 'Acme');
+        expect(repository.lastQuery!.source, LeadSource.manual);
+      },
+    );
+
+    for (final size in [
+      const Size(320, 568),
+      const Size(360, 640),
+      const Size(600, 800),
+      const Size(768, 1024),
+      const Size(1200, 800),
+    ]) {
+      testWidgets(
+        'renders full lead list with search, filters, sort, and pagination cleanly at ${size.width}x${size.height}',
+        (tester) async {
+          tester.view.physicalSize = size;
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          repository.leads = List.generate(
+            10,
+            (i) => Lead(
+              id: 'lead-$i',
+              name: 'Customer Client Number $i',
+              source: LeadSource.manual,
+            ),
+          );
+          repository.overrideTotalItems = 53;
+          repository.overrideHasNext = true;
+
+          final cubit = LeadListCubit(repository);
+          await cubit.loadLeads(
+            query: const LeadQuery(
+              searchText: 'Customer',
+              source: LeadSource.manual,
+              isAssigned: true,
+              sort: LeadSort(
+                field: LeadSortField.createdAt,
+                direction: LeadSortDirection.descending,
+              ),
+              page: 2,
+            ),
+          );
+
+          await tester.pumpWidget(buildTestWidget(cubit: cubit, size: size));
+          await tester.pumpAndSettle();
+
+          expect(tester.takeException(), isNull);
+          expect(
+            find.byKey(const Key('pagination_previous_button')),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(const Key('pagination_next_button')),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(const Key('pagination_range_text')),
+            findsOneWidget,
+          );
+          expect(find.byKey(const Key('pagination_page_text')), findsOneWidget);
+          expect(find.text('21–40 of 53 leads'), findsOneWidget);
+          expect(find.text('Page 2 of 3'), findsOneWidget);
         },
       );
     }

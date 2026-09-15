@@ -30,12 +30,16 @@ final class LeadListLoaded extends LeadListState {
   final LeadQuery query;
   final bool hasNext;
   final int totalItems;
+  final int currentPage;
+  final int pageSize;
 
   const LeadListLoaded(
     this.leads, {
     this.query = const LeadQuery(),
     this.hasNext = false,
     this.totalItems = 0,
+    this.currentPage = 1,
+    this.pageSize = 20,
   });
 
   @override
@@ -46,11 +50,19 @@ final class LeadListLoaded extends LeadListState {
           query == other.query &&
           hasNext == other.hasNext &&
           totalItems == other.totalItems &&
+          currentPage == other.currentPage &&
+          pageSize == other.pageSize &&
           _listEquals(leads, other.leads);
 
   @override
-  int get hashCode =>
-      Object.hash(query, hasNext, totalItems, Object.hashAll(leads));
+  int get hashCode => Object.hash(
+    query,
+    hasNext,
+    totalItems,
+    currentPage,
+    pageSize,
+    Object.hashAll(leads),
+  );
 
   static bool _listEquals(List<Lead> a, List<Lead> b) {
     if (a.length != b.length) return false;

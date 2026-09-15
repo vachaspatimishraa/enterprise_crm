@@ -13,6 +13,7 @@ import '../widgets/lead_active_filters.dart';
 import '../widgets/lead_data_table.dart';
 import '../widgets/lead_filter_sheet.dart';
 import '../widgets/lead_list_card.dart';
+import '../widgets/lead_pagination_controls.dart';
 
 class LeadListScreen extends StatelessWidget {
   final LeadListCubit? cubit;
@@ -197,6 +198,19 @@ class _LeadListViewState extends State<_LeadListView> {
     cubit.applyQuery(newQuery);
   }
 
+  void _onPreviousPage(int currentPage) {
+    if (currentPage <= 1) return;
+    final cubit = context.read<LeadListCubit>();
+    final newQuery = cubit.currentQuery.copyWith(page: currentPage - 1);
+    cubit.applyQuery(newQuery);
+  }
+
+  void _onNextPage(int currentPage) {
+    final cubit = context.read<LeadListCubit>();
+    final newQuery = cubit.currentQuery.copyWith(page: currentPage + 1);
+    cubit.applyQuery(newQuery);
+  }
+
   void _openFilterModal() {
     LeadFilterCubit? filterCubit;
     try {
@@ -324,11 +338,11 @@ class _LeadListViewState extends State<_LeadListView> {
                     theme,
                     message,
                   ),
-                  LeadListLoaded(:final leads) => _buildLoadedList(
+                  LeadListLoaded() => _buildLoadedList(
                     context,
                     theme,
                     colorScheme,
-                    leads,
+                    state,
                   ),
                 },
               ),
@@ -800,41 +814,59 @@ class _LeadListViewState extends State<_LeadListView> {
     BuildContext context,
     ThemeData theme,
     ColorScheme colorScheme,
-    List<Lead> leads,
+    LeadListLoaded state,
   ) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isMobile = constraints.maxWidth < 600;
 
-        if (isMobile) {
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: leads.length,
-            separatorBuilder: (_, index) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              return LeadListCard(
-                lead: leads[index],
-                onViewLead: widget.onViewLead,
+        final contentWidget = isMobile
+            ? ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: state.leads.length,
+                separatorBuilder: (_, index) => const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  return LeadListCard(
+                    lead: state.leads[index],
+                    onViewLead: widget.onViewLead,
+                  );
+                },
+              )
+            : Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Card(
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    side: BorderSide(color: colorScheme.outlineVariant),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: LeadDataTable(
+                      leads: state.leads,
+                      onViewLead: widget.onViewLead,
+                    ),
+                  ),
+                ),
               );
-            },
-          );
-        }
 
-        // Desktop / Tablet layout
-        return Padding(
-          padding: const EdgeInsets.all(16),
-          child: Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              side: BorderSide(color: colorScheme.outlineVariant),
-              borderRadius: BorderRadius.circular(12),
+        return Column(
+          children: [
+            Expanded(child: contentWidget),
+            LeadPaginationControls(
+              currentPage: state.currentPage,
+              pageSize: state.pageSize,
+              totalItems: state.totalItems,
+              hasNext: state.hasNext,
+              onPrevious: state.currentPage > 1
+                  ? () => _onPreviousPage(state.currentPage)
+                  : null,
+              onNext: state.hasNext
+                  ? () => _onNextPage(state.currentPage)
+                  : null,
             ),
-            clipBehavior: Clip.antiAlias,
-            child: SizedBox(
-              width: double.infinity,
-              child: LeadDataTable(leads: leads, onViewLead: widget.onViewLead),
-            ),
-          ),
+          ],
         );
       },
     );
