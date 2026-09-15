@@ -753,4 +753,187 @@ void main() {
       },
     );
   });
+
+  group('MockLeadRepository - Import', () {
+    test(
+      'structured draft mode imports leads into repository and updates total count',
+      () async {
+        final initialPage = await repository.getLeads(
+          const LeadQuery(pageSize: 100),
+        );
+        final initialCount = initialPage.totalItems;
+
+        final drafts = [
+          const LeadDraft(
+            name: 'Import Lead 1',
+            phone: '+1 555-0101',
+            email: 'import1@example.com',
+            source: LeadSource.csv,
+          ),
+          const LeadDraft(
+            name: 'Import Lead 2',
+            phone: '+1 555-0102',
+            email: 'import2@example.com',
+            source: LeadSource.excel,
+          ),
+          const LeadDraft(
+            name: 'Import Lead 3',
+            phone: '+1 555-0103',
+            email: 'import3@example.com',
+            source: LeadSource.csv,
+          ),
+        ];
+
+        final request = LeadImportRequest.fromDrafts(
+          fileName: 'imported.csv',
+          fileType: LeadImportFileType.csv,
+          drafts: drafts,
+        );
+
+        final result = await repository.importLeads(request);
+
+        expect(result.totalRows, equals(3));
+        expect(result.importedRows, equals(3));
+        expect(result.skippedRows, equals(0));
+        expect(result.failedRows, equals(0));
+        expect(result.duplicateRows, equals(0));
+
+        final updatedPage = await repository.getLeads(
+          const LeadQuery(pageSize: 100),
+        );
+        expect(updatedPage.totalItems, equals(initialCount + 3));
+
+        // Verify the new leads are findable by search
+        final searchResult = await repository.getLeads(
+          const LeadQuery(searchText: 'Import Lead 1'),
+        );
+        expect(searchResult.items.length, equals(1));
+        final importedLead = searchResult.items.first;
+        expect(importedLead.name, equals('Import Lead 1'));
+        expect(importedLead.phone, equals('+1 555-0101'));
+        expect(importedLead.email, equals('import1@example.com'));
+        expect(importedLead.source, equals(LeadSource.csv));
+        expect(importedLead.status, isNull);
+        expect(importedLead.assignedUserId, isNull);
+        expect(importedLead.assignedUserName, isNull);
+      },
+    );
+
+    test(
+      'preserves Excel and CSV source types and does not default to manual',
+      () async {
+        final drafts = [
+          const LeadDraft(name: 'Excel Lead', source: LeadSource.excel),
+          const LeadDraft(name: 'CSV Lead', source: LeadSource.csv),
+        ];
+
+        final request = LeadImportRequest.fromDrafts(
+          fileName: 'leads.xlsx',
+          fileType: LeadImportFileType.excel,
+          drafts: drafts,
+        );
+
+        await repository.importLeads(request);
+
+        final excelSearch = await repository.getLeads(
+          const LeadQuery(searchText: 'Excel Lead'),
+        );
+        expect(excelSearch.items.first.source, equals(LeadSource.excel));
+
+        final csvSearch = await repository.getLeads(
+          const LeadQuery(searchText: 'CSV Lead'),
+        );
+        expect(csvSearch.items.first.source, equals(LeadSource.csv));
+      },
+    );
+
+    test(
+      'imports duplicate drafts without repository-level deduplication',
+      () async {
+        final drafts = [
+          const LeadDraft(
+            name: 'Duplicate Lead',
+            phone: '+1 555-9999',
+            email: 'dup@example.com',
+            source: LeadSource.csv,
+          ),
+          const LeadDraft(
+            name: 'Duplicate Lead',
+            phone: '+1 555-9999',
+            email: 'dup@example.com',
+            source: LeadSource.csv,
+          ),
+        ];
+
+        final request = LeadImportRequest.fromDrafts(
+          fileName: 'dup.csv',
+          fileType: LeadImportFileType.csv,
+          drafts: drafts,
+        );
+
+        final result = await repository.importLeads(request);
+
+        expect(result.totalRows, equals(2));
+        expect(result.importedRows, equals(2));
+        expect(result.duplicateRows, equals(0));
+
+        final dupSearch = await repository.getLeads(
+          const LeadQuery(searchText: 'Duplicate Lead'),
+        );
+        expect(dupSearch.items.length, equals(2));
+      },
+    );
+
+    test(
+      'updates getLeadSummary with additional CSV and Excel counts',
+      () async {
+        final initialSummary = await repository.getLeadSummary();
+
+        final drafts = [
+          const LeadDraft(name: 'S1', source: LeadSource.csv),
+          const LeadDraft(name: 'S2', source: LeadSource.csv),
+          const LeadDraft(name: 'S3', source: LeadSource.excel),
+        ];
+
+        final request = LeadImportRequest.fromDrafts(
+          fileName: 'summary_test.csv',
+          fileType: LeadImportFileType.csv,
+          drafts: drafts,
+        );
+
+        await repository.importLeads(request);
+
+        final updatedSummary = await repository.getLeadSummary();
+        expect(
+          updatedSummary.totalLeads,
+          equals(initialSummary.totalLeads + 3),
+        );
+        expect(updatedSummary.csvLeads, equals(initialSummary.csvLeads + 2));
+        expect(
+          updatedSummary.excelLeads,
+          equals(initialSummary.excelLeads + 1),
+        );
+        expect(updatedSummary.manualLeads, equals(initialSummary.manualLeads));
+      },
+    );
+
+    test(
+      'legacy file mode request preserves deterministic placeholder result',
+      () async {
+        const request = LeadImportRequest(
+          fileReference: 'legacy-file-ref',
+          fileName: 'leads.xlsx',
+          fileType: LeadImportFileType.excel,
+        );
+
+        final result = await repository.importLeads(request);
+
+        expect(result.totalRows, equals(10));
+        expect(result.importedRows, equals(8));
+        expect(result.skippedRows, equals(1));
+        expect(result.failedRows, equals(0));
+        expect(result.duplicateRows, equals(1));
+      },
+    );
+  });
 }

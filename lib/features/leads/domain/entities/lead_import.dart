@@ -1,17 +1,28 @@
+import 'lead_draft.dart';
+
 enum LeadImportFileType { excel, csv }
 
 class LeadImportRequest {
   const LeadImportRequest({
-    required this.fileReference,
+    required Object this.fileReference,
     required this.fileName,
     required this.fileType,
-  });
+  }) : drafts = const [];
 
-  /// An opaque file reference. File-picker and transport details stay outside
-  /// the domain contract.
-  final Object fileReference;
+  LeadImportRequest.fromDrafts({
+    required this.fileName,
+    required this.fileType,
+    required List<LeadDraft> drafts,
+  }) : fileReference = null,
+       drafts = List.unmodifiable(drafts);
+
+  /// An opaque file reference. Null when using structured reviewed drafts.
+  final Object? fileReference;
   final String fileName;
   final LeadImportFileType fileType;
+  final List<LeadDraft> drafts;
+
+  bool get hasDraftPayload => drafts.isNotEmpty;
 }
 
 class LeadImportResult {

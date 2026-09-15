@@ -403,6 +403,19 @@ class MockLeadDataSource {
   }
 
   Future<LeadImportResult> importLeads(LeadImportRequest request) async {
+    if (request.hasDraftPayload) {
+      for (final draft in request.drafts) {
+        await createLead(CreateLeadInput(draft: draft));
+      }
+      return LeadImportResult(
+        totalRows: request.drafts.length,
+        importedRows: request.drafts.length,
+        skippedRows: 0,
+        failedRows: 0,
+        duplicateRows: 0,
+      );
+    }
+
     return const LeadImportResult(
       totalRows: 10,
       importedRows: 8,
