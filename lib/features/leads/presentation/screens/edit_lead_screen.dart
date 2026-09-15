@@ -6,6 +6,7 @@ import '../../domain/repositories/lead_repository.dart';
 import '../bloc/lead_form_cubit.dart';
 import '../bloc/lead_form_state.dart';
 import '../utils/lead_display_formatters.dart';
+import '../utils/lead_field_validators.dart';
 
 class EditLeadScreen extends StatelessWidget {
   final Lead lead;
@@ -502,11 +503,7 @@ class _EditLeadViewState extends State<_EditLeadView> {
       textInputAction: TextInputAction.done,
       keyboardType: TextInputType.emailAddress,
       validator: (value) {
-        if (value == null || value.trim().isEmpty) {
-          return null;
-        }
-        final email = value.trim();
-        if (!email.contains('@') || !email.contains('.')) {
+        if (!isValidOptionalLeadEmail(value)) {
           return 'Enter a valid email address';
         }
         return null;
