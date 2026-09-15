@@ -1,3 +1,4 @@
+import 'lead_sort.dart';
 import 'lead_source.dart';
 import 'lead_status.dart';
 
@@ -7,6 +8,7 @@ class LeadQuery {
   final LeadSource? source;
   final String? assignedUserId;
   final bool? isAssigned;
+  final LeadSort? sort;
   final int page;
   final int pageSize;
 
@@ -16,6 +18,7 @@ class LeadQuery {
     this.source,
     this.assignedUserId,
     this.isAssigned,
+    this.sort,
     this.page = 1,
     this.pageSize = 20,
   });
@@ -28,6 +31,7 @@ class LeadQuery {
       source == null &&
       assignedUserId == null &&
       isAssigned == null &&
+      sort == null &&
       page == 1;
 
   LeadQuery copyWith({
@@ -36,6 +40,7 @@ class LeadQuery {
     LeadSource? source,
     String? assignedUserId,
     bool? isAssigned,
+    LeadSort? sort,
     int? page,
     int? pageSize,
     bool clearSearch = false,
@@ -43,6 +48,7 @@ class LeadQuery {
     bool clearSource = false,
     bool clearAssignedUser = false,
     bool clearIsAssigned = false,
+    bool clearSort = false,
   }) {
     return LeadQuery(
       searchText: clearSearch ? null : (searchText ?? this.searchText),
@@ -52,6 +58,7 @@ class LeadQuery {
           ? null
           : (assignedUserId ?? this.assignedUserId),
       isAssigned: clearIsAssigned ? null : (isAssigned ?? this.isAssigned),
+      sort: clearSort ? null : (sort ?? this.sort),
       page: page ?? this.page,
       pageSize: pageSize ?? this.pageSize,
     );
@@ -67,6 +74,7 @@ class LeadQuery {
           source == other.source &&
           assignedUserId == other.assignedUserId &&
           isAssigned == other.isAssigned &&
+          sort == other.sort &&
           page == other.page &&
           pageSize == other.pageSize;
 
@@ -77,11 +85,12 @@ class LeadQuery {
     source,
     assignedUserId,
     isAssigned,
+    sort,
     page,
     pageSize,
   );
 
   @override
   String toString() =>
-      'LeadQuery(search: $searchText, status: $status, source: $source, assignedUserId: $assignedUserId, isAssigned: $isAssigned, page: $page)';
+      'LeadQuery(search: $searchText, status: $status, source: $source, assignedUserId: $assignedUserId, isAssigned: $isAssigned, sort: $sort, page: $page)';
 }

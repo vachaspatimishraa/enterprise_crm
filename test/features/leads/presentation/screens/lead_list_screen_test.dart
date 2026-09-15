@@ -7,6 +7,7 @@ import 'package:enterprise_crm/features/leads/domain/entities/lead_export.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_import.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_page.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_query.dart';
+import 'package:enterprise_crm/features/leads/domain/entities/lead_sort.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_source.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_status.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_summary.dart';
@@ -1195,6 +1196,258 @@ void main() {
           expect(tester.takeException(), isNull);
           expect(find.text('Filters (2)'), findsOneWidget);
           expect(find.byType(LeadActiveFilters), findsOneWidget);
+        },
+      );
+    }
+  });
+
+  group('LeadListScreen - Sorting', () {
+    testWidgets('sort selector is visible and displays current sort label', (
+      tester,
+    ) async {
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads();
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('lead_sort_button')), findsOneWidget);
+      expect(find.text('Sort: Default'), findsOneWidget);
+    });
+
+    testWidgets(
+      'selecting a sort updates query with page 1, preserves other fields, and updates UI label',
+      (tester) async {
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads(
+          query: const LeadQuery(
+            searchText: 'Acme',
+            source: LeadSource.manual,
+            status: LeadStatus('New'),
+            isAssigned: true,
+            page: 3,
+            pageSize: 50,
+          ),
+        );
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        // Tap sort button to open menu
+        await tester.tap(find.byKey(const Key('lead_sort_button')));
+        await tester.pumpAndSettle();
+
+        // Menu items should be visible
+        expect(find.text('Name A–Z'), findsOneWidget);
+        expect(find.text('Name Z–A'), findsOneWidget);
+        expect(find.text('Newest Created'), findsOneWidget);
+        expect(find.text('Oldest Created'), findsOneWidget);
+
+        // Select Name A–Z
+        await tester.tap(find.text('Name A–Z'));
+        await tester.pumpAndSettle();
+
+        expect(
+          cubit.currentQuery.sort,
+          equals(
+            const LeadSort(
+              field: LeadSortField.name,
+              direction: LeadSortDirection.ascending,
+            ),
+          ),
+        );
+        expect(cubit.currentQuery.page, 1);
+        expect(cubit.currentQuery.pageSize, 50);
+        expect(cubit.currentQuery.searchText, 'Acme');
+        expect(cubit.currentQuery.source, LeadSource.manual);
+        expect(cubit.currentQuery.status, const LeadStatus('New'));
+        expect(cubit.currentQuery.isAssigned, isTrue);
+
+        expect(find.text('Sort: Name A–Z'), findsOneWidget);
+      },
+    );
+
+    testWidgets('selecting Default clears sort to null', (tester) async {
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads(
+        query: const LeadQuery(
+          sort: LeadSort(
+            field: LeadSortField.name,
+            direction: LeadSortDirection.ascending,
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sort: Name A–Z'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('lead_sort_button')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Default'));
+      await tester.pumpAndSettle();
+
+      expect(cubit.currentQuery.sort, isNull);
+      expect(find.text('Sort: Default'), findsOneWidget);
+    });
+
+    testWidgets('clear search preserves active sort', (tester) async {
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads(
+        query: const LeadQuery(
+          searchText: 'Alice',
+          sort: LeadSort(
+            field: LeadSortField.createdAt,
+            direction: LeadSortDirection.descending,
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sort: Newest Created'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Clear Search'));
+      await tester.pumpAndSettle();
+
+      expect(cubit.currentQuery.searchText, isNull);
+      expect(
+        cubit.currentQuery.sort,
+        equals(
+          const LeadSort(
+            field: LeadSortField.createdAt,
+            direction: LeadSortDirection.descending,
+          ),
+        ),
+      );
+      expect(find.text('Sort: Newest Created'), findsOneWidget);
+    });
+
+    testWidgets('clear filters preserves active sort', (tester) async {
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads(
+        query: const LeadQuery(
+          source: LeadSource.manual,
+          sort: LeadSort(
+            field: LeadSortField.name,
+            direction: LeadSortDirection.descending,
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sort: Name Z–A'), findsOneWidget);
+      expect(
+        find.byKey(const Key('active_filter_source_chip')),
+        findsOneWidget,
+      );
+      expect(find.text('Manual'), findsOneWidget);
+
+      // Tap remove chip icon
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const Key('active_filter_source_chip')),
+          matching: find.byIcon(Icons.close),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(cubit.currentQuery.source, isNull);
+      expect(
+        cubit.currentQuery.sort,
+        equals(
+          const LeadSort(
+            field: LeadSortField.name,
+            direction: LeadSortDirection.descending,
+          ),
+        ),
+      );
+      expect(find.text('Sort: Name Z–A'), findsOneWidget);
+    });
+
+    testWidgets(
+      'failure state preserves sort, and retry re-executes query with sort',
+      (tester) async {
+        repository.shouldThrow = true;
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads(
+          query: const LeadQuery(
+            sort: LeadSort(
+              field: LeadSortField.name,
+              direction: LeadSortDirection.ascending,
+            ),
+          ),
+        );
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Failed to load leads'), findsOneWidget);
+        expect(find.text('Retry'), findsOneWidget);
+
+        repository.shouldThrow = false;
+        await tester.tap(find.text('Retry'));
+        await tester.pumpAndSettle();
+
+        expect(
+          repository.lastQuery!.sort,
+          equals(
+            const LeadSort(
+              field: LeadSortField.name,
+              direction: LeadSortDirection.ascending,
+            ),
+          ),
+        );
+      },
+    );
+
+    for (final size in [
+      const Size(320, 568),
+      const Size(360, 640),
+      const Size(600, 800),
+      const Size(768, 1024),
+      const Size(1200, 800),
+    ]) {
+      testWidgets(
+        'renders header with Search + Filters + Sort cleanly at ${size.width}x${size.height}',
+        (tester) async {
+          tester.view.physicalSize = size;
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          repository.leads = [
+            const Lead(
+              id: '1',
+              name: 'Enterprise Client Name',
+              source: LeadSource.manual,
+            ),
+          ];
+          final cubit = LeadListCubit(repository);
+          await cubit.loadLeads(
+            query: const LeadQuery(
+              searchText: 'Enterprise',
+              source: LeadSource.manual,
+              isAssigned: true,
+              sort: LeadSort(
+                field: LeadSortField.createdAt,
+                direction: LeadSortDirection.descending,
+              ),
+            ),
+          );
+
+          await tester.pumpWidget(buildTestWidget(cubit: cubit, size: size));
+          await tester.pumpAndSettle();
+
+          expect(tester.takeException(), isNull);
+          expect(find.byKey(const Key('lead_sort_button')), findsOneWidget);
+          expect(find.byKey(const Key('lead_filter_button')), findsOneWidget);
+          expect(find.text('Sort: Newest Created'), findsOneWidget);
         },
       );
     }

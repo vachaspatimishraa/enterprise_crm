@@ -6,6 +6,7 @@ import '../../domain/entities/lead_export.dart';
 import '../../domain/entities/lead_import.dart';
 import '../../domain/entities/lead_page.dart';
 import '../../domain/entities/lead_query.dart';
+import '../../domain/entities/lead_sort.dart';
 import '../../domain/entities/lead_source.dart';
 import '../../domain/entities/lead_status.dart';
 import '../../domain/entities/lead_summary.dart';
@@ -170,7 +171,61 @@ class MockLeadDataSource {
           .toList();
     }
 
-    // 3. Pagination
+    // 3. Sort
+    if (query.sort != null) {
+      final sort = query.sort!;
+      filtered.sort((a, b) {
+        int comparison = 0;
+        switch (sort.field) {
+          case LeadSortField.name:
+            final aName = a.name?.trim();
+            final bName = b.name?.trim();
+            final aEmpty = aName == null || aName.isEmpty;
+            final bEmpty = bName == null || bName.isEmpty;
+
+            if (aEmpty && bEmpty) {
+              comparison = 0;
+            } else if (aEmpty) {
+              return 1;
+            } else if (bEmpty) {
+              return -1;
+            } else {
+              final comp = aName.toLowerCase().compareTo(bName.toLowerCase());
+              comparison = sort.direction == LeadSortDirection.ascending
+                  ? comp
+                  : -comp;
+            }
+            break;
+
+          case LeadSortField.createdAt:
+            final aDate = a.createdAt;
+            final bDate = b.createdAt;
+            final aNull = aDate == null;
+            final bNull = bDate == null;
+
+            if (aNull && bNull) {
+              comparison = 0;
+            } else if (aNull) {
+              return 1;
+            } else if (bNull) {
+              return -1;
+            } else {
+              final comp = aDate.compareTo(bDate);
+              comparison = sort.direction == LeadSortDirection.ascending
+                  ? comp
+                  : -comp;
+            }
+            break;
+        }
+
+        if (comparison != 0) {
+          return comparison;
+        }
+        return a.id.compareTo(b.id);
+      });
+    }
+
+    // 4. Pagination
     final totalItems = filtered.length;
     final page = query.page < 1 ? 1 : query.page;
     final pageSize = query.pageSize < 1 ? 20 : query.pageSize;

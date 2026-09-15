@@ -4,6 +4,7 @@ import '../../domain/entities/lead.dart';
 import '../../domain/entities/lead_assignee.dart';
 import '../../domain/entities/lead_query.dart';
 import '../../domain/repositories/lead_repository.dart';
+import '../utils/lead_sort_display.dart';
 import '../bloc/lead_filter_cubit.dart';
 import '../bloc/lead_filter_state.dart';
 import '../bloc/lead_list_cubit.dart';
@@ -358,8 +359,6 @@ class _LeadListViewState extends State<_LeadListView> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 600;
-
         final filterButton = OutlinedButton.icon(
           key: const Key('lead_filter_button'),
           onPressed: _openFilterModal,
@@ -372,6 +371,69 @@ class _LeadListViewState extends State<_LeadListView> {
           style: OutlinedButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             visualDensity: VisualDensity.compact,
+          ),
+        );
+
+        final currentSortIndex = leadSortOptions.indexOf(query.sort);
+        final sortButton = PopupMenuButton<int>(
+          key: const Key('lead_sort_button'),
+          initialValue: currentSortIndex >= 0 ? currentSortIndex : 0,
+          tooltip: 'Sort Leads',
+          onSelected: (int selectedIndex) {
+            final selectedSort = leadSortOptions[selectedIndex];
+            final cubit = context.read<LeadListCubit>();
+            final newQuery = cubit.currentQuery.copyWith(
+              sort: selectedSort,
+              clearSort: selectedSort == null,
+              page: 1,
+            );
+            cubit.applyQuery(newQuery);
+          },
+          itemBuilder: (context) => [
+            for (var i = 0; i < leadSortOptions.length; i++)
+              PopupMenuItem<int>(
+                key: Key(
+                  'lead_sort_option_${leadSortToDisplayName(leadSortOptions[i])}',
+                ),
+                value: i,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(leadSortToDisplayName(leadSortOptions[i])),
+                    ),
+                    if (query.sort == leadSortOptions[i])
+                      Icon(Icons.check, size: 18, color: colorScheme.primary),
+                  ],
+                ),
+              ),
+          ],
+          child: Container(
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              border: Border.all(color: colorScheme.outline.withAlpha(128)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.sort, size: 18),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    'Sort: ${leadSortToDisplayName(query.sort)}',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: colorScheme.onSurface,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.arrow_drop_down, size: 18),
+              ],
+            ),
           ),
         );
 
@@ -407,7 +469,7 @@ class _LeadListViewState extends State<_LeadListView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (isWide)
+              if (constraints.maxWidth >= 900)
                 Row(
                   children: [
                     Flexible(
@@ -418,14 +480,32 @@ class _LeadListViewState extends State<_LeadListView> {
                     ),
                     const SizedBox(width: 12),
                     filterButton,
+                    const SizedBox(width: 12),
+                    sortButton,
                   ],
                 )
               else
-                Row(
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(child: searchField),
-                    const SizedBox(width: 8),
-                    filterButton,
+                    searchField,
+                    const SizedBox(height: 8),
+                    if (constraints.maxWidth < 600)
+                      Row(
+                        children: [
+                          Expanded(child: filterButton),
+                          const SizedBox(width: 8),
+                          Expanded(child: sortButton),
+                        ],
+                      )
+                    else
+                      Row(
+                        children: [
+                          filterButton,
+                          const SizedBox(width: 8),
+                          sortButton,
+                        ],
+                      ),
                   ],
                 ),
               if (hasActiveSearch)
