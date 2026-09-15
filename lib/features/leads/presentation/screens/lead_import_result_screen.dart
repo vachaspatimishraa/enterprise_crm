@@ -25,9 +25,13 @@ class LeadImportResultScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    final isComplete = result.importedRows > 0 && result.failedRows == 0;
+    final isComplete =
+        result.totalRows == result.importedRows &&
+        result.failedRows == 0 &&
+        result.skippedRows == 0;
     final title = isComplete ? 'Import Complete' : 'Import Finished';
 
+    final selectedForImport = decision.includedSourceRowIndices.length;
     final excludedValidRows =
         preview.validRowCount - decision.includedSourceRowIndices.length;
 
@@ -67,7 +71,7 @@ class LeadImportResultScreen extends StatelessWidget {
                         children: [
                           _buildMetricRow(
                             context,
-                            label: 'Selected for import',
+                            label: 'Total submitted',
                             value: result.totalRows,
                             isBold: true,
                           ),
@@ -114,6 +118,11 @@ class LeadImportResultScreen extends StatelessWidget {
                             context,
                             label: 'Valid rows',
                             value: preview.validRowCount,
+                          ),
+                          _buildMetricRow(
+                            context,
+                            label: 'Selected for import',
+                            value: selectedForImport,
                           ),
                           _buildMetricRow(
                             context,

@@ -774,7 +774,7 @@ void main() {
             name: 'Import Lead 2',
             phone: '+1 555-0102',
             email: 'import2@example.com',
-            source: LeadSource.excel,
+            source: LeadSource.csv,
           ),
           const LeadDraft(
             name: 'Import Lead 3',
@@ -822,18 +822,27 @@ void main() {
     test(
       'preserves Excel and CSV source types and does not default to manual',
       () async {
-        final drafts = [
+        final excelDrafts = [
           const LeadDraft(name: 'Excel Lead', source: LeadSource.excel),
-          const LeadDraft(name: 'CSV Lead', source: LeadSource.csv),
         ];
-
-        final request = LeadImportRequest.fromDrafts(
-          fileName: 'leads.xlsx',
-          fileType: LeadImportFileType.excel,
-          drafts: drafts,
+        await repository.importLeads(
+          LeadImportRequest.fromDrafts(
+            fileName: 'leads.xlsx',
+            fileType: LeadImportFileType.excel,
+            drafts: excelDrafts,
+          ),
         );
 
-        await repository.importLeads(request);
+        final csvDrafts = [
+          const LeadDraft(name: 'CSV Lead', source: LeadSource.csv),
+        ];
+        await repository.importLeads(
+          LeadImportRequest.fromDrafts(
+            fileName: 'leads.csv',
+            fileType: LeadImportFileType.csv,
+            drafts: csvDrafts,
+          ),
+        );
 
         final excelSearch = await repository.getLeads(
           const LeadQuery(searchText: 'Excel Lead'),
@@ -889,19 +898,28 @@ void main() {
       () async {
         final initialSummary = await repository.getLeadSummary();
 
-        final drafts = [
+        final csvDrafts = [
           const LeadDraft(name: 'S1', source: LeadSource.csv),
           const LeadDraft(name: 'S2', source: LeadSource.csv),
-          const LeadDraft(name: 'S3', source: LeadSource.excel),
         ];
-
-        final request = LeadImportRequest.fromDrafts(
-          fileName: 'summary_test.csv',
-          fileType: LeadImportFileType.csv,
-          drafts: drafts,
+        await repository.importLeads(
+          LeadImportRequest.fromDrafts(
+            fileName: 'summary_csv.csv',
+            fileType: LeadImportFileType.csv,
+            drafts: csvDrafts,
+          ),
         );
 
-        await repository.importLeads(request);
+        final excelDrafts = [
+          const LeadDraft(name: 'S3', source: LeadSource.excel),
+        ];
+        await repository.importLeads(
+          LeadImportRequest.fromDrafts(
+            fileName: 'summary_excel.xlsx',
+            fileType: LeadImportFileType.excel,
+            drafts: excelDrafts,
+          ),
+        );
 
         final updatedSummary = await repository.getLeadSummary();
         expect(
@@ -914,6 +932,69 @@ void main() {
           equals(initialSummary.excelLeads + 1),
         );
         expect(updatedSummary.manualLeads, equals(initialSummary.manualLeads));
+      },
+    );
+
+    test('accepts structured import when CSV request has CSV drafts', () async {
+      final drafts = [
+        const LeadDraft(name: 'Valid CSV', source: LeadSource.csv),
+      ];
+      final request = LeadImportRequest.fromDrafts(
+        fileName: 'leads.csv',
+        fileType: LeadImportFileType.csv,
+        drafts: drafts,
+      );
+
+      final result = await repository.importLeads(request);
+      expect(result.importedRows, equals(1));
+    });
+
+    test(
+      'accepts structured import when Excel request has Excel drafts',
+      () async {
+        final drafts = [
+          const LeadDraft(name: 'Valid Excel', source: LeadSource.excel),
+        ];
+        final request = LeadImportRequest.fromDrafts(
+          fileName: 'leads.xlsx',
+          fileType: LeadImportFileType.excel,
+          drafts: drafts,
+        );
+
+        final result = await repository.importLeads(request);
+        expect(result.importedRows, equals(1));
+      },
+    );
+
+    test(
+      'rejects structured import when CSV request has Excel draft',
+      () async {
+        final drafts = [
+          const LeadDraft(name: 'Mismatch', source: LeadSource.excel),
+        ];
+        final request = LeadImportRequest.fromDrafts(
+          fileName: 'leads.csv',
+          fileType: LeadImportFileType.csv,
+          drafts: drafts,
+        );
+
+        expect(() => repository.importLeads(request), throwsArgumentError);
+      },
+    );
+
+    test(
+      'rejects structured import when Excel request has Manual draft',
+      () async {
+        final drafts = [
+          const LeadDraft(name: 'Manual Mismatch', source: LeadSource.manual),
+        ];
+        final request = LeadImportRequest.fromDrafts(
+          fileName: 'leads.xlsx',
+          fileType: LeadImportFileType.excel,
+          drafts: drafts,
+        );
+
+        expect(() => repository.importLeads(request), throwsArgumentError);
       },
     );
 

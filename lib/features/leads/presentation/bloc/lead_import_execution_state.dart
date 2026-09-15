@@ -46,11 +46,13 @@ class LeadImportExecutionFailure extends LeadImportExecutionState {
     required this.message,
     required this.preview,
     required this.decision,
+    required this.canRetry,
   });
 
   final String message;
   final LeadImportPreview preview;
   final LeadImportReviewDecision decision;
+  final bool canRetry;
 
   @override
   bool operator ==(Object other) =>
@@ -59,8 +61,9 @@ class LeadImportExecutionFailure extends LeadImportExecutionState {
           runtimeType == other.runtimeType &&
           message == other.message &&
           preview == other.preview &&
-          decision == other.decision;
+          decision == other.decision &&
+          canRetry == other.canRetry;
 
   @override
-  int get hashCode => Object.hash(message, preview, decision);
+  int get hashCode => Object.hash(message, preview, decision, canRetry);
 }

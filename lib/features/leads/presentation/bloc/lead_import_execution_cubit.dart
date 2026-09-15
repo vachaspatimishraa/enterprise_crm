@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../domain/entities/lead_import.dart';
 import '../../domain/repositories/lead_repository.dart';
 import '../models/lead_import_preview.dart';
 import '../models/lead_import_review.dart';
@@ -30,12 +31,50 @@ class LeadImportExecutionCubit extends Cubit<LeadImportExecutionState> {
 
     emit(const LeadImportExecuting());
 
+    final LeadImportRequest request;
     try {
-      final request = _requestBuilder.build(
-        preview: preview,
-        decision: decision,
+      request = _requestBuilder.build(preview: preview, decision: decision);
+    } on LeadImportExecutionPreparationException catch (e) {
+      emit(
+        LeadImportExecutionFailure(
+          message: e.message,
+          preview: preview,
+          decision: decision,
+          canRetry: false,
+        ),
       );
+      return;
+    } catch (_) {
+      emit(
+        LeadImportExecutionFailure(
+          message: 'The selected import rows are no longer valid.',
+          preview: preview,
+          decision: decision,
+          canRetry: false,
+        ),
+      );
+      return;
+    }
+
+    try {
       final result = await _repository.importLeads(request);
+
+      if (result.totalRows < 0 ||
+          result.importedRows < 0 ||
+          result.skippedRows < 0 ||
+          result.failedRows < 0 ||
+          result.duplicateRows < 0) {
+        emit(
+          LeadImportExecutionFailure(
+            message: 'Unable to import the selected Leads.',
+            preview: preview,
+            decision: decision,
+            canRetry: true,
+          ),
+        );
+        return;
+      }
+
       emit(
         LeadImportExecutionSuccess(
           result: result,
@@ -49,15 +88,17 @@ class LeadImportExecutionCubit extends Cubit<LeadImportExecutionState> {
           message: 'Unable to import the selected Leads.',
           preview: preview,
           decision: decision,
+          canRetry: true,
         ),
       );
     }
   }
 
-  /// Retries the last failed import execution with the same preview and decision.
+  /// Retries the last failed import execution with the same preview and decision,
+  /// provided the failure was retriable.
   Future<void> retry() async {
     final current = state;
-    if (current is LeadImportExecutionFailure) {
+    if (current is LeadImportExecutionFailure && current.canRetry) {
       await execute(preview: current.preview, decision: current.decision);
     }
   }

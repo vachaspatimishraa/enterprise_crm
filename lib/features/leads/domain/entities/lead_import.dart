@@ -9,12 +9,33 @@ class LeadImportRequest {
     required this.fileType,
   }) : drafts = const [];
 
-  LeadImportRequest.fromDrafts({
+  const LeadImportRequest._({
+    required this.fileReference,
     required this.fileName,
     required this.fileType,
+    required this.drafts,
+  });
+
+  factory LeadImportRequest.fromDrafts({
+    required String fileName,
+    required LeadImportFileType fileType,
     required List<LeadDraft> drafts,
-  }) : fileReference = null,
-       drafts = List.unmodifiable(drafts);
+  }) {
+    if (drafts.isEmpty) {
+      throw ArgumentError.value(
+        drafts,
+        'drafts',
+        'Structured import requires at least one Lead draft.',
+      );
+    }
+
+    return LeadImportRequest._(
+      fileReference: null,
+      fileName: fileName,
+      fileType: fileType,
+      drafts: List<LeadDraft>.unmodifiable(drafts),
+    );
+  }
 
   /// An opaque file reference. Null when using structured reviewed drafts.
   final Object? fileReference;

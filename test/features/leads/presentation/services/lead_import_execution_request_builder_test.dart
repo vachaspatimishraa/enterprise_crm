@@ -352,10 +352,34 @@ void main() {
     );
 
     test(
-      'throws LeadImportExecutionPreparationException when preview source is manual',
+      'throws LeadImportExecutionPreparationException when preview rows contain duplicate sourceRowIndex',
       () {
-        final malformedPreview = createSamplePreview(source: LeadSource.manual);
-        final decision = LeadImportReviewDecision({1});
+        final malformedPreview = LeadImportPreview(
+          fileName: 'dup_index.csv',
+          source: LeadSource.csv,
+          sheetIndex: 0,
+          sheetName: 'Sheet1',
+          headerRowIndex: 0,
+          mapping: const LeadImportColumnMapping(
+            sheetIndex: 0,
+            headerRowIndex: 0,
+            nameColumnIndex: 0,
+          ),
+          rows: const [
+            LeadImportPreviewRow(
+              sourceRowIndex: 5,
+              name: 'First 5',
+              status: LeadImportPreviewRowStatus.valid,
+            ),
+            LeadImportPreviewRow(
+              sourceRowIndex: 5,
+              name: 'Second 5',
+              status: LeadImportPreviewRowStatus.valid,
+            ),
+          ],
+        );
+
+        final decision = LeadImportReviewDecision({5});
 
         expect(
           () => builder.build(preview: malformedPreview, decision: decision),

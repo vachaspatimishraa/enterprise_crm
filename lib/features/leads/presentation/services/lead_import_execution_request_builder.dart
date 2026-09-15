@@ -55,9 +55,16 @@ class DefaultLeadImportExecutionRequestBuilder
         );
     }
 
-    final rowMap = <int, LeadImportPreviewRow>{
-      for (final row in preview.rows) row.sourceRowIndex: row,
-    };
+    final uniqueSourceIndices = <int>{};
+    final rowMap = <int, LeadImportPreviewRow>{};
+    for (final row in preview.rows) {
+      if (!uniqueSourceIndices.add(row.sourceRowIndex)) {
+        throw const LeadImportExecutionPreparationException(
+          'The selected import rows are no longer valid.',
+        );
+      }
+      rowMap[row.sourceRowIndex] = row;
+    }
 
     for (final index in decision.includedSourceRowIndices) {
       final row = rowMap[index];

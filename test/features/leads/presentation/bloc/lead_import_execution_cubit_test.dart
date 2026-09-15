@@ -15,6 +15,7 @@ class _FakeLeadRepository implements LeadRepository {
   LeadImportRequest? lastRequest;
   Completer<LeadImportResult>? completer;
   bool shouldThrow = false;
+  LeadImportResult? resultToReturn;
 
   @override
   Future<LeadImportResult> importLeads(LeadImportRequest request) async {
@@ -27,6 +28,10 @@ class _FakeLeadRepository implements LeadRepository {
 
     if (shouldThrow) {
       throw Exception('Database/Network error');
+    }
+
+    if (resultToReturn != null) {
+      return resultToReturn!;
     }
 
     return LeadImportResult(
@@ -105,7 +110,35 @@ void main() {
     );
 
     test(
-      'repository failure emits LeadImportExecutionFailure with safe user message',
+      'preparation failure emits non-retriable LeadImportExecutionFailure with safe message',
+      () async {
+        final states = <LeadImportExecutionState>[];
+        cubit.stream.listen(states.add);
+
+        // Empty decision triggers preparation exception
+        final emptyDecision = LeadImportReviewDecision({});
+
+        await cubit.execute(preview: samplePreview, decision: emptyDecision);
+        await pumpEventQueue();
+
+        expect(states.length, equals(2));
+        expect(states[0], isA<LeadImportExecuting>());
+        expect(states[1], isA<LeadImportExecutionFailure>());
+
+        final failure = states[1] as LeadImportExecutionFailure;
+        expect(
+          failure.message,
+          equals('The selected import rows are no longer valid.'),
+        );
+        expect(failure.canRetry, isFalse);
+        expect(failure.preview, equals(samplePreview));
+        expect(failure.decision, equals(emptyDecision));
+        expect(repository.importCalls, equals(0));
+      },
+    );
+
+    test(
+      'repository failure emits retriable LeadImportExecutionFailure with safe user message',
       () async {
         repository.shouldThrow = true;
 
@@ -121,10 +154,39 @@ void main() {
 
         final failure = states[1] as LeadImportExecutionFailure;
         expect(failure.message, equals('Unable to import the selected Leads.'));
+        expect(failure.canRetry, isTrue);
         // Does not leak exception type or stack trace
         expect(failure.message.contains('Exception'), isFalse);
         expect(failure.preview, equals(samplePreview));
         expect(failure.decision, equals(sampleDecision));
+        expect(repository.importCalls, equals(1));
+      },
+    );
+
+    test(
+      'rejects negative result counts from repository and emits retriable failure',
+      () async {
+        repository.resultToReturn = const LeadImportResult(
+          totalRows: 1,
+          importedRows: -1,
+          skippedRows: 0,
+          failedRows: 0,
+          duplicateRows: 0,
+        );
+
+        final states = <LeadImportExecutionState>[];
+        cubit.stream.listen(states.add);
+
+        await cubit.execute(preview: samplePreview, decision: sampleDecision);
+        await pumpEventQueue();
+
+        expect(states.length, equals(2));
+        expect(states[0], isA<LeadImportExecuting>());
+        expect(states[1], isA<LeadImportExecutionFailure>());
+
+        final failure = states[1] as LeadImportExecutionFailure;
+        expect(failure.message, equals('Unable to import the selected Leads.'));
+        expect(failure.canRetry, isTrue);
         expect(repository.importCalls, equals(1));
       },
     );
@@ -193,5 +255,20 @@ void main() {
       expect(cubit.state, isA<LeadImportExecutionInitial>());
       expect(repository.importCalls, equals(0));
     });
+
+    test(
+      'calling retry when canRetry is false does not call repository',
+      () async {
+        final emptyDecision = LeadImportReviewDecision({});
+        await cubit.execute(preview: samplePreview, decision: emptyDecision);
+        expect(cubit.state, isA<LeadImportExecutionFailure>());
+        final failure = cubit.state as LeadImportExecutionFailure;
+        expect(failure.canRetry, isFalse);
+        expect(repository.importCalls, equals(0));
+
+        await cubit.retry();
+        expect(repository.importCalls, equals(0));
+      },
+    );
   });
 }

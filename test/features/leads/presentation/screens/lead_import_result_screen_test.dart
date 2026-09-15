@@ -120,7 +120,7 @@ void main() {
         );
 
         // Importer Result metrics
-        expect(find.text('Selected for import'), findsOneWidget);
+        expect(find.text('Total submitted'), findsOneWidget);
         expect(find.text('Imported'), findsOneWidget);
         expect(find.text('Skipped by importer'), findsOneWidget);
         expect(find.text('Failed'), findsOneWidget);
@@ -128,6 +128,7 @@ void main() {
 
         // Review Summary metrics
         expect(find.text('Valid rows'), findsOneWidget);
+        expect(find.text('Selected for import'), findsOneWidget);
         expect(find.text('Excluded valid rows'), findsOneWidget);
         expect(find.text('Invalid rows'), findsOneWidget);
         expect(find.text('Blank rows'), findsOneWidget);
@@ -142,7 +143,7 @@ void main() {
         );
         expect(
           find.descendant(of: importerCard, matching: find.text('8')),
-          findsNWidgets(2), // total: 8, imported: 8
+          findsNWidgets(2), // total submitted: 8, imported: 8
         );
 
         // Review Summary card counts
@@ -153,6 +154,10 @@ void main() {
           find.descendant(of: reviewCard, matching: find.text('10')),
           findsOneWidget,
         ); // valid: 10
+        expect(
+          find.descendant(of: reviewCard, matching: find.text('8')),
+          findsOneWidget,
+        ); // selected for import: 8
         expect(
           find.descendant(of: reviewCard, matching: find.text('2')),
           findsNWidgets(2),

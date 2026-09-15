@@ -72,6 +72,17 @@ void main() {
         );
       },
     );
+
+    test('rejects empty drafts list with ArgumentError', () {
+      expect(
+        () => LeadImportRequest.fromDrafts(
+          fileName: 'leads.csv',
+          fileType: LeadImportFileType.csv,
+          drafts: [],
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
   });
 
   group('LeadImportResult', () {

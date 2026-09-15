@@ -404,6 +404,18 @@ class MockLeadDataSource {
 
   Future<LeadImportResult> importLeads(LeadImportRequest request) async {
     if (request.hasDraftPayload) {
+      final expectedSource = request.fileType == LeadImportFileType.csv
+          ? LeadSource.csv
+          : LeadSource.excel;
+
+      for (final draft in request.drafts) {
+        if (draft.source != expectedSource) {
+          throw ArgumentError(
+            'Draft source (${draft.source}) does not match request file type (${request.fileType}).',
+          );
+        }
+      }
+
       for (final draft in request.drafts) {
         await createLead(CreateLeadInput(draft: draft));
       }
