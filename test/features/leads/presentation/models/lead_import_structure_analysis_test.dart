@@ -96,5 +96,28 @@ void main() {
         expect(invalidAnalysis.isValid, isFalse);
       },
     );
+
+    test('supports null sheetName for invalid or empty workbooks', () {
+      const nullSheetAnalysis = LeadImportStructureAnalysis(
+        fileName: 'empty.xlsx',
+        source: LeadSource.excel,
+        sheetIndex: 0,
+        sheetName: null,
+        headerRowIndex: 0,
+        columns: [],
+        dataRowCount: 0,
+        issues: [
+          LeadImportStructureIssue(
+            severity: LeadImportStructureIssueSeverity.error,
+            message: 'No worksheets were found in this file.',
+          ),
+        ],
+      );
+
+      expect(nullSheetAnalysis.sheetName, isNull);
+      expect(nullSheetAnalysis.hasBlockingErrors, isTrue);
+      expect(nullSheetAnalysis.isValid, isFalse);
+      expect(nullSheetAnalysis.toString(), contains('sheet: none'));
+    });
   });
 }

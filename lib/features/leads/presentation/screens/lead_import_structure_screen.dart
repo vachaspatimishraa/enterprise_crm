@@ -202,11 +202,7 @@ class _LeadImportStructureView extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              analysis.sheetName.isNotEmpty
-                                  ? analysis.sheetName
-                                  : (analysis.source == LeadSource.csv
-                                        ? 'CSV'
-                                        : 'Sheet1'),
+                              analysis.sheetName ?? '—',
                               style: theme.textTheme.bodyMedium,
                             ),
                           ],

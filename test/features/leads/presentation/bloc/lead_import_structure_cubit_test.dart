@@ -43,11 +43,12 @@ void main() {
       expect(cubit.state.selectedSheetIndex, equals(0));
       expect(cubit.state.selectedHeaderRowIndex, equals(0));
       expect(cubit.state.analysis.sheetName, equals('Sheet1'));
-      expect(cubit.state.analysis.columns.length, equals(1));
+      expect(cubit.state.analysis.columns.length, equals(2));
       expect(
-        cubit.state.analysis.columns.first.displayHeader,
+        cubit.state.analysis.columns[0].displayHeader,
         equals('Title row'),
       );
+      expect(cubit.state.analysis.columns[1].displayHeader, equals('Column 2'));
       expect(cubit.state.analysis.dataRowCount, equals(3));
     });
 
@@ -81,11 +82,41 @@ void main() {
       },
     );
 
-    test('selectSheet ignores invalid sheet index', () {
-      cubit.selectSheet(99);
+    test(
+      'selectSheet ignores invalid sheet index (-1 and 999) without clamping',
+      () {
+        cubit.selectSheet(1);
+        expect(cubit.state.selectedSheetIndex, equals(1));
 
-      expect(cubit.state.selectedSheetIndex, equals(0));
-    });
+        // Attempt invalid indices - current valid selection remains unchanged
+        cubit.selectSheet(-1);
+        expect(cubit.state.selectedSheetIndex, equals(1));
+
+        cubit.selectSheet(999);
+        expect(cubit.state.selectedSheetIndex, equals(1));
+      },
+    );
+
+    test(
+      'initializes cleanly without crashing when workbook has no sheets',
+      () {
+        const emptyFile = LeadImportParsedFile(
+          fileName: 'zero_sheets.xlsx',
+          source: LeadSource.excel,
+          sheets: [],
+        );
+
+        final emptyCubit = LeadImportStructureCubit(parsedFile: emptyFile);
+
+        expect(emptyCubit.state.selectedSheetIndex, equals(0));
+        expect(emptyCubit.state.analysis.sheetName, isNull);
+        expect(emptyCubit.state.analysis.columns, isEmpty);
+        expect(emptyCubit.state.analysis.dataRowCount, equals(0));
+        expect(emptyCubit.state.hasBlockingErrors, isTrue);
+
+        emptyCubit.close();
+      },
+    );
 
     test(
       'correctly reflects blocking errors when invalid structure is selected',

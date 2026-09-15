@@ -80,7 +80,7 @@ class LeadImportStructureAnalysis {
   final String fileName;
   final LeadSource source;
   final int sheetIndex;
-  final String sheetName;
+  final String? sheetName;
   final int headerRowIndex;
   final List<LeadImportDiscoveredColumn> columns;
   final int dataRowCount;
@@ -145,5 +145,5 @@ class LeadImportStructureAnalysis {
 
   @override
   String toString() =>
-      'LeadImportStructureAnalysis(file: $fileName, sheet: $sheetName, headerRow: $headerRowIndex, columns: ${columns.length}, dataRows: $dataRowCount, valid: $isValid)';
+      'LeadImportStructureAnalysis(file: $fileName, sheet: ${sheetName ?? "none"}, headerRow: $headerRowIndex, columns: ${columns.length}, dataRows: $dataRowCount, valid: $isValid)';
 }

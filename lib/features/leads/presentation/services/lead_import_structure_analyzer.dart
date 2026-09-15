@@ -35,7 +35,7 @@ class DefaultLeadImportStructureAnalyzer
         fileName: parsedFile.fileName,
         source: parsedFile.source,
         sheetIndex: sheetIndex,
-        sheetName: '',
+        sheetName: null,
         headerRowIndex: headerRowIndex,
         columns: const [],
         dataRowCount: 0,
@@ -55,7 +55,7 @@ class DefaultLeadImportStructureAnalyzer
         fileName: parsedFile.fileName,
         source: parsedFile.source,
         sheetIndex: sheetIndex,
-        sheetName: '',
+        sheetName: null,
         headerRowIndex: headerRowIndex,
         columns: const [],
         dataRowCount: 0,
@@ -127,10 +127,14 @@ class DefaultLeadImportStructureAnalyzer
       );
     }
 
-    // 6. Discover columns by index
+    // 6. Discover columns by index using maximum row width across the selected sheet
+    final effectiveColumnCount = sheet.rows.fold<int>(
+      0,
+      (max, row) => row.length > max ? row.length : max,
+    );
     final columns = <LeadImportDiscoveredColumn>[];
-    for (var i = 0; i < headerRow.length; i++) {
-      final rawHeader = headerRow[i];
+    for (var i = 0; i < effectiveColumnCount; i++) {
+      final rawHeader = i < headerRow.length ? headerRow[i] : '';
       final trimmed = rawHeader.trim();
       final displayHeader = trimmed.isNotEmpty ? trimmed : 'Column ${i + 1}';
 

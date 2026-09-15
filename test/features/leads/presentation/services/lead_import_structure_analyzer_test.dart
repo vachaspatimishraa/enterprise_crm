@@ -94,6 +94,9 @@ void main() {
         headerRowIndex: 0,
       );
 
+      expect(analysis.sheetName, isNull);
+      expect(analysis.columns, isEmpty);
+      expect(analysis.dataRowCount, equals(0));
       expect(analysis.hasBlockingErrors, isTrue);
       expect(
         analysis.issues.any(
@@ -126,6 +129,9 @@ void main() {
         headerRowIndex: 0,
       );
 
+      expect(analysis.sheetName, isNull);
+      expect(analysis.columns, isEmpty);
+      expect(analysis.dataRowCount, equals(0));
       expect(analysis.hasBlockingErrors, isTrue);
       expect(
         analysis.issues.any(
@@ -135,6 +141,16 @@ void main() {
         ),
         isTrue,
       );
+
+      final analysisNegative = analyzer.analyze(
+        parsedFile: parsedFile,
+        sheetIndex: -1,
+        headerRowIndex: 0,
+      );
+      expect(analysisNegative.sheetName, isNull);
+      expect(analysisNegative.columns, isEmpty);
+      expect(analysisNegative.dataRowCount, equals(0));
+      expect(analysisNegative.hasBlockingErrors, isTrue);
     });
 
     test('returns blocking error when selected sheet has no rows', () {
@@ -408,6 +424,159 @@ void main() {
         expect(analysisB.columns[0].displayHeader, equals('ColB1'));
         expect(analysisB.dataRowCount, equals(2));
         expect(analysisB.isValid, isTrue);
+      },
+    );
+
+    test(
+      'discovers columns from maximum row width when header is shorter than data rows',
+      () {
+        final parsedFile = LeadImportParsedFile(
+          fileName: 'short_header.csv',
+          source: LeadSource.csv,
+          sheets: [
+            LeadImportParsedSheet(
+              name: 'CSV',
+              rows: [
+                ['Name', 'Phone'],
+                ['Alice', '123', 'alice@example.com'],
+              ],
+            ),
+          ],
+        );
+
+        final analysis = analyzer.analyze(
+          parsedFile: parsedFile,
+          sheetIndex: 0,
+          headerRowIndex: 0,
+        );
+
+        expect(analysis.columns.length, equals(3));
+        expect(analysis.columns[0].displayHeader, equals('Name'));
+        expect(analysis.columns[0].index, equals(0));
+        expect(analysis.columns[1].displayHeader, equals('Phone'));
+        expect(analysis.columns[1].index, equals(1));
+        expect(analysis.columns[2].displayHeader, equals('Column 3'));
+        expect(analysis.columns[2].index, equals(2));
+        expect(analysis.columns[2].rawHeader, equals(''));
+        expect(analysis.columns[2].isBlankHeader, isTrue);
+        expect(analysis.dataRowCount, equals(1));
+        expect(analysis.hasBlockingErrors, isFalse);
+        expect(analysis.isValid, isTrue);
+      },
+    );
+
+    test(
+      'discovers columns from maximum row width across variable-width rows',
+      () {
+        final parsedFile = LeadImportParsedFile(
+          fileName: 'variable_widths.csv',
+          source: LeadSource.csv,
+          sheets: [
+            LeadImportParsedSheet(
+              name: 'CSV',
+              rows: [
+                ['A'],
+                ['1', '2'],
+                ['3', '4', '5'],
+              ],
+            ),
+          ],
+        );
+
+        final analysis = analyzer.analyze(
+          parsedFile: parsedFile,
+          sheetIndex: 0,
+          headerRowIndex: 0,
+        );
+
+        expect(analysis.columns.length, equals(3));
+        expect(analysis.columns[0].displayHeader, equals('A'));
+        expect(analysis.columns[0].index, equals(0));
+        expect(analysis.columns[1].displayHeader, equals('Column 2'));
+        expect(analysis.columns[1].index, equals(1));
+        expect(analysis.columns[2].displayHeader, equals('Column 3'));
+        expect(analysis.columns[2].index, equals(2));
+        expect(analysis.dataRowCount, equals(2));
+        expect(analysis.isValid, isTrue);
+      },
+    );
+
+    test(
+      'blank normalized headers are skipped by duplicate-name detection',
+      () {
+        final parsedFile = LeadImportParsedFile(
+          fileName: 'blank_and_empty.csv',
+          source: LeadSource.csv,
+          sheets: [
+            LeadImportParsedSheet(
+              name: 'CSV',
+              rows: [
+                ['Name', '', '   '],
+                ['Alice', 'Val1', 'Val2'],
+              ],
+            ),
+          ],
+        );
+
+        final analysis = analyzer.analyze(
+          parsedFile: parsedFile,
+          sheetIndex: 0,
+          headerRowIndex: 0,
+        );
+
+        final duplicateIssues = analysis.issues
+            .where((i) => i.message.contains('Duplicate column name'))
+            .toList();
+        final blankIssues = analysis.issues
+            .where((i) => i.message.contains('Blank header at column'))
+            .toList();
+
+        expect(
+          duplicateIssues,
+          isEmpty,
+          reason: 'Blank headers must not trigger duplicate warnings',
+        );
+        expect(blankIssues.length, equals(2));
+        expect(blankIssues[0].message, equals('Blank header at column 2.'));
+        expect(blankIssues[1].message, equals('Blank header at column 3.'));
+        expect(analysis.isValid, isTrue);
+      },
+    );
+
+    test(
+      'completely empty header row returns single blocking error and zero blank header warnings',
+      () {
+        final parsedFile = LeadImportParsedFile(
+          fileName: 'all_blank.csv',
+          source: LeadSource.csv,
+          sheets: [
+            LeadImportParsedSheet(
+              name: 'CSV',
+              rows: [
+                ['', '', ''],
+                ['Alice', '123', 'a@example.com'],
+              ],
+            ),
+          ],
+        );
+
+        final analysis = analyzer.analyze(
+          parsedFile: parsedFile,
+          sheetIndex: 0,
+          headerRowIndex: 0,
+        );
+
+        expect(analysis.hasBlockingErrors, isTrue);
+        expect(analysis.columns, isEmpty);
+        expect(analysis.issues.length, equals(1));
+        expect(
+          analysis.issues.single.message,
+          equals('The selected header row is empty.'),
+        );
+        expect(
+          analysis.issues.single.severity,
+          equals(LeadImportStructureIssueSeverity.error),
+        );
       },
     );
   });
