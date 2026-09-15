@@ -11,9 +11,12 @@ import 'package:enterprise_crm/features/leads/domain/entities/lead_source.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_status.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_summary.dart';
 import 'package:enterprise_crm/features/leads/domain/repositories/lead_repository.dart';
+import 'package:enterprise_crm/features/leads/presentation/bloc/lead_filter_cubit.dart';
 import 'package:enterprise_crm/features/leads/presentation/bloc/lead_list_cubit.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_list_screen.dart';
+import 'package:enterprise_crm/features/leads/presentation/widgets/lead_active_filters.dart';
 import 'package:enterprise_crm/features/leads/presentation/widgets/lead_data_table.dart';
+import 'package:enterprise_crm/features/leads/presentation/widgets/lead_filter_sheet.dart';
 import 'package:enterprise_crm/features/leads/presentation/widgets/lead_list_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -63,8 +66,10 @@ class _FakeLeadRepository implements LeadRepository {
   @override
   Future<void> reassignLead(LeadReassignmentRequest request) async {}
 
+  List<LeadAssignee> assignableUsers = const [];
+
   @override
-  Future<List<LeadAssignee>> getAssignableUsers() async => const [];
+  Future<List<LeadAssignee>> getAssignableUsers() async => assignableUsers;
 
   @override
   Future<LeadImportResult> importLeads(LeadImportRequest request) async =>
@@ -97,8 +102,10 @@ void main() {
   setUp(() {
     repository = _FakeLeadRepository();
   });
+
   Widget buildTestWidget({
     LeadListCubit? cubit,
+    LeadFilterCubit? filterCubit,
     void Function(Lead lead)? onViewLead,
     VoidCallback? onAddLead,
     VoidCallback? onImportLeads,
@@ -112,7 +119,8 @@ void main() {
           height: size.height,
           child: LeadListScreen(
             cubit: cubit,
-            repository: cubit == null ? repository : null,
+            repository: repository,
+            filterCubit: filterCubit,
             onViewLead: onViewLead,
             onAddLead: onAddLead,
             onImportLeads: onImportLeads,
@@ -821,5 +829,374 @@ void main() {
         expect(tester.takeException(), isNull);
       },
     );
+  });
+
+  group('LeadListScreen - Filters', () {
+    testWidgets(
+      'renders filter button with "Filters" when no filters are active',
+      (tester) async {
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('lead_filter_button')), findsOneWidget);
+        expect(find.text('Filters'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'renders filter button with "Filters (2)" when 2 filters are active',
+      (tester) async {
+        final cubit = LeadListCubit(repository);
+        // Query with 2 filters, plus search and status which should NOT be counted
+        const query = LeadQuery(
+          source: LeadSource.manual,
+          isAssigned: true,
+          searchText: 'Alice',
+          status: LeadStatus('Sample New'),
+        );
+        await cubit.loadLeads(query: query);
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Filters (2)'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'tapping filter button on mobile (< 600px) opens bottom sheet',
+      (tester) async {
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(
+          buildTestWidget(cubit: cubit, size: const Size(360, 640)),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_filter_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(BottomSheet), findsOneWidget);
+        expect(find.byType(LeadFilterSheet), findsOneWidget);
+      },
+    );
+
+    testWidgets('tapping filter button on desktop (>= 600px) opens dialog', (
+      tester,
+    ) async {
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads();
+
+      await tester.pumpWidget(
+        buildTestWidget(cubit: cubit, size: const Size(1200, 800)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('lead_filter_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Dialog), findsOneWidget);
+      expect(find.byType(LeadFilterSheet), findsOneWidget);
+    });
+
+    testWidgets(
+      'applying filters through modal updates LeadListCubit.currentQuery with page 1',
+      (tester) async {
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads(query: const LeadQuery(page: 3));
+
+        await tester.pumpWidget(
+          buildTestWidget(cubit: cubit, size: const Size(1200, 800)),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_filter_button')));
+        await tester.pumpAndSettle();
+
+        // Tap Manual source
+        await tester.tap(find.byKey(const Key('filter_source_manual')));
+        await tester.pumpAndSettle();
+
+        // Tap Assigned
+        await tester.tap(find.byKey(const Key('filter_assignment_assigned')));
+        await tester.pumpAndSettle();
+
+        final applyButton = find.byKey(const Key('filter_apply_button'));
+        await tester.ensureVisible(applyButton);
+        await tester.tap(applyButton);
+        await tester.pumpAndSettle();
+
+        expect(cubit.currentQuery.source, equals(LeadSource.manual));
+        expect(cubit.currentQuery.isAssigned, isTrue);
+        expect(cubit.currentQuery.page, equals(1));
+      },
+    );
+
+    testWidgets(
+      'preserves active search when applying filters and vice-versa',
+      (tester) async {
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads(
+          query: const LeadQuery(searchText: 'Alice', page: 2),
+        );
+
+        await tester.pumpWidget(
+          buildTestWidget(cubit: cubit, size: const Size(800, 600)),
+        );
+        await tester.pumpAndSettle();
+
+        // Open filters and apply Source: Excel
+        await tester.tap(find.byKey(const Key('lead_filter_button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('filter_source_excel')));
+        await tester.pumpAndSettle();
+
+        final applyButton = find.byKey(const Key('filter_apply_button'));
+        await tester.ensureVisible(applyButton);
+        await tester.tap(applyButton);
+        await tester.pumpAndSettle();
+
+        // Verify both search and filter are present, page reset to 1
+        expect(cubit.currentQuery.searchText, equals('Alice'));
+        expect(cubit.currentQuery.source, equals(LeadSource.excel));
+        expect(cubit.currentQuery.page, equals(1));
+
+        // Now change search text and press Enter
+        await tester.enterText(find.byType(TextField), 'Bob');
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pumpAndSettle();
+
+        // Verify filter is preserved
+        expect(cubit.currentQuery.searchText, equals('Bob'));
+        expect(cubit.currentQuery.source, equals(LeadSource.excel));
+        expect(cubit.currentQuery.page, equals(1));
+      },
+    );
+
+    testWidgets(
+      'active filter chips render on screen and can be removed individually',
+      (tester) async {
+        repository.assignableUsers = [
+          const LeadAssignee(id: 'u1', displayName: 'Mock Agent One'),
+        ];
+        final cubit = LeadListCubit(repository);
+        const query = LeadQuery(
+          source: LeadSource.manual,
+          isAssigned: true,
+          assignedUserId: 'u1',
+        );
+        await cubit.loadLeads(query: query);
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadActiveFilters), findsOneWidget);
+        expect(find.text('Manual'), findsOneWidget);
+        expect(find.text('Assigned'), findsOneWidget);
+        expect(find.text('Mock Agent One'), findsOneWidget);
+
+        // Remove Source chip
+        final sourceDelete = find.descendant(
+          of: find.byKey(const Key('active_filter_source_chip')),
+          matching: find.byIcon(Icons.close),
+        );
+        await tester.tap(sourceDelete);
+        await tester.pumpAndSettle();
+
+        expect(cubit.currentQuery.source, isNull);
+        expect(cubit.currentQuery.isAssigned, isTrue);
+        expect(cubit.currentQuery.assignedUserId, equals('u1'));
+        expect(cubit.currentQuery.page, equals(1));
+
+        // Remove Assignee chip
+        final assigneeDelete = find.descendant(
+          of: find.byKey(const Key('active_filter_assignee_chip')),
+          matching: find.byIcon(Icons.close),
+        );
+        await tester.tap(assigneeDelete);
+        await tester.pumpAndSettle();
+
+        expect(cubit.currentQuery.assignedUserId, isNull);
+        expect(cubit.currentQuery.isAssigned, isTrue);
+        expect(cubit.currentQuery.page, equals(1));
+      },
+    );
+
+    testWidgets(
+      'Clear all on active chips clears all filters but preserves search',
+      (tester) async {
+        final cubit = LeadListCubit(repository);
+        const query = LeadQuery(
+          searchText: 'Alice',
+          source: LeadSource.manual,
+          isAssigned: true,
+          assignedUserId: 'u1',
+          status: LeadStatus('Sample New'),
+          page: 4,
+        );
+        await cubit.loadLeads(query: query);
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('active_filters_clear_all')));
+        await tester.pumpAndSettle();
+
+        expect(cubit.currentQuery.source, isNull);
+        expect(cubit.currentQuery.isAssigned, isNull);
+        expect(cubit.currentQuery.assignedUserId, isNull);
+        expect(cubit.currentQuery.page, equals(1));
+        expect(cubit.currentQuery.searchText, equals('Alice'));
+        expect(
+          cubit.currentQuery.status,
+          equals(const LeadStatus('Sample New')),
+        );
+      },
+    );
+
+    testWidgets(
+      'displays filtered empty state when only filters return zero leads and clear filters restores list',
+      (tester) async {
+        repository.leads = [];
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads(query: const LeadQuery(source: LeadSource.excel));
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        expect(find.text('No leads match these filters'), findsOneWidget);
+        expect(
+          find.text('Try changing or clearing your filters.'),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('empty_clear_filters_button')),
+          findsOneWidget,
+        );
+
+        // Restore leads in repo and tap Clear Filters
+        repository.leads = [
+          const Lead(id: '1', name: 'Restored Lead', source: LeadSource.manual),
+        ];
+        await tester.tap(find.byKey(const Key('empty_clear_filters_button')));
+        await tester.pumpAndSettle();
+
+        expect(cubit.currentQuery.source, isNull);
+        expect(cubit.currentQuery.page, equals(1));
+        expect(find.text('Restored Lead'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'displays search + filter empty state when both search and filters are active',
+      (tester) async {
+        repository.leads = [];
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads(
+          query: const LeadQuery(
+            searchText: 'NonExistent',
+            source: LeadSource.csv,
+          ),
+        );
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('No leads match your search and filters'),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('empty_clear_filters_button')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('empty_clear_search_button')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'failure state preserves applied filters, and retry re-executes query',
+      (tester) async {
+        repository.shouldThrow = true;
+        final cubit = LeadListCubit(repository);
+        const query = LeadQuery(
+          searchText: 'Alice',
+          source: LeadSource.manual,
+          isAssigned: true,
+        );
+        await cubit.loadLeads(query: query);
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Failed to load leads'), findsOneWidget);
+        expect(find.text('Filters (2)'), findsOneWidget);
+
+        repository.shouldThrow = false;
+        repository.leads = [
+          const Lead(id: '1', name: 'Alice', source: LeadSource.manual),
+        ];
+
+        await tester.tap(find.text('Retry'));
+        await tester.pumpAndSettle();
+
+        expect(cubit.currentQuery, equals(query));
+        expect(
+          find.descendant(
+            of: find.byType(LeadDataTable),
+            matching: find.text('Alice'),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    for (final size in [
+      const Size(320, 568),
+      const Size(360, 640),
+      const Size(768, 1024),
+      const Size(1200, 800),
+    ]) {
+      testWidgets(
+        'renders cleanly without overflow at ${size.width}x${size.height}',
+        (tester) async {
+          tester.view.physicalSize = size;
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+
+          repository.leads = [
+            const Lead(
+              id: '1',
+              name: 'Responsive Lead',
+              source: LeadSource.manual,
+            ),
+          ];
+          final cubit = LeadListCubit(repository);
+          await cubit.loadLeads(
+            query: const LeadQuery(
+              searchText: 'Responsive',
+              source: LeadSource.manual,
+              isAssigned: true,
+            ),
+          );
+
+          await tester.pumpWidget(buildTestWidget(cubit: cubit, size: size));
+          await tester.pumpAndSettle();
+
+          expect(tester.takeException(), isNull);
+          expect(find.text('Filters (2)'), findsOneWidget);
+          expect(find.byType(LeadActiveFilters), findsOneWidget);
+        },
+      );
+    }
   });
 }

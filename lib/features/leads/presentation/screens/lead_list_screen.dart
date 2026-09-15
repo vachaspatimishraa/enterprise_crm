@@ -1,16 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/lead.dart';
+import '../../domain/entities/lead_assignee.dart';
 import '../../domain/entities/lead_query.dart';
 import '../../domain/repositories/lead_repository.dart';
+import '../bloc/lead_filter_cubit.dart';
+import '../bloc/lead_filter_state.dart';
 import '../bloc/lead_list_cubit.dart';
 import '../bloc/lead_list_state.dart';
+import '../widgets/lead_active_filters.dart';
 import '../widgets/lead_data_table.dart';
+import '../widgets/lead_filter_sheet.dart';
 import '../widgets/lead_list_card.dart';
 
 class LeadListScreen extends StatelessWidget {
   final LeadListCubit? cubit;
   final LeadRepository? repository;
+  final LeadFilterCubit? filterCubit;
   final void Function(Lead lead)? onViewLead;
   final VoidCallback? onAddLead;
   final VoidCallback? onImportLeads;
@@ -19,6 +25,7 @@ class LeadListScreen extends StatelessWidget {
     super.key,
     this.cubit,
     this.repository,
+    this.filterCubit,
     this.onViewLead,
     this.onAddLead,
     this.onImportLeads,
@@ -26,9 +33,41 @@ class LeadListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (cubit != null) {
+    final listCubit = cubit;
+    final repo = repository;
+    final filterC = filterCubit;
+
+    if (listCubit != null) {
+      if (filterC != null) {
+        return MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: listCubit),
+            BlocProvider.value(value: filterC),
+          ],
+          child: _LeadListView(
+            onViewLead: onViewLead,
+            onAddLead: onAddLead,
+            onImportLeads: onImportLeads,
+          ),
+        );
+      }
+      if (repo != null) {
+        return MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: listCubit),
+            BlocProvider(
+              create: (_) => LeadFilterCubit(repo)..loadAssignableUsers(),
+            ),
+          ],
+          child: _LeadListView(
+            onViewLead: onViewLead,
+            onAddLead: onAddLead,
+            onImportLeads: onImportLeads,
+          ),
+        );
+      }
       return BlocProvider.value(
-        value: cubit!,
+        value: listCubit,
         child: _LeadListView(
           onViewLead: onViewLead,
           onAddLead: onAddLead,
@@ -37,9 +76,15 @@ class LeadListScreen extends StatelessWidget {
       );
     }
 
-    if (repository != null) {
-      return BlocProvider(
-        create: (_) => LeadListCubit(repository!)..loadLeads(),
+    if (repo != null) {
+      return MultiBlocProvider(
+        providers: [
+          BlocProvider(create: (_) => LeadListCubit(repo)..loadLeads()),
+          BlocProvider(
+            create: (_) =>
+                filterC ?? (LeadFilterCubit(repo)..loadAssignableUsers()),
+          ),
+        ],
         child: _LeadListView(
           onViewLead: onViewLead,
           onAddLead: onAddLead,
@@ -116,6 +161,68 @@ class _LeadListViewState extends State<_LeadListView> {
     cubit.applyQuery(newQuery);
   }
 
+  void _clearFilters() {
+    final cubit = context.read<LeadListCubit>();
+    final newQuery = cubit.currentQuery.copyWith(
+      clearSource: true,
+      clearIsAssigned: true,
+      clearAssignedUser: true,
+      page: 1,
+    );
+    cubit.applyQuery(newQuery);
+  }
+
+  void _removeSourceFilter() {
+    final cubit = context.read<LeadListCubit>();
+    final newQuery = cubit.currentQuery.copyWith(clearSource: true, page: 1);
+    cubit.applyQuery(newQuery);
+  }
+
+  void _removeAssignmentFilter() {
+    final cubit = context.read<LeadListCubit>();
+    final newQuery = cubit.currentQuery.copyWith(
+      clearIsAssigned: true,
+      page: 1,
+    );
+    cubit.applyQuery(newQuery);
+  }
+
+  void _removeAssigneeFilter() {
+    final cubit = context.read<LeadListCubit>();
+    final newQuery = cubit.currentQuery.copyWith(
+      clearAssignedUser: true,
+      page: 1,
+    );
+    cubit.applyQuery(newQuery);
+  }
+
+  void _openFilterModal() {
+    LeadFilterCubit? filterCubit;
+    try {
+      filterCubit = context.read<LeadFilterCubit>();
+    } catch (_) {}
+
+    if (filterCubit == null) return;
+
+    final cubit = context.read<LeadListCubit>();
+    showLeadFilterModal(
+      context: context,
+      currentQuery: cubit.currentQuery,
+      filterCubit: filterCubit,
+      onApply: (newQuery) {
+        cubit.applyQuery(newQuery);
+      },
+    );
+  }
+
+  int _getActiveFilterCount(LeadQuery query) {
+    var count = 0;
+    if (query.source != null) count++;
+    if (query.isAssigned != null) count++;
+    if (query.assignedUserId != null) count++;
+    return count;
+  }
+
   void _showComingSoon(BuildContext context, String actionName) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -185,7 +292,12 @@ class _LeadListViewState extends State<_LeadListView> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildSearchBar(context, theme, colorScheme, currentQuery),
+              _buildSearchAndFilterBar(
+                context,
+                theme,
+                colorScheme,
+                currentQuery,
+              ),
               Expanded(
                 child: switch (state) {
                   LeadListInitial() => const Center(
@@ -226,7 +338,7 @@ class _LeadListViewState extends State<_LeadListView> {
     );
   }
 
-  Widget _buildSearchBar(
+  Widget _buildSearchAndFilterBar(
     BuildContext context,
     ThemeData theme,
     ColorScheme colorScheme,
@@ -234,64 +346,103 @@ class _LeadListViewState extends State<_LeadListView> {
   ) {
     final activeSearch = query.searchText?.trim();
     final hasActiveSearch = activeSearch != null && activeSearch.isNotEmpty;
+    final filterCount = _getActiveFilterCount(query);
+
+    List<LeadAssignee> assignees = const [];
+    try {
+      final filterState = context.watch<LeadFilterCubit>().state;
+      if (filterState is LeadFilterReady) {
+        assignees = filterState.assignees;
+      }
+    } catch (_) {}
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 600;
+
+        final filterButton = OutlinedButton.icon(
+          key: const Key('lead_filter_button'),
+          onPressed: _openFilterModal,
+          icon: Badge(
+            isLabelVisible: filterCount > 0,
+            label: Text('$filterCount'),
+            child: const Icon(Icons.tune, size: 18),
+          ),
+          label: Text(filterCount > 0 ? 'Filters ($filterCount)' : 'Filters'),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            visualDensity: VisualDensity.compact,
+          ),
+        );
+
+        final searchField = TextField(
+          controller: _searchController,
+          textInputAction: TextInputAction.search,
+          onSubmitted: (_) => _performSearch(),
+          decoration: InputDecoration(
+            hintText: 'Search leads by name, phone, or email',
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
+            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            prefixIcon: IconButton(
+              icon: const Icon(Icons.search),
+              tooltip: 'Search',
+              onPressed: _performSearch,
+            ),
+            suffixIcon: (_searchController.text.isNotEmpty || hasActiveSearch)
+                ? IconButton(
+                    icon: const Icon(Icons.close),
+                    tooltip: 'Clear Search',
+                    onPressed: _clearSearch,
+                  )
+                : null,
+          ),
+        );
 
         return Padding(
           padding: EdgeInsets.fromLTRB(16, 12, 16, hasActiveSearch ? 4 : 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: isWide ? 480 : double.infinity,
-                  ),
-                  child: TextField(
-                    controller: _searchController,
-                    textInputAction: TextInputAction.search,
-                    onSubmitted: (_) => _performSearch(),
-                    decoration: InputDecoration(
-                      hintText: 'Search leads by name, phone, or email',
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
+              if (isWide)
+                Row(
+                  children: [
+                    Flexible(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 480),
+                        child: searchField,
                       ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      prefixIcon: IconButton(
-                        icon: const Icon(Icons.search),
-                        tooltip: 'Search',
-                        onPressed: _performSearch,
-                      ),
-                      suffixIcon:
-                          (_searchController.text.isNotEmpty || hasActiveSearch)
-                          ? IconButton(
-                              icon: const Icon(Icons.close),
-                              tooltip: 'Clear Search',
-                              onPressed: _clearSearch,
-                            )
-                          : null,
                     ),
-                  ),
+                    const SizedBox(width: 12),
+                    filterButton,
+                  ],
+                )
+              else
+                Row(
+                  children: [
+                    Expanded(child: searchField),
+                    const SizedBox(width: 8),
+                    filterButton,
+                  ],
                 ),
-              ),
               if (hasActiveSearch)
                 Padding(
                   padding: const EdgeInsets.only(top: 6, left: 4),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        'Results for "$activeSearch"',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w500,
+                      Flexible(
+                        child: Text(
+                          'Results for "$activeSearch"',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -308,6 +459,14 @@ class _LeadListViewState extends State<_LeadListView> {
                     ],
                   ),
                 ),
+              LeadActiveFilters(
+                query: query,
+                assignees: assignees,
+                onRemoveSource: _removeSourceFilter,
+                onRemoveAssignment: _removeAssignmentFilter,
+                onRemoveAssignee: _removeAssigneeFilter,
+                onClearAll: _clearFilters,
+              ),
             ],
           ),
         );
@@ -322,6 +481,105 @@ class _LeadListViewState extends State<_LeadListView> {
   ) {
     final isSearchActive =
         query.searchText != null && query.searchText!.trim().isNotEmpty;
+    final hasFiltersActive =
+        query.source != null ||
+        query.isAssigned != null ||
+        query.assignedUserId != null;
+
+    if (isSearchActive && hasFiltersActive) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.search_off_outlined,
+                size: 64,
+                color: theme.colorScheme.onSurfaceVariant.withAlpha(120),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No leads match your search and filters',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Try changing your search terms or clearing filters.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                alignment: WrapAlignment.center,
+                children: [
+                  OutlinedButton.icon(
+                    key: const Key('empty_clear_filters_button'),
+                    onPressed: _clearFilters,
+                    icon: const Icon(Icons.filter_alt_off),
+                    label: const Text('Clear Filters'),
+                  ),
+                  OutlinedButton.icon(
+                    key: const Key('empty_clear_search_button'),
+                    onPressed: _clearSearch,
+                    icon: const Icon(Icons.clear),
+                    label: const Text('Clear Search'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (hasFiltersActive) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.filter_alt_off_outlined,
+                size: 64,
+                color: theme.colorScheme.onSurfaceVariant.withAlpha(120),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No leads match these filters',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Try changing or clearing your filters.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              OutlinedButton.icon(
+                key: const Key('empty_clear_filters_button'),
+                onPressed: _clearFilters,
+                icon: const Icon(Icons.filter_alt_off),
+                label: const Text('Clear Filters'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     if (isSearchActive) {
       return Center(
@@ -352,6 +610,7 @@ class _LeadListViewState extends State<_LeadListView> {
               ),
               const SizedBox(height: 24),
               OutlinedButton.icon(
+                key: const Key('empty_clear_search_button'),
                 onPressed: _clearSearch,
                 icon: const Icon(Icons.clear),
                 label: const Text('Clear Search'),
