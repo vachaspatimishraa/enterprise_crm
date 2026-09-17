@@ -1,30 +1,184 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
+import 'package:enterprise_crm/app/crm_app.dart';
+import 'package:enterprise_crm/features/leads/data/datasources/mock_lead_data_source.dart';
+import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
+import 'package:enterprise_crm/features/leads/domain/entities/lead.dart';
+import 'package:enterprise_crm/features/leads/domain/entities/lead_source.dart';
+import 'package:enterprise_crm/features/leads/presentation/screens/add_lead_screen.dart';
+import 'package:enterprise_crm/features/leads/presentation/screens/lead_dashboard_screen.dart';
+import 'package:enterprise_crm/features/leads/presentation/screens/lead_list_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:enterprise_crm/main.dart';
-
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('CrmApp Shell Integration', () {
+    testWidgets(
+      'app starts in CRM: renders Enterprise CRM Lead Dashboard with Overview & Summary and Quick Actions',
+      (tester) async {
+        final repository = MockLeadRepository();
+        await tester.pumpWidget(CrmApp(leadRepository: repository));
+        await tester.pumpAndSettle();
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+        // Verifies the starter counter screen is gone and CRM Dashboard is rendered
+        expect(
+          find.text('You have pushed the button this many times:'),
+          findsNothing,
+        );
+        expect(find.byType(FloatingActionButton), findsNothing);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+        // Verifies actual CRM UI
+        expect(find.byType(LeadDashboardScreen), findsOneWidget);
+        expect(find.text('Lead Management'), findsOneWidget);
+        expect(find.text('Overview & Summary'), findsOneWidget);
+        expect(find.text('Total Leads'), findsOneWidget);
+        expect(find.text('Quick Actions'), findsOneWidget);
+        expect(find.text('View Leads'), findsOneWidget);
+        expect(find.text('Add Lead'), findsOneWidget);
+        expect(find.text('Import Leads'), findsOneWidget);
+      },
+    );
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    testWidgets(
+      'navigation: tapping View Leads opens LeadListScreen and Back returns to Dashboard',
+      (tester) async {
+        final repository = MockLeadRepository();
+        await tester.pumpWidget(CrmApp(leadRepository: repository));
+        await tester.pumpAndSettle();
+
+        // Tap 'View Leads' Quick Action on Dashboard
+        await tester.tap(find.text('View Leads'));
+        await tester.pumpAndSettle();
+
+        // Verified: LeadListScreen is open
+        expect(find.byType(LeadListScreen), findsOneWidget);
+        expect(find.text('Leads'), findsOneWidget);
+
+        // Tap Back in AppBar
+        final backButton = find.byTooltip('Back');
+        if (backButton.evaluate().isNotEmpty) {
+          await tester.tap(backButton);
+        } else {
+          final navigatorState = tester.state<NavigatorState>(
+            find.byType(Navigator),
+          );
+          navigatorState.pop();
+        }
+        await tester.pumpAndSettle();
+
+        // Verified: back on Dashboard
+        expect(find.byType(LeadDashboardScreen), findsOneWidget);
+        expect(find.text('Lead Management'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'import reachability: Import Leads action is accessible from both Dashboard and LeadListScreen',
+      (tester) async {
+        final repository = MockLeadRepository();
+        await tester.pumpWidget(CrmApp(leadRepository: repository));
+        await tester.pumpAndSettle();
+
+        // 1. Dashboard: Quick Action 'Import Leads' exists
+        expect(find.text('Import Leads'), findsOneWidget);
+
+        // 2. Navigate to LeadListScreen
+        await tester.tap(find.text('View Leads'));
+        await tester.pumpAndSettle();
+
+        // LeadListScreen has AppBar import button
+        expect(
+          find.byKey(const Key('lead_list_import_button')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'shared repository: single LeadRepository instance is used across Dashboard, List, and Add Lead',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final dataSource = MockLeadDataSource(
+          initialLeads: [
+            const Lead(
+              id: 'init-1',
+              name: 'Alpha Lead',
+              source: LeadSource.manual,
+            ),
+          ],
+        );
+        final sharedRepository = MockLeadRepository(dataSource: dataSource);
+
+        await tester.pumpWidget(CrmApp(leadRepository: sharedRepository));
+        await tester.pumpAndSettle();
+
+        // Initial Dashboard: total leads = 1
+        expect(find.text('1'), findsWidgets);
+
+        // Tap 'Add Lead' from Dashboard
+        await tester.tap(find.text('Add Lead'));
+        await tester.pumpAndSettle();
+
+        // AddLeadScreen is open
+        expect(find.byType(AddLeadScreen), findsOneWidget);
+
+        // Fill in name
+        await tester.enterText(
+          find.widgetWithText(TextFormField, 'Lead Name'),
+          'Beta Lead',
+        );
+        await tester.pumpAndSettle();
+
+        // Submit form
+        await tester.tap(find.text('Create Lead'));
+        await tester.pumpAndSettle();
+
+        // Back on Dashboard: total leads refreshed to 2
+        expect(find.byType(LeadDashboardScreen), findsOneWidget);
+        expect(find.text('2'), findsWidgets);
+
+        // Scroll to and tap 'View Leads' Quick Action
+        await tester.scrollUntilVisible(
+          find.text('View Leads'),
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('View Leads'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadListScreen), findsOneWidget);
+        expect(find.text('Alpha Lead'), findsOneWidget);
+        expect(find.text('Beta Lead'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'responsive layout: CrmApp renders cleanly across mobile, tablet, and desktop viewports',
+      (tester) async {
+        const viewports = [Size(360, 640), Size(768, 1024), Size(1200, 800)];
+
+        for (final size in viewports) {
+          tester.view.physicalSize = size;
+          tester.view.devicePixelRatio = 1.0;
+          addTearDown(() {
+            tester.view.resetPhysicalSize();
+            tester.view.resetDevicePixelRatio();
+          });
+
+          final repository = MockLeadRepository();
+          await tester.pumpWidget(CrmApp(leadRepository: repository));
+          await tester.pumpAndSettle();
+
+          expect(tester.takeException(), isNull);
+          expect(find.byType(LeadDashboardScreen), findsOneWidget);
+          expect(find.text('Lead Management'), findsOneWidget);
+        }
+      },
+    );
   });
 }
