@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:enterprise_crm/features/leads/data/datasources/mock_lead_data_source.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
@@ -63,6 +64,22 @@ class FailingImportLeadRepository extends MockLeadRepository {
     if (failOnce && !hasFailed) {
       hasFailed = true;
       throw Exception('Server unreachable');
+    }
+    return super.importLeads(request);
+  }
+}
+
+class _DelayedImportLeadRepository extends MockLeadRepository {
+  _DelayedImportLeadRepository({super.dataSource});
+
+  Completer<LeadImportResult>? completer;
+  int importCallCount = 0;
+
+  @override
+  Future<LeadImportResult> importLeads(LeadImportRequest request) {
+    importCallCount++;
+    if (completer != null) {
+      return completer!.future;
     }
     return super.importLeads(request);
   }
@@ -743,6 +760,107 @@ void main() {
         // Verified: workflow popped with true and returned to caller!
         expect(find.text('Launch Workflow'), findsOneWidget);
         expect(successPopped, isTrue);
+      },
+    );
+
+    testWidgets(
+      'MANDATORY REGRESSION: System Back during active repository execution is blocked, repository called once, and advances to Result',
+      (tester) async {
+        final completer = Completer<LeadImportResult>();
+        final delayedRepo = _DelayedImportLeadRepository(
+          dataSource: dataSource,
+        );
+        delayedRepo.completer = completer;
+
+        await tester.pumpWidget(buildTestApp(customRepo: delayedRepo));
+        await tester.pumpAndSettle();
+
+        // 1. Advance through workflow steps to Review Screen
+        await tester.tap(
+          find.byKey(const Key('lead_import_choose_file_button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('lead_import_continue_button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('lead_import_structure_continue_button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('lead_import_field_name_dropdown')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Column 1 — Name').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('lead_import_mapping_continue_button')),
+        );
+        await tester.pumpAndSettle();
+
+        await scrollAndTap(
+          tester,
+          find.byKey(const Key('lead_import_preview_continue_button')),
+        );
+
+        // 2. Scroll to Continue on Review Screen and Tap to begin Execution
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('lead_import_review_continue_button')),
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('lead_import_review_continue_button')),
+        );
+        // Pump one frame so execution starts and enters LeadImportExecuting state
+        await tester.pump();
+
+        // Execution is actively running
+        expect(
+          find.byKey(const Key('lead_import_execution_progress_indicator')),
+          findsOneWidget,
+        );
+        expect(find.text('Importing Leads...'), findsOneWidget);
+        expect(delayedRepo.importCallCount, equals(1));
+
+        // 3. Attempt system Back while repository import is pending
+        final dynamic widgetsAppState = tester.state(find.byType(WidgetsApp));
+        await widgetsAppState.didPopRoute();
+        await tester.pump();
+
+        // Verify: workflow did NOT pop, executing indicator remains visible
+        expect(find.byType(LeadImportWorkflowScreen), findsOneWidget);
+        expect(find.text('Importing Leads...'), findsOneWidget);
+        expect(delayedRepo.importCallCount, equals(1));
+
+        // Attempt system Back a second time
+        await widgetsAppState.didPopRoute();
+        await tester.pump();
+
+        // Verify: still did not pop, repository was not called again
+        expect(find.byType(LeadImportWorkflowScreen), findsOneWidget);
+        expect(find.text('Importing Leads...'), findsOneWidget);
+        expect(delayedRepo.importCallCount, equals(1));
+
+        // 4. Complete the pending repository import
+        completer.complete(
+          const LeadImportResult(
+            totalRows: 2,
+            importedRows: 2,
+            skippedRows: 0,
+            failedRows: 0,
+            duplicateRows: 0,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 5. Verify: execution completes successfully and Result screen is displayed
+        expect(find.text('Import Complete'), findsWidgets);
+        expect(find.text('Review Summary'), findsOneWidget);
+        expect(delayedRepo.importCallCount, equals(1));
       },
     );
 

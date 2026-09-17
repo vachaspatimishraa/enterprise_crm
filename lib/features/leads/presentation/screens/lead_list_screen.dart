@@ -14,6 +14,7 @@ import '../widgets/lead_data_table.dart';
 import '../widgets/lead_filter_sheet.dart';
 import '../widgets/lead_list_card.dart';
 import '../widgets/lead_pagination_controls.dart';
+import '../services/lead_import_file_picker.dart';
 import 'lead_import_workflow_screen.dart';
 
 class LeadListScreen extends StatelessWidget {
@@ -23,6 +24,7 @@ class LeadListScreen extends StatelessWidget {
   final void Function(Lead lead)? onViewLead;
   final VoidCallback? onAddLead;
   final VoidCallback? onImportLeads;
+  final LeadImportFilePicker? filePicker;
 
   const LeadListScreen({
     super.key,
@@ -32,6 +34,7 @@ class LeadListScreen extends StatelessWidget {
     this.onViewLead,
     this.onAddLead,
     this.onImportLeads,
+    this.filePicker,
   });
 
   @override
@@ -52,6 +55,7 @@ class LeadListScreen extends StatelessWidget {
             onAddLead: onAddLead,
             onImportLeads: onImportLeads,
             repository: repo,
+            filePicker: filePicker,
           ),
         );
       }
@@ -68,6 +72,7 @@ class LeadListScreen extends StatelessWidget {
             onAddLead: onAddLead,
             onImportLeads: onImportLeads,
             repository: repo,
+            filePicker: filePicker,
           ),
         );
       }
@@ -78,6 +83,7 @@ class LeadListScreen extends StatelessWidget {
           onAddLead: onAddLead,
           onImportLeads: onImportLeads,
           repository: repo,
+          filePicker: filePicker,
         ),
       );
     }
@@ -96,6 +102,7 @@ class LeadListScreen extends StatelessWidget {
           onAddLead: onAddLead,
           onImportLeads: onImportLeads,
           repository: repo,
+          filePicker: filePicker,
         ),
       );
     }
@@ -105,6 +112,7 @@ class LeadListScreen extends StatelessWidget {
       onAddLead: onAddLead,
       onImportLeads: onImportLeads,
       repository: repo,
+      filePicker: filePicker,
     );
   }
 }
@@ -114,12 +122,14 @@ class _LeadListView extends StatefulWidget {
   final VoidCallback? onAddLead;
   final VoidCallback? onImportLeads;
   final LeadRepository? repository;
+  final LeadImportFilePicker? filePicker;
 
   const _LeadListView({
     this.onViewLead,
     this.onAddLead,
     this.onImportLeads,
     this.repository,
+    this.filePicker,
   });
 
   @override
@@ -274,7 +284,10 @@ class _LeadListViewState extends State<_LeadListView> {
     final listCubit = context.read<LeadListCubit>();
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => LeadImportWorkflowScreen(repository: repo!),
+        builder: (_) => LeadImportWorkflowScreen(
+          repository: repo!,
+          filePicker: widget.filePicker,
+        ),
       ),
     );
     if (result == true && mounted) {

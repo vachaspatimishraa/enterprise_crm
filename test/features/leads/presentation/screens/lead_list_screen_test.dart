@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:enterprise_crm/features/leads/data/datasources/mock_lead_data_source.dart';
+import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_assignee.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_assignment_request.dart';
@@ -14,14 +18,25 @@ import 'package:enterprise_crm/features/leads/domain/entities/lead_summary.dart'
 import 'package:enterprise_crm/features/leads/domain/repositories/lead_repository.dart';
 import 'package:enterprise_crm/features/leads/presentation/bloc/lead_filter_cubit.dart';
 import 'package:enterprise_crm/features/leads/presentation/bloc/lead_list_cubit.dart';
+import 'package:enterprise_crm/features/leads/presentation/models/lead_import_selected_file.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_import_workflow_screen.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_list_screen.dart';
+import 'package:enterprise_crm/features/leads/presentation/services/lead_import_file_picker.dart';
 import 'package:enterprise_crm/features/leads/presentation/widgets/lead_active_filters.dart';
 import 'package:enterprise_crm/features/leads/presentation/widgets/lead_data_table.dart';
 import 'package:enterprise_crm/features/leads/presentation/widgets/lead_filter_sheet.dart';
 import 'package:enterprise_crm/features/leads/presentation/widgets/lead_list_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+class _FakeLeadImportFilePicker implements LeadImportFilePicker {
+  _FakeLeadImportFilePicker({this.fileToPick});
+
+  LeadImportSelectedFile? fileToPick;
+
+  @override
+  Future<LeadImportSelectedFile?> pickFile() async => fileToPick;
+}
 
 class _FakeLeadRepository implements LeadRepository {
   List<Lead> leads = [];
@@ -1985,5 +2000,135 @@ void main() {
       expect(find.byType(LeadListScreen), findsOneWidget);
       expect(find.text('Imported Lead'), findsOneWidget);
     });
+
+    testWidgets(
+      'MANDATORY REGRESSION: shared repository instance is mutated by import and refreshed by LeadListScreen',
+      (tester) async {
+        final dataSource = MockLeadDataSource(
+          initialLeads: [
+            const Lead(
+              id: 'initial-1',
+              name: 'Initial Lead',
+              source: LeadSource.manual,
+            ),
+          ],
+        );
+        final sharedRepository = MockLeadRepository(dataSource: dataSource);
+
+        final csvFile = LeadImportSelectedFile(
+          name: 'shared_import.csv',
+          extension: 'csv',
+          sizeBytes: 150,
+          source: LeadSource.csv,
+          content: InMemoryLeadImportFileContent(
+            Uint8List.fromList(
+              utf8.encode('Name,Email\nAlice,alice@example.com\n'),
+            ),
+          ),
+        );
+        final filePicker = _FakeLeadImportFilePicker(fileToPick: csvFile);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: LeadListScreen(
+              repository: sharedRepository,
+              filePicker: filePicker,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Initial visible leads: 'Initial Lead' is visible, Alice is not
+        expect(find.text('Initial Lead'), findsOneWidget);
+        expect(find.text('Alice'), findsNothing);
+
+        // 2. Open import workflow from AppBar
+        await tester.tap(find.byKey(const Key('lead_list_import_button')));
+        await tester.pumpAndSettle();
+        expect(find.byType(LeadImportWorkflowScreen), findsOneWidget);
+
+        // 3. Complete workflow steps through to Result screen
+        // Select file -> Continue
+        await tester.tap(
+          find.byKey(const Key('lead_import_choose_file_button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('lead_import_continue_button')));
+        await tester.pumpAndSettle();
+
+        // Structure -> Continue
+        expect(find.text('Prepare Import'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const Key('lead_import_structure_continue_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Mapping -> Map Name and Email -> Continue
+        expect(find.text('Map Lead Fields'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const Key('lead_import_field_name_dropdown')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Column 1 — Name').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('lead_import_field_email_dropdown')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Column 2 — Email').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('lead_import_mapping_continue_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Preview -> Continue
+        expect(find.text('Import Preview'), findsOneWidget);
+        expect(find.textContaining('Alice'), findsOneWidget);
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('lead_import_preview_continue_button')),
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('lead_import_preview_continue_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Review -> Continue to Execute
+        expect(find.text('Final Import Review'), findsOneWidget);
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('lead_import_review_continue_button')),
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('lead_import_review_continue_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Result screen -> Tap Done
+        expect(find.text('Import Complete'), findsWidgets);
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('lead_import_result_done_button')),
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('lead_import_result_done_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // 4. Returned to LeadListScreen: caller refreshes and visible Leads now include Alice!
+        expect(find.byType(LeadListScreen), findsOneWidget);
+        expect(find.text('Initial Lead'), findsOneWidget);
+        expect(find.text('Alice'), findsOneWidget);
+      },
+    );
   });
 }
