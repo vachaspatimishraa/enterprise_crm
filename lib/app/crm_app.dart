@@ -76,22 +76,32 @@ class _CrmHomeScreenState extends State<CrmHomeScreen> {
   }
 
   void _openLeadList(BuildContext context) async {
+    final listCubit = LeadListCubit(widget.repository);
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (listContext) => LeadListScreen(
+          cubit: listCubit,
           repository: widget.repository,
           filePicker: widget.filePicker,
-          onViewLead: (lead) => _openLeadDetails(listContext, lead.id),
-          onAddLead: () => _openAddLead(listContext),
+          onViewLead: (lead) => _openLeadDetails(
+            listContext,
+            lead.id,
+            onAssigned: () => listCubit.refreshLeads(),
+          ),
+          onAddLead: () => _openAddLead(
+            listContext,
+            onCreated: () => listCubit.refreshLeads(),
+          ),
         ),
       ),
     );
+    listCubit.close();
     if (mounted) {
       _dashboardCubit.loadDashboard();
     }
   }
 
-  void _openAddLead(BuildContext context) async {
+  void _openAddLead(BuildContext context, {VoidCallback? onCreated}) async {
     bool leadCreated = false;
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -108,33 +118,30 @@ class _CrmHomeScreenState extends State<CrmHomeScreen> {
     );
 
     if (leadCreated) {
-      if (context.mounted) {
-        try {
-          context.read<LeadListCubit>().refreshLeads();
-        } catch (_) {}
-      }
+      onCreated?.call();
       if (mounted) {
         _dashboardCubit.loadDashboard();
       }
     }
   }
 
-  void _openLeadDetails(BuildContext context, String leadId) async {
+  void _openLeadDetails(
+    BuildContext context,
+    String leadId, {
+    VoidCallback? onAssigned,
+  }) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (detailsContext) => LeadDetailsScreen(
           leadId: leadId,
           repository: widget.repository,
           onEditLead: (lead) => _openEditLead(detailsContext, lead),
+          onLeadAssigned: onAssigned,
         ),
       ),
     );
 
-    if (context.mounted) {
-      try {
-        context.read<LeadListCubit>().refreshLeads();
-      } catch (_) {}
-    }
+    onAssigned?.call();
     if (mounted) {
       _dashboardCubit.loadDashboard();
     }

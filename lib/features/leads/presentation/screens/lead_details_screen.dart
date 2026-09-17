@@ -2,15 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/lead.dart';
 import '../../domain/repositories/lead_repository.dart';
+import '../bloc/lead_assignment_cubit.dart';
+import '../bloc/lead_assignment_state.dart';
 import '../bloc/lead_details_cubit.dart';
 import '../bloc/lead_details_state.dart';
 import '../utils/lead_display_formatters.dart';
+import '../widgets/lead_assignee_selector.dart';
 
 class LeadDetailsScreen extends StatelessWidget {
   final String leadId;
   final LeadDetailsCubit? cubit;
   final LeadRepository? repository;
   final void Function(Lead lead)? onEditLead;
+  final VoidCallback? onLeadAssigned;
 
   const LeadDetailsScreen({
     super.key,
@@ -18,33 +22,60 @@ class LeadDetailsScreen extends StatelessWidget {
     this.cubit,
     this.repository,
     this.onEditLead,
+    this.onLeadAssigned,
   });
 
   @override
   Widget build(BuildContext context) {
     if (cubit != null) {
       return BlocProvider.value(
+        key: ValueKey(leadId),
         value: cubit!,
-        child: _LeadDetailsView(leadId: leadId, onEditLead: onEditLead),
+        child: _LeadDetailsView(
+          leadId: leadId,
+          repository: repository,
+          onEditLead: onEditLead,
+          onLeadAssigned: onLeadAssigned,
+        ),
       );
     }
 
     if (repository != null) {
       return BlocProvider(
+        key: ValueKey(leadId),
         create: (_) => LeadDetailsCubit(repository!)..loadLead(leadId),
-        child: _LeadDetailsView(leadId: leadId, onEditLead: onEditLead),
+        child: _LeadDetailsView(
+          leadId: leadId,
+          repository: repository,
+          onEditLead: onEditLead,
+          onLeadAssigned: onLeadAssigned,
+        ),
       );
     }
 
-    return _LeadDetailsView(leadId: leadId, onEditLead: onEditLead);
+    return _LeadDetailsView(
+      key: ValueKey(leadId),
+      leadId: leadId,
+      repository: repository,
+      onEditLead: onEditLead,
+      onLeadAssigned: onLeadAssigned,
+    );
   }
 }
 
 class _LeadDetailsView extends StatefulWidget {
   final String leadId;
+  final LeadRepository? repository;
   final void Function(Lead lead)? onEditLead;
+  final VoidCallback? onLeadAssigned;
 
-  const _LeadDetailsView({required this.leadId, this.onEditLead});
+  const _LeadDetailsView({
+    super.key,
+    required this.leadId,
+    this.repository,
+    this.onEditLead,
+    this.onLeadAssigned,
+  });
 
   @override
   State<_LeadDetailsView> createState() => _LeadDetailsViewState();
@@ -60,6 +91,14 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
     }
   }
 
+  @override
+  void didUpdateWidget(covariant _LeadDetailsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.leadId != widget.leadId) {
+      context.read<LeadDetailsCubit>().loadLead(widget.leadId);
+    }
+  }
+
   void _showComingSoon(BuildContext context, String actionName) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -67,6 +106,36 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  Future<void> _openAssignLeadDialog(Lead lead) async {
+    LeadRepository? repo = widget.repository;
+    if (repo == null) {
+      try {
+        repo = context.read<LeadRepository>();
+      } catch (_) {}
+    }
+
+    if (repo == null) {
+      _showComingSoon(context, 'Assign Lead');
+      return;
+    }
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return BlocProvider(
+          create: (_) => LeadAssignmentCubit(repo!)..loadAssignableUsers(),
+          child: _AssignLeadDialog(lead: lead),
+        );
+      },
+    );
+
+    if (result == true && mounted) {
+      widget.onLeadAssigned?.call();
+      context.read<LeadDetailsCubit>().loadLead(widget.leadId);
+    }
   }
 
   @override
@@ -363,6 +432,18 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
               label: 'Assignment State',
               value: lead.isAssigned ? 'Assigned' : 'Unassigned',
             ),
+            if (!lead.isAssigned) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  key: const Key('assign_lead_button'),
+                  onPressed: () => _openAssignLeadDialog(lead),
+                  icon: const Icon(Icons.person_add_outlined, size: 18),
+                  label: const Text('Assign Lead'),
+                ),
+              ),
+            ],
           ],
         );
 
@@ -607,6 +688,125 @@ class _DetailBadge extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _AssignLeadDialog extends StatelessWidget {
+  final Lead lead;
+
+  const _AssignLeadDialog({required this.lead});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return BlocConsumer<LeadAssignmentCubit, LeadAssignmentState>(
+      listenWhen: (prev, curr) =>
+          prev.submissionStatus != curr.submissionStatus,
+      listener: (context, state) {
+        if (state.isSubmissionSuccess) {
+          Navigator.of(context).pop(true);
+        }
+      },
+      builder: (context, state) {
+        final cubit = context.read<LeadAssignmentCubit>();
+        final isSubmitting = state.isSubmitting;
+
+        return PopScope(
+          canPop: !isSubmitting,
+          child: AlertDialog(
+            key: const Key('assign_lead_dialog'),
+            title: Row(
+              children: [
+                Icon(
+                  Icons.person_add_outlined,
+                  size: 22,
+                  color: colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text('Assign Lead', overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 400),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Select an agent to assign this lead to:',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  LeadAssigneeSelector(cubit: cubit, enabled: !isSubmitting),
+                  if (state.hasSubmissionError) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      key: const Key('assign_dialog_error'),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 18,
+                            color: colorScheme.error,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              state.submissionErrorMessage ??
+                                  'Unable to assign the Lead.',
+                              style: TextStyle(
+                                color: colorScheme.error,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                key: const Key('assign_dialog_cancel_button'),
+                onPressed: isSubmitting
+                    ? null
+                    : () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                key: const Key('assign_dialog_submit_button'),
+                onPressed: (state.canSubmit && !isSubmitting)
+                    ? () => cubit.assignLead(lead: lead)
+                    : null,
+                child: isSubmitting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Assign'),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

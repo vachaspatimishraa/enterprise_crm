@@ -18,19 +18,66 @@ import 'package:flutter_test/flutter_test.dart';
 
 class _FakeLeadRepository implements LeadRepository {
   List<Lead> leads = [];
+  List<LeadAssignee> assignees = const [];
   bool shouldThrow = false;
+  bool shouldThrowOnGetAssignees = false;
+  bool shouldThrowOnAssignLead = false;
+  bool shouldThrowOnGetLeadByIdAfterAssignment = false;
   Completer<Lead?>? completer;
+  Completer<void>? assignLeadCompleter;
   int getLeadByIdCallCount = 0;
+  int assignLeadCallCount = 0;
+  String? lastAssignedLeadId;
+  String? lastAssignedAssigneeId;
 
   @override
   Future<Lead?> getLeadById(String leadId) async {
     getLeadByIdCallCount++;
     if (completer != null) return completer!.future;
-    if (shouldThrow) throw Exception('Database connection failed');
+    if (shouldThrow ||
+        (shouldThrowOnGetLeadByIdAfterAssignment && assignLeadCallCount > 0)) {
+      throw Exception('Database connection failed');
+    }
     return leads.cast<Lead?>().firstWhere(
       (l) => l?.id == leadId,
       orElse: () => null,
     );
+  }
+
+  @override
+  Future<List<LeadAssignee>> getAssignableUsers() async {
+    if (shouldThrowOnGetAssignees) {
+      throw Exception('Failed to fetch assignees');
+    }
+    return assignees;
+  }
+
+  @override
+  Future<void> assignLead({
+    required String leadId,
+    required String assigneeId,
+  }) async {
+    assignLeadCallCount++;
+    lastAssignedLeadId = leadId;
+    lastAssignedAssigneeId = assigneeId;
+
+    if (assignLeadCompleter != null) {
+      await assignLeadCompleter!.future;
+    }
+
+    if (shouldThrowOnAssignLead) {
+      throw Exception('Failed to assign lead');
+    }
+
+    final index = leads.indexWhere((l) => l.id == leadId);
+    if (index != -1) {
+      final assignee = assignees.where((a) => a.id == assigneeId).firstOrNull;
+      leads[index] = leads[index].copyWith(
+        assignedUserId: assigneeId,
+        assignedUserName: assignee?.displayName ?? 'Agent $assigneeId',
+        updatedAt: DateTime.now(),
+      );
+    }
   }
 
   @override
@@ -52,19 +99,10 @@ class _FakeLeadRepository implements LeadRepository {
       const Lead(id: 'dummy');
 
   @override
-  Future<void> assignLead({
-    required String leadId,
-    required String assigneeId,
-  }) async {}
-
-  @override
   Future<void> assignLeads(LeadAssignmentRequest request) async {}
 
   @override
   Future<void> reassignLead(LeadReassignmentRequest request) async {}
-
-  @override
-  Future<List<LeadAssignee>> getAssignableUsers() async => const [];
 
   @override
   Future<LeadImportResult> importLeads(LeadImportRequest request) async =>
@@ -101,10 +139,14 @@ void main() {
   Widget buildTestWidget({
     required String leadId,
     LeadDetailsCubit? cubit,
+    LeadRepository? repo,
     void Function(Lead lead)? onEditLead,
+    VoidCallback? onLeadAssigned,
+    ThemeData? theme,
     Size size = const Size(800, 600),
   }) {
     return MaterialApp(
+      theme: theme ?? ThemeData.light(useMaterial3: true),
       home: MediaQuery(
         data: MediaQueryData(size: size),
         child: SizedBox(
@@ -113,8 +155,9 @@ void main() {
           child: LeadDetailsScreen(
             leadId: leadId,
             cubit: cubit,
-            repository: cubit == null ? repository : null,
+            repository: repo ?? repository,
             onEditLead: onEditLead,
+            onLeadAssigned: onLeadAssigned,
           ),
         ),
       ),
@@ -416,6 +459,308 @@ void main() {
       expect(find.text('Desktop Display Lead'), findsWidgets);
       expect(find.text('Basic Information'), findsOneWidget);
       expect(find.text('Assignment'), findsOneWidget);
+    });
+  });
+
+  group('LeadDetailsScreen - L5.2 Single Lead Assignment', () {
+    const agent1 = LeadAssignee(id: 'agent-1', displayName: 'Mock Agent One');
+    const agent2 = LeadAssignee(id: 'agent-2', displayName: 'Mock Agent Two');
+
+    const unassignedLead = Lead(
+      id: 'lead-unassigned',
+      name: 'Unassigned Person',
+      source: LeadSource.manual,
+    );
+
+    const assignedLead = Lead(
+      id: 'lead-assigned',
+      name: 'Assigned Person',
+      source: LeadSource.manual,
+      assignedUserId: 'agent-1',
+      assignedUserName: 'Mock Agent One',
+    );
+
+    testWidgets(
+      'unassigned Lead shows Assign Lead button, assigned Lead does NOT',
+      (tester) async {
+        repository.leads = [unassignedLead, assignedLead];
+
+        // 1. Unassigned Lead
+        await tester.pumpWidget(buildTestWidget(leadId: 'lead-unassigned'));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('assign_lead_button')), findsOneWidget);
+        expect(find.text('Assign Lead'), findsOneWidget);
+
+        // 2. Assigned Lead
+        await tester.pumpWidget(buildTestWidget(leadId: 'lead-assigned'));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('assign_lead_button')), findsNothing);
+        expect(find.text('Mock Agent One'), findsWidgets);
+        expect(find.text('Assigned'), findsWidgets);
+      },
+    );
+
+    testWidgets('tap Assign Lead opens dialog and loads assignable users', (
+      tester,
+    ) async {
+      repository.leads = [unassignedLead];
+      repository.assignees = [agent1, agent2];
+
+      await tester.pumpWidget(buildTestWidget(leadId: 'lead-unassigned'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('assign_lead_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('assign_lead_dialog')), findsOneWidget);
+      expect(find.text('Assign Lead'), findsWidgets);
+      expect(find.byKey(const Key('lead_assignee_dropdown')), findsOneWidget);
+      expect(
+        find.byKey(const Key('assign_dialog_cancel_button')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('assign_dialog_submit_button')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'happy path: selects assignee and assigns lead, updates details screen',
+      (tester) async {
+        repository.leads = [unassignedLead];
+        repository.assignees = [agent1, agent2];
+
+        bool callbackCalled = false;
+        await tester.pumpWidget(
+          buildTestWidget(
+            leadId: 'lead-unassigned',
+            onLeadAssigned: () => callbackCalled = true,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Open dialog
+        await tester.tap(find.byKey(const Key('assign_lead_button')));
+        await tester.pumpAndSettle();
+
+        // Submit should initially be disabled
+        final submitButton = tester.widget<FilledButton>(
+          find.byKey(const Key('assign_dialog_submit_button')),
+        );
+        expect(submitButton.onPressed, isNull);
+
+        // Select Mock Agent One
+        await tester.tap(find.byKey(const Key('lead_assignee_dropdown')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Mock Agent One').last);
+        await tester.pumpAndSettle();
+
+        // Tap Assign
+        await tester.tap(find.byKey(const Key('assign_dialog_submit_button')));
+        await tester.pumpAndSettle();
+
+        // Dialog is closed
+        expect(find.byKey(const Key('assign_lead_dialog')), findsNothing);
+        expect(repository.assignLeadCallCount, equals(1));
+        expect(repository.lastAssignedLeadId, equals('lead-unassigned'));
+        expect(repository.lastAssignedAssigneeId, equals('agent-1'));
+        expect(callbackCalled, isTrue);
+
+        // Details screen shows updated assignee and state
+        expect(find.text('Mock Agent One'), findsWidgets);
+        expect(find.text('Assigned'), findsWidgets);
+        expect(find.byKey(const Key('assign_lead_button')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'repository failure displays safe error and preserves selected assignee for retry',
+      (tester) async {
+        repository.leads = [unassignedLead];
+        repository.assignees = [agent1];
+        repository.shouldThrowOnAssignLead = true;
+
+        await tester.pumpWidget(buildTestWidget(leadId: 'lead-unassigned'));
+        await tester.pumpAndSettle();
+
+        // Open dialog
+        await tester.tap(find.byKey(const Key('assign_lead_button')));
+        await tester.pumpAndSettle();
+
+        // Select agent1
+        await tester.tap(find.byKey(const Key('lead_assignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent One').last);
+        await tester.pumpAndSettle();
+
+        // Tap Assign -> fails
+        await tester.tap(find.byKey(const Key('assign_dialog_submit_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('assign_lead_dialog')), findsOneWidget);
+        expect(find.byKey(const Key('assign_dialog_error')), findsOneWidget);
+        expect(find.text('Unable to assign the Lead.'), findsOneWidget);
+        expect(repository.assignLeadCallCount, equals(1));
+
+        // Retry: recover repository
+        repository.shouldThrowOnAssignLead = false;
+        await tester.tap(find.byKey(const Key('assign_dialog_submit_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('assign_lead_dialog')), findsNothing);
+        expect(repository.assignLeadCallCount, equals(2));
+        expect(find.text('Mock Agent One'), findsWidgets);
+      },
+    );
+
+    testWidgets('cancel before submission does not mutate repository', (
+      tester,
+    ) async {
+      repository.leads = [unassignedLead];
+      repository.assignees = [agent1];
+
+      await tester.pumpWidget(buildTestWidget(leadId: 'lead-unassigned'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('assign_lead_button')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('assign_dialog_cancel_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('assign_lead_dialog')), findsNothing);
+      expect(repository.assignLeadCallCount, equals(0));
+      expect(find.byKey(const Key('assign_lead_button')), findsOneWidget);
+    });
+
+    testWidgets('system back during pending submission is blocked', (
+      tester,
+    ) async {
+      repository.leads = [unassignedLead];
+      repository.assignees = [agent1];
+      final completer = Completer<void>();
+      repository.assignLeadCompleter = completer;
+
+      await tester.pumpWidget(buildTestWidget(leadId: 'lead-unassigned'));
+      await tester.pumpAndSettle();
+
+      // Open dialog
+      await tester.tap(find.byKey(const Key('assign_lead_button')));
+      await tester.pumpAndSettle();
+
+      // Select agent1
+      await tester.tap(find.byKey(const Key('lead_assignee_dropdown')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Mock Agent One').last);
+      await tester.pumpAndSettle();
+
+      // Tap Assign (will hang on completer)
+      await tester.tap(find.byKey(const Key('assign_dialog_submit_button')));
+      await tester.pump();
+
+      // Attempt Back/pop while pending
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+
+      // Dialog is still open
+      expect(find.byKey(const Key('assign_lead_dialog')), findsOneWidget);
+      expect(repository.assignLeadCallCount, equals(1));
+
+      // Complete future
+      completer.complete();
+      await tester.pumpAndSettle();
+
+      // Dialog now closes
+      expect(find.byKey(const Key('assign_lead_dialog')), findsNothing);
+      expect(find.text('Mock Agent One'), findsWidgets);
+    });
+
+    testWidgets(
+      'refresh failure after successful assignment is distinguished and does not re-run assignment',
+      (tester) async {
+        repository.leads = [unassignedLead];
+        repository.assignees = [agent1];
+        repository.shouldThrowOnGetLeadByIdAfterAssignment = true;
+
+        await tester.pumpWidget(buildTestWidget(leadId: 'lead-unassigned'));
+        await tester.pumpAndSettle();
+
+        // Open dialog
+        await tester.tap(find.byKey(const Key('assign_lead_button')));
+        await tester.pumpAndSettle();
+
+        // Select agent1
+        await tester.tap(find.byKey(const Key('lead_assignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent One').last);
+        await tester.pumpAndSettle();
+
+        // Tap Assign
+        await tester.tap(find.byKey(const Key('assign_dialog_submit_button')));
+        await tester.pumpAndSettle();
+
+        // Assignment mutation succeeded exactly once
+        expect(repository.assignLeadCallCount, equals(1));
+        expect(find.byKey(const Key('assign_lead_dialog')), findsNothing);
+
+        // UI reports refresh failure, NOT "Unable to assign the Lead."
+        expect(find.text('Unable to assign the Lead.'), findsNothing);
+        expect(find.text('Failed to load lead'), findsOneWidget);
+      },
+    );
+
+    testWidgets('renders cleanly in dark theme and across viewports', (
+      tester,
+    ) async {
+      const viewports = [
+        Size(320, 568),
+        Size(360, 640),
+        Size(768, 1024),
+        Size(1200, 800),
+      ];
+
+      for (final size in viewports) {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        repository.leads = [unassignedLead];
+        repository.assignees = [agent1];
+
+        await tester.pumpWidget(
+          buildTestWidget(
+            leadId: 'lead-unassigned',
+            theme: ThemeData.dark(useMaterial3: true),
+            size: size,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(const Key('assign_lead_button')), findsOneWidget);
+
+        // Open dialog and check for overflows
+        await tester.ensureVisible(find.byKey(const Key('assign_lead_button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('assign_lead_button')));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(const Key('assign_lead_dialog')), findsOneWidget);
+
+        // Close dialog
+        await tester.ensureVisible(
+          find.byKey(const Key('assign_dialog_cancel_button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('assign_dialog_cancel_button')));
+        await tester.pumpAndSettle();
+      }
     });
   });
 }

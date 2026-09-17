@@ -5,6 +5,7 @@ import 'package:enterprise_crm/features/leads/domain/entities/lead.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_source.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/add_lead_screen.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_dashboard_screen.dart';
+import 'package:enterprise_crm/features/leads/presentation/screens/lead_details_screen.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_list_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -178,6 +179,79 @@ void main() {
           expect(find.byType(LeadDashboardScreen), findsOneWidget);
           expect(find.text('Lead Management'), findsOneWidget);
         }
+      },
+    );
+
+    testWidgets(
+      'L5.2 integration: Lead List -> open unassigned Lead -> Assign -> back to Lead List -> list refreshes with updated assignee',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final dataSource = MockLeadDataSource(
+          initialLeads: [
+            const Lead(
+              id: 'lead-unassigned',
+              name: 'Unassigned Person',
+              source: LeadSource.manual,
+            ),
+          ],
+        );
+        final sharedRepository = MockLeadRepository(dataSource: dataSource);
+
+        await tester.pumpWidget(CrmApp(leadRepository: sharedRepository));
+        await tester.pumpAndSettle();
+
+        // 1. Navigate to Lead List from Dashboard
+        await tester.tap(find.text('View Leads'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadListScreen), findsOneWidget);
+        expect(find.text('Unassigned Person'), findsOneWidget);
+        expect(find.text('Unassigned'), findsWidgets);
+
+        // 2. Open Lead Details by tapping 'View' action
+        await tester.ensureVisible(find.text('View'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('View'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadDetailsScreen), findsOneWidget);
+        expect(find.byKey(const Key('assign_lead_button')), findsOneWidget);
+
+        // 3. Open assignment dialog
+        await tester.tap(find.byKey(const Key('assign_lead_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('assign_lead_dialog')), findsOneWidget);
+
+        // 4. Select assignee
+        await tester.tap(find.byKey(const Key('lead_assignee_dropdown')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Mock Agent One').last);
+        await tester.pumpAndSettle();
+
+        // 5. Submit assignment
+        await tester.tap(find.byKey(const Key('assign_dialog_submit_button')));
+        await tester.pumpAndSettle();
+
+        // 6. Modal closes, Lead Details updates
+        expect(find.byKey(const Key('assign_lead_dialog')), findsNothing);
+        expect(find.text('Mock Agent One'), findsWidgets);
+        expect(find.byKey(const Key('assign_lead_button')), findsNothing);
+
+        // 7. Navigate back to Lead List
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+
+        // 8. Lead List refreshes automatically, showing the updated assignee
+        expect(find.byType(LeadListScreen), findsOneWidget);
+        expect(find.text('Mock Agent One'), findsWidgets);
       },
     );
   });
