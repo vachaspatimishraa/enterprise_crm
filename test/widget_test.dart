@@ -652,5 +652,84 @@ void main() {
         expect(find.byType(LeadDashboardScreen), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'reassignment integration: Lead List -> open assigned Lead -> Reassign Lead -> success -> return to Lead List shows updated assignee',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final dataSource = MockLeadDataSource(
+          initialLeads: [
+            const Lead(
+              id: 'lead-assigned-1',
+              name: 'Reassignable Customer',
+              source: LeadSource.manual,
+              assignedUserId: 'agent-1',
+              assignedUserName: 'Mock Agent One',
+            ),
+          ],
+        );
+        final sharedRepository = MockLeadRepository(dataSource: dataSource);
+
+        await tester.pumpWidget(CrmApp(leadRepository: sharedRepository));
+        await tester.pumpAndSettle();
+
+        // 1. Dashboard -> View Leads
+        await tester.tap(find.text('View Leads'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadListScreen), findsOneWidget);
+        expect(find.text('Reassignable Customer'), findsOneWidget);
+        expect(find.text('Mock Agent One'), findsWidgets);
+
+        // 2. Open Lead Details
+        await tester.ensureVisible(find.text('View').first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('View').first);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadDetailsScreen), findsOneWidget);
+        expect(find.byKey(const Key('reassign_lead_button')), findsOneWidget);
+
+        // 3. Tap Reassign Lead
+        await tester.tap(find.byKey(const Key('reassign_lead_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('reassign_lead_dialog')), findsOneWidget);
+
+        // 4. Select Mock Agent Two and enter reason
+        await tester.tap(find.byKey(const Key('lead_reassignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent Two').last);
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('reassign_dialog_reason_input')),
+          'Workload rebalance',
+        );
+        await tester.pumpAndSettle();
+
+        // 5. Submit reassignment
+        await tester.tap(
+          find.byKey(const Key('reassign_dialog_submit_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Reassignment dialog closes, details shows Mock Agent Two
+        expect(find.byKey(const Key('reassign_lead_dialog')), findsNothing);
+        expect(find.text('Mock Agent Two'), findsWidgets);
+
+        // 6. Return to LeadListScreen
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadListScreen), findsOneWidget);
+        // List displays the new assignee from shared repository
+        expect(find.text('Mock Agent Two'), findsWidgets);
+      },
+    );
   });
 }

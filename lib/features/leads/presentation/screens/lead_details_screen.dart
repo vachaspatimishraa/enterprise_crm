@@ -6,8 +6,11 @@ import '../bloc/lead_assignment_cubit.dart';
 import '../bloc/lead_assignment_state.dart';
 import '../bloc/lead_details_cubit.dart';
 import '../bloc/lead_details_state.dart';
+import '../bloc/lead_reassignment_cubit.dart';
+import '../bloc/lead_reassignment_state.dart';
 import '../utils/lead_display_formatters.dart';
 import '../widgets/lead_assignee_selector.dart';
+import '../widgets/lead_reassignment_assignee_selector.dart';
 
 class LeadDetailsScreen extends StatelessWidget {
   final String leadId;
@@ -128,6 +131,36 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
         return BlocProvider(
           create: (_) => LeadAssignmentCubit(repo!)..loadAssignableUsers(),
           child: _AssignLeadDialog(lead: lead),
+        );
+      },
+    );
+
+    if (result == true && mounted) {
+      widget.onLeadAssigned?.call();
+      context.read<LeadDetailsCubit>().loadLead(widget.leadId);
+    }
+  }
+
+  Future<void> _openReassignLeadDialog(Lead lead) async {
+    LeadRepository? repo = widget.repository;
+    if (repo == null) {
+      try {
+        repo = context.read<LeadRepository>();
+      } catch (_) {}
+    }
+
+    if (repo == null) {
+      _showComingSoon(context, 'Reassign Lead');
+      return;
+    }
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return BlocProvider(
+          create: (_) => LeadReassignmentCubit(repo!)..loadAssignableUsers(),
+          child: _ReassignLeadDialog(lead: lead),
         );
       },
     );
@@ -441,6 +474,18 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
                   onPressed: () => _openAssignLeadDialog(lead),
                   icon: const Icon(Icons.person_add_outlined, size: 18),
                   label: const Text('Assign Lead'),
+                ),
+              ),
+            ],
+            if (lead.isAssigned) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  key: const Key('reassign_lead_button'),
+                  onPressed: () => _openReassignLeadDialog(lead),
+                  icon: const Icon(Icons.sync_alt_outlined, size: 18),
+                  label: const Text('Reassign Lead'),
                 ),
               ),
             ],
@@ -802,6 +847,224 @@ class _AssignLeadDialog extends StatelessWidget {
                         ),
                       )
                     : const Text('Assign'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ReassignLeadDialog extends StatefulWidget {
+  final Lead lead;
+
+  const _ReassignLeadDialog({required this.lead});
+
+  @override
+  State<_ReassignLeadDialog> createState() => _ReassignLeadDialogState();
+}
+
+class _ReassignLeadDialogState extends State<_ReassignLeadDialog> {
+  late final TextEditingController _reasonController;
+
+  @override
+  void initState() {
+    super.initState();
+    _reasonController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final lead = widget.lead;
+
+    return BlocConsumer<LeadReassignmentCubit, LeadReassignmentState>(
+      listenWhen: (prev, curr) =>
+          prev.submissionStatus != curr.submissionStatus,
+      listener: (context, state) {
+        if (state.isSubmissionSuccess) {
+          Navigator.of(context).pop(true);
+        }
+      },
+      builder: (context, state) {
+        final cubit = context.read<LeadReassignmentCubit>();
+        final isSubmitting = state.isSubmitting;
+        final currentAssigneeName = lead.assignedUserName ?? 'Unknown';
+
+        final canSubmit =
+            state.canSubmit &&
+            state.selectedAssignee?.id != lead.assignedUserId &&
+            !isSubmitting;
+
+        return PopScope(
+          canPop: !isSubmitting,
+          child: AlertDialog(
+            key: const Key('reassign_lead_dialog'),
+            title: Row(
+              children: [
+                Icon(
+                  Icons.sync_alt_outlined,
+                  size: 22,
+                  color: colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text('Reassign Lead', overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 400),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Current Assignee
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest.withValues(
+                          alpha: 0.5,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Current assignee:',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.person_outline,
+                                size: 16,
+                                color: colorScheme.primary,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  currentAssigneeName,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // New Assignee selector
+                    Text(
+                      'New assignee:',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    LeadReassignmentAssigneeSelector(
+                      cubit: cubit,
+                      currentAssigneeId: lead.assignedUserId,
+                      enabled: !isSubmitting,
+                    ),
+                    const SizedBox(height: 16),
+                    // Reason (optional)
+                    TextField(
+                      key: const Key('reassign_dialog_reason_input'),
+                      controller: _reasonController,
+                      enabled: !isSubmitting,
+                      decoration: InputDecoration(
+                        labelText: 'Reason (optional)',
+                        hintText: 'e.g. Workload balancing, territory change',
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      maxLines: 2,
+                      minLines: 1,
+                    ),
+                    if (state.hasSubmissionError) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        key: const Key('reassign_dialog_error'),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: colorScheme.errorContainer,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.error_outline,
+                              size: 18,
+                              color: colorScheme.error,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                state.submissionErrorMessage ??
+                                    'Unable to reassign the Lead.',
+                                style: TextStyle(
+                                  color: colorScheme.error,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                key: const Key('reassign_dialog_cancel_button'),
+                onPressed: isSubmitting
+                    ? null
+                    : () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                key: const Key('reassign_dialog_submit_button'),
+                onPressed: canSubmit
+                    ? () => cubit.reassignLead(
+                        lead: lead,
+                        reason: _reasonController.text,
+                      )
+                    : null,
+                child: isSubmitting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Reassign'),
               ),
             ],
           ),
