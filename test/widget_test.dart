@@ -526,5 +526,131 @@ void main() {
         expect(find.byType(LeadDashboardScreen), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'L5.5 comprehensive end-to-end verification: single, bulk, distribution, and cross-screen shared repository mutation',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final dataSource = MockLeadDataSource(
+          initialLeads: [
+            const Lead(
+              id: 'lead-1',
+              name: 'First Unassigned Lead',
+              source: LeadSource.manual,
+            ),
+            const Lead(
+              id: 'lead-2',
+              name: 'Second Unassigned Lead',
+              source: LeadSource.manual,
+            ),
+          ],
+        );
+        final sharedRepository = MockLeadRepository(dataSource: dataSource);
+
+        await tester.pumpWidget(CrmApp(leadRepository: sharedRepository));
+        await tester.pumpAndSettle();
+
+        // 1. Initial Dashboard: 0 assigned, 2 unassigned
+        expect(find.text('Assigned Leads'), findsOneWidget);
+        expect(find.text('Unassigned Leads'), findsOneWidget);
+
+        // 2. Dashboard -> Distribute Leads (Bulk Assignment on Lead 1)
+        await tester.tap(find.text('Distribute Leads'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadListScreen), findsOneWidget);
+        expect(find.text('0 selected'), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('lead_select_checkbox_lead-1')));
+        await tester.pumpAndSettle();
+        expect(find.text('1 selected'), findsOneWidget);
+
+        await tester.tap(
+          find.byKey(const Key('lead_list_assign_leads_button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_assignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent One').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('bulk_assign_dialog_submit_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Lead 1 is now assigned and vanished from unassigned distribution list
+        expect(find.text('First Unassigned Lead'), findsNothing);
+        expect(find.text('Second Unassigned Lead'), findsOneWidget);
+
+        // 3. Return to Dashboard
+        await tester.tap(
+          find.byKey(const Key('lead_list_cancel_selection_button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadDashboardScreen), findsOneWidget);
+
+        // 4. Dashboard -> View Leads (Ordinary Lead List)
+        await tester.tap(find.text('View Leads'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadListScreen), findsOneWidget);
+        expect(find.text('Leads'), findsOneWidget);
+
+        // Both leads exist: Lead 1 is assigned to Mock Agent One, Lead 2 is unassigned
+        expect(find.text('First Unassigned Lead'), findsOneWidget);
+        expect(find.text('Second Unassigned Lead'), findsOneWidget);
+        expect(find.text('Mock Agent One'), findsWidgets);
+
+        // 5. Open Lead 2 Details
+        await tester.ensureVisible(find.text('View').last);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('View').last);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadDetailsScreen), findsOneWidget);
+        expect(find.byKey(const Key('assign_lead_button')), findsOneWidget);
+
+        // 6. Single Lead Assignment on Lead 2
+        await tester.tap(find.byKey(const Key('assign_lead_button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_assignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent Two').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('assign_dialog_submit_button')));
+        await tester.pumpAndSettle();
+
+        // Details shows Mock Agent Two, Assign button disappears
+        expect(find.text('Mock Agent Two'), findsWidgets);
+        expect(find.byKey(const Key('assign_lead_button')), findsNothing);
+
+        // 7. Return to Lead List -> Lead 2 shows Mock Agent Two
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadListScreen), findsOneWidget);
+        expect(find.text('Mock Agent Two'), findsWidgets);
+
+        // 8. Return to Dashboard -> Metrics update
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadDashboardScreen), findsOneWidget);
+      },
+    );
   });
 }
