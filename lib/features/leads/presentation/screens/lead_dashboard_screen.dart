@@ -6,6 +6,7 @@ import '../bloc/lead_dashboard_state.dart';
 import '../widgets/lead_quick_action.dart';
 import '../widgets/lead_summary_card.dart';
 import 'lead_import_workflow_screen.dart';
+import 'lead_list_screen.dart';
 
 class LeadDashboardScreen extends StatelessWidget {
   final LeadDashboardCubit? cubit;
@@ -111,6 +112,30 @@ class _LeadDashboardView extends StatelessWidget {
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => LeadImportWorkflowScreen(repository: repo!),
+      ),
+    );
+    if (result == true && context.mounted) {
+      dashboardCubit.loadDashboard();
+    }
+  }
+
+  Future<void> _openDistributeLeads(BuildContext context) async {
+    LeadRepository? repo = repository;
+    if (repo == null) {
+      try {
+        repo = context.read<LeadRepository>();
+      } catch (_) {}
+    }
+    if (repo == null) {
+      _showComingSoon(context, 'Distribute Leads');
+      return;
+    }
+
+    final dashboardCubit = context.read<LeadDashboardCubit>();
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) =>
+            LeadListScreen(repository: repo, isDistributionMode: true),
       ),
     );
     if (result == true && context.mounted) {
@@ -394,7 +419,7 @@ class _LeadDashboardView extends StatelessWidget {
                     icon: Icons.alt_route_outlined,
                     onPressed:
                         onDistributeLeads ??
-                        () => _showComingSoon(context, 'Distribute Leads'),
+                        () => _openDistributeLeads(context),
                   ),
                   LeadQuickAction(
                     label: 'Export Leads',

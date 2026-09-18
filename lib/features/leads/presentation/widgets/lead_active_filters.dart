@@ -10,6 +10,7 @@ class LeadActiveFilters extends StatelessWidget {
   final VoidCallback onRemoveAssignment;
   final VoidCallback onRemoveAssignee;
   final VoidCallback onClearAll;
+  final bool isAssignmentLocked;
 
   const LeadActiveFilters({
     super.key,
@@ -19,6 +20,7 @@ class LeadActiveFilters extends StatelessWidget {
     required this.onRemoveAssignment,
     required this.onRemoveAssignee,
     required this.onClearAll,
+    this.isAssignmentLocked = false,
   });
 
   @override
@@ -62,8 +64,10 @@ class LeadActiveFilters extends StatelessWidget {
             InputChip(
               key: const Key('active_filter_assignment_chip'),
               label: Text(query.isAssigned! ? 'Assigned' : 'Unassigned'),
-              deleteIcon: const Icon(Icons.close, size: 16),
-              onDeleted: onRemoveAssignment,
+              deleteIcon: isAssignmentLocked
+                  ? null
+                  : const Icon(Icons.close, size: 16),
+              onDeleted: isAssignmentLocked ? null : onRemoveAssignment,
               deleteIconColor: colorScheme.onSurfaceVariant,
               visualDensity: VisualDensity.compact,
             ),
@@ -76,20 +80,21 @@ class LeadActiveFilters extends StatelessWidget {
               deleteIconColor: colorScheme.onSurfaceVariant,
               visualDensity: VisualDensity.compact,
             ),
-          InkWell(
-            key: const Key('active_filters_clear_all'),
-            onTap: onClearAll,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              child: Text(
-                'Clear all',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colorScheme.primary,
-                  fontWeight: FontWeight.w600,
+          if (!isAssignmentLocked || hasSource || hasAssignee)
+            InkWell(
+              key: const Key('active_filters_clear_all'),
+              onTap: onClearAll,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: Text(
+                  'Clear all',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );

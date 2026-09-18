@@ -26,6 +26,7 @@ class LeadListScreen extends StatelessWidget {
   final VoidCallback? onAddLead;
   final VoidCallback? onImportLeads;
   final LeadImportFilePicker? filePicker;
+  final bool isDistributionMode;
 
   const LeadListScreen({
     super.key,
@@ -36,6 +37,7 @@ class LeadListScreen extends StatelessWidget {
     this.onAddLead,
     this.onImportLeads,
     this.filePicker,
+    this.isDistributionMode = false,
   });
 
   @override
@@ -57,6 +59,7 @@ class LeadListScreen extends StatelessWidget {
             onImportLeads: onImportLeads,
             repository: repo,
             filePicker: filePicker,
+            isDistributionMode: isDistributionMode,
           ),
         );
       }
@@ -74,6 +77,7 @@ class LeadListScreen extends StatelessWidget {
             onImportLeads: onImportLeads,
             repository: repo,
             filePicker: filePicker,
+            isDistributionMode: isDistributionMode,
           ),
         );
       }
@@ -85,6 +89,7 @@ class LeadListScreen extends StatelessWidget {
           onImportLeads: onImportLeads,
           repository: repo,
           filePicker: filePicker,
+          isDistributionMode: isDistributionMode,
         ),
       );
     }
@@ -92,7 +97,14 @@ class LeadListScreen extends StatelessWidget {
     if (repo != null) {
       return MultiBlocProvider(
         providers: [
-          BlocProvider(create: (_) => LeadListCubit(repo)..loadLeads()),
+          BlocProvider(
+            create: (_) => LeadListCubit(
+              repo,
+              initialQuery: isDistributionMode
+                  ? const LeadQuery(isAssigned: false)
+                  : const LeadQuery(),
+            )..loadLeads(),
+          ),
           BlocProvider(
             create: (_) =>
                 filterC ?? (LeadFilterCubit(repo)..loadAssignableUsers()),
@@ -104,6 +116,7 @@ class LeadListScreen extends StatelessWidget {
           onImportLeads: onImportLeads,
           repository: repo,
           filePicker: filePicker,
+          isDistributionMode: isDistributionMode,
         ),
       );
     }
@@ -114,6 +127,7 @@ class LeadListScreen extends StatelessWidget {
       onImportLeads: onImportLeads,
       repository: repo,
       filePicker: filePicker,
+      isDistributionMode: isDistributionMode,
     );
   }
 }
@@ -124,6 +138,7 @@ class _LeadListView extends StatefulWidget {
   final VoidCallback? onImportLeads;
   final LeadRepository? repository;
   final LeadImportFilePicker? filePicker;
+  final bool isDistributionMode;
 
   const _LeadListView({
     this.onViewLead,
@@ -131,6 +146,7 @@ class _LeadListView extends StatefulWidget {
     this.onImportLeads,
     this.repository,
     this.filePicker,
+    this.isDistributionMode = false,
   });
 
   @override
@@ -141,17 +157,21 @@ class _LeadListViewState extends State<_LeadListView> {
   late final TextEditingController _searchController;
   bool _isSelectionMode = false;
   final Set<String> _selectedLeadIds = {};
+  bool _didAssignAnyLeads = false;
 
   @override
   void initState() {
     super.initState();
+    _isSelectionMode = widget.isDistributionMode;
     final cubit = context.read<LeadListCubit>();
     _searchController = TextEditingController(
       text: cubit.currentQuery.searchText ?? '',
     );
     _searchController.addListener(_onSearchInputChanged);
 
-    if (cubit.state is LeadListInitial) {
+    if (widget.isDistributionMode && cubit.currentQuery.isAssigned != false) {
+      cubit.applyQuery(cubit.currentQuery.copyWith(isAssigned: false));
+    } else if (cubit.state is LeadListInitial) {
       cubit.loadLeads();
     }
   }
@@ -267,7 +287,12 @@ class _LeadListViewState extends State<_LeadListView> {
     );
 
     if (result == true && mounted) {
-      _exitSelectionMode();
+      _didAssignAnyLeads = true;
+      if (widget.isDistributionMode) {
+        _clearSelection();
+      } else {
+        _exitSelectionMode();
+      }
       context.read<LeadListCubit>().refreshLeads();
     }
   }
@@ -283,7 +308,11 @@ class _LeadListViewState extends State<_LeadListView> {
       return;
     }
 
-    final newQuery = cubit.currentQuery.copyWith(searchText: trimmed, page: 1);
+    final newQuery = cubit.currentQuery.copyWith(
+      searchText: trimmed,
+      page: 1,
+      isAssigned: widget.isDistributionMode ? false : null,
+    );
     cubit.applyQuery(newQuery);
   }
 
@@ -291,7 +320,11 @@ class _LeadListViewState extends State<_LeadListView> {
     _clearSelection();
     _searchController.clear();
     final cubit = context.read<LeadListCubit>();
-    final newQuery = cubit.currentQuery.copyWith(clearSearch: true, page: 1);
+    final newQuery = cubit.currentQuery.copyWith(
+      clearSearch: true,
+      page: 1,
+      isAssigned: widget.isDistributionMode ? false : null,
+    );
     cubit.applyQuery(newQuery);
   }
 
@@ -300,7 +333,8 @@ class _LeadListViewState extends State<_LeadListView> {
     final cubit = context.read<LeadListCubit>();
     final newQuery = cubit.currentQuery.copyWith(
       clearSource: true,
-      clearIsAssigned: true,
+      clearIsAssigned: !widget.isDistributionMode,
+      isAssigned: widget.isDistributionMode ? false : null,
       clearAssignedUser: true,
       page: 1,
     );
@@ -315,6 +349,7 @@ class _LeadListViewState extends State<_LeadListView> {
   }
 
   void _removeAssignmentFilter() {
+    if (widget.isDistributionMode) return;
     _clearSelection();
     final cubit = context.read<LeadListCubit>();
     final newQuery = cubit.currentQuery.copyWith(
@@ -362,9 +397,14 @@ class _LeadListViewState extends State<_LeadListView> {
       context: context,
       currentQuery: cubit.currentQuery,
       filterCubit: filterCubit,
+      lockAssignmentToUnassigned: widget.isDistributionMode,
       onApply: (newQuery) {
         _clearSelection();
-        cubit.applyQuery(newQuery);
+        cubit.applyQuery(
+          widget.isDistributionMode
+              ? newQuery.copyWith(isAssigned: false, clearAssignedUser: true)
+              : newQuery,
+        );
       },
     );
   }
@@ -427,182 +467,197 @@ class _LeadListViewState extends State<_LeadListView> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return Scaffold(
-      appBar: _isSelectionMode
-          ? AppBar(
-              leadingWidth: 36,
-              leading: IconButton(
-                key: const Key('lead_list_cancel_selection_button'),
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                icon: const Icon(Icons.close),
-                tooltip: 'Cancel Selection',
-                onPressed: _exitSelectionMode,
-              ),
-              titleSpacing: 4,
-              title: Text(
-                '${_selectedLeadIds.length} selected',
-                key: const Key('lead_list_selected_count'),
-                style: const TextStyle(fontSize: 14),
-              ),
-              actions: [
-                BlocBuilder<LeadListCubit, LeadListState>(
-                  builder: (context, state) {
-                    final leads = state is LeadListLoaded
-                        ? state.leads
-                        : <Lead>[];
-                    final hasEligible = leads.any((l) => !l.isAssigned);
-                    final allSelected = _isAllEligibleSelected(leads);
+    return PopScope(
+      canPop: !widget.isDistributionMode,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop(_didAssignAnyLeads);
+        }
+      },
+      child: Scaffold(
+        appBar: _isSelectionMode
+            ? AppBar(
+                leadingWidth: 36,
+                leading: IconButton(
+                  key: const Key('lead_list_cancel_selection_button'),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.close),
+                  tooltip: 'Cancel Selection',
+                  onPressed: _exitSelectionMode,
+                ),
+                titleSpacing: 4,
+                title: Text(
+                  '${_selectedLeadIds.length} selected',
+                  key: const Key('lead_list_selected_count'),
+                  style: const TextStyle(fontSize: 14),
+                ),
+                actions: [
+                  BlocBuilder<LeadListCubit, LeadListState>(
+                    builder: (context, state) {
+                      final leads = state is LeadListLoaded
+                          ? state.leads
+                          : <Lead>[];
+                      final hasEligible = leads.any((l) => !l.isAssigned);
+                      final allSelected = _isAllEligibleSelected(leads);
 
-                    return Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        TextButton(
-                          key: const Key('lead_list_select_all_button'),
-                          onPressed: hasEligible
-                              ? () => _toggleSelectAll(leads)
-                              : null,
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          child: Text(
-                            allSelected ? 'Deselect All' : 'Select All',
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8, left: 2),
-                          child: FilledButton(
-                            key: const Key('lead_list_assign_leads_button'),
-                            onPressed: _selectedLeadIds.isNotEmpty
-                                ? () => _openBulkAssignDialog(leads)
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextButton(
+                            key: const Key('lead_list_select_all_button'),
+                            onPressed: hasEligible
+                                ? () => _toggleSelectAll(leads)
                                 : null,
-                            style: FilledButton.styleFrom(
+                            style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
+                                horizontal: 4,
                               ),
                               visualDensity: VisualDensity.compact,
                             ),
-                            child: const Text(
-                              'Assign Leads',
-                              style: TextStyle(fontSize: 13),
+                            child: Text(
+                              allSelected ? 'Deselect All' : 'Select All',
+                              style: const TextStyle(fontSize: 13),
                             ),
                           ),
-                        ),
-                      ],
-                    );
-                  },
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8, left: 2),
+                            child: FilledButton(
+                              key: const Key('lead_list_assign_leads_button'),
+                              onPressed: _selectedLeadIds.isNotEmpty
+                                  ? () => _openBulkAssignDialog(leads)
+                                  : null,
+                              style: FilledButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              child: const Text(
+                                'Assign Leads',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              )
+            : AppBar(
+                titleSpacing: 8,
+                title: Text(
+                  widget.isDistributionMode ? 'Distribute Leads' : 'Leads',
                 ),
-              ],
-            )
-          : AppBar(
-              titleSpacing: 8,
-              title: const Text('Leads'),
-              actions: [
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.refresh),
-                  tooltip: 'Refresh Leads',
-                  onPressed: () {
-                    context.read<LeadListCubit>().refreshLeads();
-                  },
-                ),
-                IconButton(
-                  key: const Key('lead_list_select_mode_button'),
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.checklist),
-                  tooltip: 'Select Leads',
-                  onPressed: _enterSelectionMode,
-                ),
-                IconButton(
-                  key: const Key('lead_list_import_button'),
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.upload_file),
-                  tooltip: 'Import Leads',
-                  onPressed:
-                      widget.onImportLeads ??
-                      () => _openImportWorkflow(context),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(left: 4, right: 8),
-                  child: FilledButton.icon(
-                    onPressed:
-                        widget.onAddLead ??
-                        () => _showComingSoon(context, 'Add Lead'),
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const Text('Add Lead'),
-                    style: FilledButton.styleFrom(
+                actions: [
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.refresh),
+                    tooltip: 'Refresh Leads',
+                    onPressed: () {
+                      context.read<LeadListCubit>().refreshLeads();
+                    },
+                  ),
+                  IconButton(
+                    key: const Key('lead_list_select_mode_button'),
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.checklist),
+                    tooltip: 'Select Leads',
+                    onPressed: _enterSelectionMode,
+                  ),
+                  if (!widget.isDistributionMode) ...[
+                    IconButton(
+                      key: const Key('lead_list_import_button'),
                       visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      icon: const Icon(Icons.upload_file),
+                      tooltip: 'Import Leads',
+                      onPressed:
+                          widget.onImportLeads ??
+                          () => _openImportWorkflow(context),
                     ),
-                  ),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4, right: 8),
+                      child: FilledButton.icon(
+                        onPressed:
+                            widget.onAddLead ??
+                            () => _showComingSoon(context, 'Add Lead'),
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('Add Lead'),
+                        style: FilledButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+        body: BlocConsumer<LeadListCubit, LeadListState>(
+          listener: (context, state) {
+            final queryText = _getQueryFromState(state).searchText ?? '';
+            if (_searchController.text != queryText && queryText.isEmpty) {
+              _searchController.text = '';
+            }
+            if (state is LeadListLoaded) {
+              _selectedLeadIds.removeWhere((id) {
+                final lead = state.leads.where((l) => l.id == id).firstOrNull;
+                return lead == null || lead.isAssigned;
+              });
+            } else {
+              _clearSelection();
+            }
+          },
+          builder: (context, state) {
+            final currentQuery = _getQueryFromState(state);
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildSearchAndFilterBar(
+                  context,
+                  theme,
+                  colorScheme,
+                  currentQuery,
+                ),
+                Expanded(
+                  child: switch (state) {
+                    LeadListInitial() => const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                    LeadListLoading() => const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 16),
+                          Text('Loading leads...'),
+                        ],
+                      ),
+                    ),
+                    LeadListEmpty(:final query) => _buildEmptyState(
+                      context,
+                      theme,
+                      query,
+                    ),
+                    LeadListFailure(:final message) => _buildFailureState(
+                      context,
+                      theme,
+                      message,
+                    ),
+                    LeadListLoaded() => _buildLoadedList(
+                      context,
+                      theme,
+                      colorScheme,
+                      state,
+                    ),
+                  },
                 ),
               ],
-            ),
-      body: BlocConsumer<LeadListCubit, LeadListState>(
-        listener: (context, state) {
-          final queryText = _getQueryFromState(state).searchText ?? '';
-          if (_searchController.text != queryText && queryText.isEmpty) {
-            _searchController.text = '';
-          }
-          if (state is LeadListLoaded) {
-            _selectedLeadIds.removeWhere((id) {
-              final lead = state.leads.where((l) => l.id == id).firstOrNull;
-              return lead == null || lead.isAssigned;
-            });
-          } else {
-            _clearSelection();
-          }
-        },
-        builder: (context, state) {
-          final currentQuery = _getQueryFromState(state);
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildSearchAndFilterBar(
-                context,
-                theme,
-                colorScheme,
-                currentQuery,
-              ),
-              Expanded(
-                child: switch (state) {
-                  LeadListInitial() => const Center(
-                    child: CircularProgressIndicator(),
-                  ),
-                  LeadListLoading() => const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 16),
-                        Text('Loading leads...'),
-                      ],
-                    ),
-                  ),
-                  LeadListEmpty(:final query) => _buildEmptyState(
-                    context,
-                    theme,
-                    query,
-                  ),
-                  LeadListFailure(:final message) => _buildFailureState(
-                    context,
-                    theme,
-                    message,
-                  ),
-                  LeadListLoaded() => _buildLoadedList(
-                    context,
-                    theme,
-                    colorScheme,
-                    state,
-                  ),
-                },
-              ),
-            ],
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
@@ -811,6 +866,7 @@ class _LeadListViewState extends State<_LeadListView> {
               LeadActiveFilters(
                 query: query,
                 assignees: assignees,
+                isAssignmentLocked: widget.isDistributionMode,
                 onRemoveSource: _removeSourceFilter,
                 onRemoveAssignment: _removeAssignmentFilter,
                 onRemoveAssignee: _removeAssigneeFilter,
@@ -832,8 +888,43 @@ class _LeadListViewState extends State<_LeadListView> {
         query.searchText != null && query.searchText!.trim().isNotEmpty;
     final hasFiltersActive =
         query.source != null ||
-        query.isAssigned != null ||
+        (!widget.isDistributionMode && query.isAssigned != null) ||
         query.assignedUserId != null;
+
+    if (widget.isDistributionMode && !hasFiltersActive && !isSearchActive) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.check_circle_outline,
+                size: 64,
+                color: theme.colorScheme.onSurfaceVariant.withAlpha(120),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No unassigned leads available',
+                key: const Key('empty_unassigned_leads_title'),
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'All leads have been assigned or no leads are available.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     if (isSearchActive && hasFiltersActive) {
       return Center(

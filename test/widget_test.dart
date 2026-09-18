@@ -254,5 +254,277 @@ void main() {
         expect(find.text('Mock Agent One'), findsWidgets);
       },
     );
+
+    testWidgets(
+      'L5.4 shared repository regression: Distribute Leads -> assign -> unassigned list updates -> return updates Dashboard metrics',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final dataSource = MockLeadDataSource(
+          initialLeads: [
+            const Lead(
+              id: 'lead-a',
+              name: 'Lead Alpha',
+              source: LeadSource.manual,
+            ),
+            const Lead(
+              id: 'lead-b',
+              name: 'Lead Beta',
+              source: LeadSource.manual,
+            ),
+            const Lead(
+              id: 'lead-c',
+              name: 'Lead Gamma',
+              source: LeadSource.manual,
+              assignedUserId: 'agent-1',
+              assignedUserName: 'Mock Agent One',
+            ),
+          ],
+        );
+        final sharedRepository = MockLeadRepository(dataSource: dataSource);
+
+        await tester.pumpWidget(CrmApp(leadRepository: sharedRepository));
+        await tester.pumpAndSettle();
+
+        // Initial summary metrics
+        expect(find.text('Assigned Leads'), findsOneWidget);
+        expect(find.text('Unassigned Leads'), findsOneWidget);
+
+        // Tap Distribute Leads Quick Action
+        await tester.tap(find.text('Distribute Leads'));
+        await tester.pumpAndSettle();
+
+        // LeadListScreen is open in distribution mode (starts in selection mode)
+        expect(find.byType(LeadListScreen), findsOneWidget);
+        expect(find.text('0 selected'), findsOneWidget);
+
+        // Only unassigned leads are visible
+        expect(find.text('Lead Alpha'), findsOneWidget);
+        expect(find.text('Lead Beta'), findsOneWidget);
+        expect(find.text('Lead Gamma'), findsNothing);
+
+        // Select Lead Alpha
+        await tester.tap(find.byKey(const Key('lead_select_checkbox_lead-a')));
+        await tester.pumpAndSettle();
+        expect(find.text('1 selected'), findsOneWidget);
+
+        // Open bulk assign dialog
+        await tester.tap(
+          find.byKey(const Key('lead_list_assign_leads_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Choose Mock Agent Two and submit
+        await tester.tap(find.byKey(const Key('lead_assignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent Two').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('bulk_assign_dialog_submit_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Lead Alpha disappears from unassigned list; Lead Beta remains
+        expect(find.text('Lead Alpha'), findsNothing);
+        expect(find.text('Lead Beta'), findsOneWidget);
+
+        // Exit selection mode and navigate back to Dashboard
+        await tester.tap(
+          find.byKey(const Key('lead_list_cancel_selection_button')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Distribute Leads'), findsOneWidget);
+
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+
+        // Dashboard is displayed with refreshed metrics (Assigned = 2, Unassigned = 1)
+        expect(find.byType(LeadDashboardScreen), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'L5.4 ordinary View Leads regression: opening View Leads does not force Unassigned filter or selection mode',
+      (tester) async {
+        final dataSource = MockLeadDataSource(
+          initialLeads: [
+            const Lead(
+              id: 'lead-1',
+              name: 'Unassigned Person',
+              source: LeadSource.manual,
+            ),
+            const Lead(
+              id: 'lead-2',
+              name: 'Assigned Person',
+              source: LeadSource.manual,
+              assignedUserId: 'agent-1',
+              assignedUserName: 'Mock Agent One',
+            ),
+          ],
+        );
+        final repository = MockLeadRepository(dataSource: dataSource);
+
+        await tester.pumpWidget(CrmApp(leadRepository: repository));
+        await tester.pumpAndSettle();
+
+        // Tap View Leads
+        await tester.tap(find.text('View Leads'));
+        await tester.pumpAndSettle();
+
+        // Screen is regular LeadListScreen
+        expect(find.byType(LeadListScreen), findsOneWidget);
+        expect(find.text('Leads'), findsOneWidget);
+        expect(find.text('0 selected'), findsNothing);
+
+        // Both assigned and unassigned are displayed
+        expect(find.text('Unassigned Person'), findsOneWidget);
+        expect(find.text('Assigned Person'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'L5.4 cancel / no-mutation: Distribute Leads -> select -> cancel -> Back leaves counts unchanged',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final dataSource = MockLeadDataSource(
+          initialLeads: [
+            const Lead(
+              id: 'lead-1',
+              name: 'Unassigned Person',
+              source: LeadSource.manual,
+            ),
+          ],
+        );
+        final repository = MockLeadRepository(dataSource: dataSource);
+
+        await tester.pumpWidget(CrmApp(leadRepository: repository));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Distribute Leads'));
+        await tester.pumpAndSettle();
+
+        // Select lead
+        await tester.tap(find.byKey(const Key('lead_select_checkbox_lead-1')));
+        await tester.pumpAndSettle();
+        expect(find.text('1 selected'), findsOneWidget);
+
+        // Cancel selection
+        await tester.tap(
+          find.byKey(const Key('lead_list_cancel_selection_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Back to Dashboard
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadDashboardScreen), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'L5.4 multiple batches in one session: assign batch A -> assign batch B -> return to Dashboard reflects both',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final dataSource = MockLeadDataSource(
+          initialLeads: [
+            const Lead(
+              id: 'lead-a',
+              name: 'Batch Lead A',
+              source: LeadSource.manual,
+            ),
+            const Lead(
+              id: 'lead-b',
+              name: 'Batch Lead B',
+              source: LeadSource.manual,
+            ),
+          ],
+        );
+        final repository = MockLeadRepository(dataSource: dataSource);
+
+        await tester.pumpWidget(CrmApp(leadRepository: repository));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Distribute Leads'));
+        await tester.pumpAndSettle();
+
+        // 1. Assign Batch A
+        await tester.tap(find.byKey(const Key('lead_select_checkbox_lead-a')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('lead_list_assign_leads_button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_assignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent One').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('bulk_assign_dialog_submit_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Batch A disappeared, Batch B is visible, selection mode remains active
+        expect(find.text('Batch Lead A'), findsNothing);
+        expect(find.text('Batch Lead B'), findsOneWidget);
+        expect(find.text('0 selected'), findsOneWidget);
+
+        // 2. Assign Batch B
+        await tester.tap(find.byKey(const Key('lead_select_checkbox_lead-b')));
+        await tester.pumpAndSettle();
+        expect(find.text('1 selected'), findsOneWidget);
+
+        await tester.tap(
+          find.byKey(const Key('lead_list_assign_leads_button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_assignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent Two').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('bulk_assign_dialog_submit_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // All assigned, empty state reached
+        expect(find.text('Batch Lead B'), findsNothing);
+        expect(find.text('No unassigned leads available'), findsOneWidget);
+
+        // 3. Return to Dashboard
+        await tester.tap(
+          find.byKey(const Key('lead_list_cancel_selection_button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadDashboardScreen), findsOneWidget);
+      },
+    );
   });
 }

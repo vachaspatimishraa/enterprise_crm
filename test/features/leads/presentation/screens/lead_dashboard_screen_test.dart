@@ -13,6 +13,7 @@ import 'package:enterprise_crm/features/leads/presentation/bloc/lead_dashboard_c
 import 'package:enterprise_crm/features/leads/presentation/bloc/lead_dashboard_state.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_dashboard_screen.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_import_workflow_screen.dart';
+import 'package:enterprise_crm/features/leads/presentation/screens/lead_list_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -20,14 +21,33 @@ class _FakeLeadRepository implements LeadRepository {
   List<Lead> leads = [];
   bool shouldThrow = false;
 
+  int assignLeadsCallCount = 0;
+
   @override
   Future<LeadPage> getLeads([LeadQuery query = const LeadQuery()]) async {
     if (shouldThrow) throw Exception('Unable to load leads');
+    var filtered = List<Lead>.from(leads);
+    if (query.isAssigned != null) {
+      filtered = filtered
+          .where((l) => l.isAssigned == query.isAssigned)
+          .toList();
+    }
+    if (query.searchText != null && query.searchText!.isNotEmpty) {
+      filtered = filtered
+          .where(
+            (l) =>
+                l.name?.toLowerCase().contains(
+                  query.searchText!.toLowerCase(),
+                ) ??
+                false,
+          )
+          .toList();
+    }
     return LeadPage(
-      items: leads,
+      items: filtered,
       currentPage: 1,
       pageSize: 100,
-      totalItems: leads.length,
+      totalItems: filtered.length,
       hasNext: false,
     );
   }
@@ -50,13 +70,32 @@ class _FakeLeadRepository implements LeadRepository {
   }) async {}
 
   @override
-  Future<void> assignLeads(LeadAssignmentRequest request) async {}
+  Future<void> assignLeads(LeadAssignmentRequest request) async {
+    assignLeadsCallCount++;
+    final updated = <Lead>[];
+    for (final l in leads) {
+      if (request.leadIds.contains(l.id)) {
+        updated.add(
+          l.copyWith(
+            assignedUserId: request.assigneeId,
+            assignedUserName: 'Agent ${request.assigneeId}',
+          ),
+        );
+      } else {
+        updated.add(l);
+      }
+    }
+    leads = updated;
+  }
 
   @override
   Future<void> reassignLead(LeadReassignmentRequest request) async {}
 
   @override
-  Future<List<LeadAssignee>> getAssignableUsers() async => const [];
+  Future<List<LeadAssignee>> getAssignableUsers() async => const [
+    LeadAssignee(id: 'mock-agent-1', displayName: 'Mock Agent One'),
+    LeadAssignee(id: 'mock-agent-2', displayName: 'Mock Agent Two'),
+  ];
 
   @override
   Future<LeadImportResult> importLeads(LeadImportRequest request) async =>
@@ -291,6 +330,126 @@ void main() {
         expect(find.byType(LeadDashboardScreen), findsOneWidget);
         expect(cubit.state, isA<LeadDashboardLoaded>());
         expect((cubit.state as LeadDashboardLoaded).metrics.totalLeads, 2);
+      },
+    );
+
+    testWidgets(
+      'distribute leads quick action callback triggers when provided',
+      (tester) async {
+        bool distributeTapped = false;
+        repository.leads = [const Lead(id: '1', source: LeadSource.manual)];
+        final cubit = LeadDashboardCubit(repository);
+        await cubit.loadDashboard();
+
+        await tester.pumpWidget(
+          buildTestWidget(
+            cubit: cubit,
+            onDistributeLeads: () => distributeTapped = true,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.ensureVisible(find.text('Distribute Leads'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Distribute Leads'));
+        await tester.pumpAndSettle();
+        expect(distributeTapped, isTrue);
+      },
+    );
+
+    testWidgets(
+      'distribute leads fallback opens LeadListScreen in distribution mode and reloads dashboard when leads were assigned',
+      (tester) async {
+        repository.leads = [
+          const Lead(id: '1', name: 'Lead 1', source: LeadSource.manual),
+          const Lead(
+            id: '2',
+            name: 'Lead 2',
+            source: LeadSource.manual,
+            assignedUserId: 'agent-1',
+            assignedUserName: 'Agent 1',
+          ),
+        ];
+        final cubit = LeadDashboardCubit(repository);
+        await cubit.loadDashboard();
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        expect((cubit.state as LeadDashboardLoaded).metrics.assignedLeads, 1);
+        expect((cubit.state as LeadDashboardLoaded).metrics.unassignedLeads, 1);
+
+        // Tap Distribute Leads
+        await tester.ensureVisible(find.text('Distribute Leads'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Distribute Leads'));
+        await tester.pumpAndSettle();
+
+        // LeadListScreen opens in distribution mode
+        final listScreenFinder = find.byType(LeadListScreen);
+        expect(listScreenFinder, findsOneWidget);
+        final listScreenWidget = tester.widget<LeadListScreen>(
+          listScreenFinder,
+        );
+        expect(listScreenWidget.isDistributionMode, isTrue);
+
+        // Simulate successful distribution and pop(true)
+        repository.leads = [
+          const Lead(
+            id: '1',
+            name: 'Lead 1',
+            source: LeadSource.manual,
+            assignedUserId: 'agent-2',
+            assignedUserName: 'Agent 2',
+          ),
+          const Lead(
+            id: '2',
+            name: 'Lead 2',
+            source: LeadSource.manual,
+            assignedUserId: 'agent-1',
+            assignedUserName: 'Agent 1',
+          ),
+        ];
+
+        Navigator.of(tester.element(listScreenFinder)).pop(true);
+        await tester.pumpAndSettle();
+
+        // Dashboard is refreshed
+        expect(find.byType(LeadDashboardScreen), findsOneWidget);
+        expect(cubit.state, isA<LeadDashboardLoaded>());
+        expect((cubit.state as LeadDashboardLoaded).metrics.assignedLeads, 2);
+        expect((cubit.state as LeadDashboardLoaded).metrics.unassignedLeads, 0);
+      },
+    );
+
+    testWidgets(
+      'distribute leads fallback does not reload dashboard when cancelled with no assignment',
+      (tester) async {
+        repository.leads = [
+          const Lead(id: '1', name: 'Lead 1', source: LeadSource.manual),
+        ];
+        final cubit = LeadDashboardCubit(repository);
+        await cubit.loadDashboard();
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        final initialMetrics = (cubit.state as LeadDashboardLoaded).metrics;
+
+        await tester.ensureVisible(find.text('Distribute Leads'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Distribute Leads'));
+        await tester.pumpAndSettle();
+
+        final listScreenFinder = find.byType(LeadListScreen);
+        expect(listScreenFinder, findsOneWidget);
+
+        // Pop with false (no assignment was made)
+        Navigator.of(tester.element(listScreenFinder)).pop(false);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadDashboardScreen), findsOneWidget);
+        expect((cubit.state as LeadDashboardLoaded).metrics, initialMetrics);
       },
     );
   });

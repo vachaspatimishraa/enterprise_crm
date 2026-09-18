@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../features/leads/domain/entities/lead.dart';
+import '../features/leads/domain/entities/lead_query.dart';
 import '../features/leads/domain/repositories/lead_repository.dart';
 import '../features/leads/presentation/bloc/lead_dashboard_cubit.dart';
 import '../features/leads/presentation/bloc/lead_details_cubit.dart';
@@ -190,6 +191,32 @@ class _CrmHomeScreenState extends State<CrmHomeScreen> {
     }
   }
 
+  void _openDistributeLeads(BuildContext context) async {
+    final listCubit = LeadListCubit(
+      widget.repository,
+      initialQuery: const LeadQuery(isAssigned: false),
+    );
+    final didAssign = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (listContext) => LeadListScreen(
+          cubit: listCubit,
+          repository: widget.repository,
+          filePicker: widget.filePicker,
+          isDistributionMode: true,
+          onViewLead: (lead) => _openLeadDetails(
+            listContext,
+            lead.id,
+            onAssigned: () => listCubit.refreshLeads(),
+          ),
+        ),
+      ),
+    );
+    listCubit.close();
+    if (didAssign == true && mounted) {
+      _dashboardCubit.loadDashboard();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return LeadDashboardScreen(
@@ -198,6 +225,7 @@ class _CrmHomeScreenState extends State<CrmHomeScreen> {
       onViewLeads: () => _openLeadList(context),
       onAddLead: () => _openAddLead(context),
       onImportLeads: () => _openImportWorkflow(context),
+      onDistributeLeads: () => _openDistributeLeads(context),
     );
   }
 }

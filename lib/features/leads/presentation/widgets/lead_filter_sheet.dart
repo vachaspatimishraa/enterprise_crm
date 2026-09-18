@@ -11,12 +11,17 @@ Future<void> showLeadFilterModal({
   required LeadQuery currentQuery,
   required ValueChanged<LeadQuery> onApply,
   required LeadFilterCubit filterCubit,
+  bool lockAssignmentToUnassigned = false,
 }) async {
   final isMobile = MediaQuery.sizeOf(context).width < 600;
 
   final content = BlocProvider.value(
     value: filterCubit,
-    child: LeadFilterSheet(initialQuery: currentQuery, onApply: onApply),
+    child: LeadFilterSheet(
+      initialQuery: currentQuery,
+      onApply: onApply,
+      lockAssignmentToUnassigned: lockAssignmentToUnassigned,
+    ),
   );
 
   if (isMobile) {
@@ -45,11 +50,13 @@ Future<void> showLeadFilterModal({
 class LeadFilterSheet extends StatefulWidget {
   final LeadQuery initialQuery;
   final ValueChanged<LeadQuery> onApply;
+  final bool lockAssignmentToUnassigned;
 
   const LeadFilterSheet({
     super.key,
     required this.initialQuery,
     required this.onApply,
+    this.lockAssignmentToUnassigned = false,
   });
 
   @override
@@ -65,8 +72,12 @@ class _LeadFilterSheetState extends State<LeadFilterSheet> {
   void initState() {
     super.initState();
     _draftSource = widget.initialQuery.source;
-    _draftIsAssigned = widget.initialQuery.isAssigned;
-    _draftAssignedUserId = widget.initialQuery.assignedUserId;
+    _draftIsAssigned = widget.lockAssignmentToUnassigned
+        ? false
+        : widget.initialQuery.isAssigned;
+    _draftAssignedUserId = widget.lockAssignmentToUnassigned
+        ? null
+        : widget.initialQuery.assignedUserId;
 
     // Trigger loading assignees if still in initial state
     final cubit = context.read<LeadFilterCubit>();
@@ -82,6 +93,7 @@ class _LeadFilterSheetState extends State<LeadFilterSheet> {
   }
 
   void _onAssignmentChanged(bool? isAssigned) {
+    if (widget.lockAssignmentToUnassigned) return;
     setState(() {
       _draftIsAssigned = isAssigned;
       if (isAssigned == false) {
@@ -92,6 +104,7 @@ class _LeadFilterSheetState extends State<LeadFilterSheet> {
   }
 
   void _onAssigneeChanged(String? assigneeId) {
+    if (widget.lockAssignmentToUnassigned) return;
     setState(() {
       _draftAssignedUserId = assigneeId;
       if (assigneeId != null) {
@@ -102,18 +115,20 @@ class _LeadFilterSheetState extends State<LeadFilterSheet> {
   }
 
   void _apply() {
-    // If a specific assignee is selected, normalize isAssigned to true
-    final effectiveIsAssigned = _draftAssignedUserId != null
-        ? true
-        : _draftIsAssigned;
+    final effectiveIsAssigned = widget.lockAssignmentToUnassigned
+        ? false
+        : (_draftAssignedUserId != null ? true : _draftIsAssigned);
+    final effectiveAssignedUserId = widget.lockAssignmentToUnassigned
+        ? null
+        : _draftAssignedUserId;
 
     final updatedQuery = widget.initialQuery.copyWith(
       source: _draftSource,
       clearSource: _draftSource == null,
       isAssigned: effectiveIsAssigned,
       clearIsAssigned: effectiveIsAssigned == null,
-      assignedUserId: _draftAssignedUserId,
-      clearAssignedUser: _draftAssignedUserId == null,
+      assignedUserId: effectiveAssignedUserId,
+      clearAssignedUser: effectiveAssignedUserId == null,
       page: 1,
     );
 
@@ -124,7 +139,8 @@ class _LeadFilterSheetState extends State<LeadFilterSheet> {
   void _clear() {
     final clearedQuery = widget.initialQuery.copyWith(
       clearSource: true,
-      clearIsAssigned: true,
+      clearIsAssigned: !widget.lockAssignmentToUnassigned,
+      isAssigned: widget.lockAssignmentToUnassigned ? false : null,
       clearAssignedUser: true,
       page: 1,
     );
@@ -224,143 +240,156 @@ class _LeadFilterSheetState extends State<LeadFilterSheet> {
             ),
           ),
           const SizedBox(height: 4),
-          RadioGroup<bool?>(
-            groupValue: _draftIsAssigned,
-            onChanged: _onAssignmentChanged,
-            child: Column(
-              children: [
-                RadioListTile<bool?>(
-                  key: const Key('filter_assignment_all'),
-                  title: const Text('All'),
-                  value: null,
-                  dense: true,
-                  visualDensity: VisualDensity.compact,
-                  contentPadding: EdgeInsets.zero,
+          if (widget.lockAssignmentToUnassigned) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                'Locked to Unassigned in distribution mode.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
                 ),
-                RadioListTile<bool?>(
-                  key: const Key('filter_assignment_assigned'),
-                  title: const Text('Assigned'),
-                  value: true,
-                  dense: true,
-                  visualDensity: VisualDensity.compact,
-                  contentPadding: EdgeInsets.zero,
-                ),
-                RadioListTile<bool?>(
-                  key: const Key('filter_assignment_unassigned'),
-                  title: const Text('Unassigned'),
-                  value: false,
-                  dense: true,
-                  visualDensity: VisualDensity.compact,
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ],
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-
-          // Assigned User Section
-          Text(
-            'Assigned User',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 6),
-          BlocBuilder<LeadFilterCubit, LeadFilterState>(
-            builder: (context, state) {
-              if (state is LeadFilterLoading || state is LeadFilterInitial) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      SizedBox(width: 8),
-                      Text('Loading assignees...'),
-                    ],
+          ] else ...[
+            RadioGroup<bool?>(
+              groupValue: _draftIsAssigned,
+              onChanged: _onAssignmentChanged,
+              child: Column(
+                children: [
+                  RadioListTile<bool?>(
+                    key: const Key('filter_assignment_all'),
+                    title: const Text('All'),
+                    value: null,
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                    contentPadding: EdgeInsets.zero,
                   ),
-                );
-              }
+                  RadioListTile<bool?>(
+                    key: const Key('filter_assignment_assigned'),
+                    title: const Text('Assigned'),
+                    value: true,
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  RadioListTile<bool?>(
+                    key: const Key('filter_assignment_unassigned'),
+                    title: const Text('Unassigned'),
+                    value: false,
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
 
-              if (state is LeadFilterFailure) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.error_outline,
-                        size: 18,
-                        color: colorScheme.error,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          state.message,
-                          style: TextStyle(
-                            color: colorScheme.error,
-                            fontSize: 13,
+            // Assigned User Section
+            Text(
+              'Assigned User',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 6),
+            BlocBuilder<LeadFilterCubit, LeadFilterState>(
+              builder: (context, state) {
+                if (state is LeadFilterLoading || state is LeadFilterInitial) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        SizedBox(width: 8),
+                        Text('Loading assignees...'),
+                      ],
+                    ),
+                  );
+                }
+
+                if (state is LeadFilterFailure) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          size: 18,
+                          color: colorScheme.error,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            state.message,
+                            style: TextStyle(
+                              color: colorScheme.error,
+                              fontSize: 13,
+                            ),
                           ),
                         ),
+                        TextButton(
+                          onPressed: () {
+                            context
+                                .read<LeadFilterCubit>()
+                                .retryAssignableUsers();
+                          },
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                if (state is LeadFilterReady) {
+                  final hasCurrentSelection =
+                      _draftAssignedUserId == null ||
+                      state.assignees.any((a) => a.id == _draftAssignedUserId);
+
+                  return DropdownButtonFormField<String?>(
+                    key: const Key('filter_assignee_dropdown'),
+                    initialValue: _draftAssignedUserId,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
                       ),
-                      TextButton(
-                        onPressed: () {
-                          context
-                              .read<LeadFilterCubit>()
-                              .retryAssignableUsers();
-                        },
-                        child: const Text('Retry'),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('All Assignees'),
+                      ),
+                      if (!hasCurrentSelection && _draftAssignedUserId != null)
+                        DropdownMenuItem<String?>(
+                          value: _draftAssignedUserId,
+                          child: Text('User: $_draftAssignedUserId'),
+                        ),
+                      ...state.assignees.map(
+                        (assignee) => DropdownMenuItem<String?>(
+                          value: assignee.id,
+                          child: Text(assignee.displayName),
+                        ),
                       ),
                     ],
-                  ),
-                );
-              }
+                    onChanged: _onAssigneeChanged,
+                  );
+                }
 
-              if (state is LeadFilterReady) {
-                final hasCurrentSelection =
-                    _draftAssignedUserId == null ||
-                    state.assignees.any((a) => a.id == _draftAssignedUserId);
-
-                return DropdownButtonFormField<String?>(
-                  key: const Key('filter_assignee_dropdown'),
-                  initialValue: _draftAssignedUserId,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  items: [
-                    const DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text('All Assignees'),
-                    ),
-                    if (!hasCurrentSelection && _draftAssignedUserId != null)
-                      DropdownMenuItem<String?>(
-                        value: _draftAssignedUserId,
-                        child: Text('User: $_draftAssignedUserId'),
-                      ),
-                    ...state.assignees.map(
-                      (assignee) => DropdownMenuItem<String?>(
-                        value: assignee.id,
-                        child: Text(assignee.displayName),
-                      ),
-                    ),
-                  ],
-                  onChanged: _onAssigneeChanged,
-                );
-              }
-
-              return const SizedBox.shrink();
-            },
-          ),
+                return const SizedBox.shrink();
+              },
+            ),
+          ],
           const SizedBox(height: 20),
 
           // Action Buttons

@@ -188,6 +188,7 @@ void main() {
     VoidCallback? onImportLeads,
     Size size = const Size(800, 600),
     ThemeData? theme,
+    bool isDistributionMode = false,
   }) {
     return MaterialApp(
       theme: theme,
@@ -203,6 +204,7 @@ void main() {
             onViewLead: onViewLead,
             onAddLead: onAddLead,
             onImportLeads: onImportLeads,
+            isDistributionMode: isDistributionMode,
           ),
         ),
       ),
@@ -2917,6 +2919,370 @@ void main() {
             find.byKey(const Key('lead_list_cancel_selection_button')),
           );
           await tester.pumpAndSettle();
+        }
+      },
+    );
+  });
+
+  group('LeadListScreen - L5.4 Dashboard Manual Lead Distribution Integration', () {
+    testWidgets(
+      'distribution mode starts in selection mode with Unassigned filter invariant and locked chip',
+      (tester) async {
+        repository.filterByQuery = true;
+        repository.leads = [
+          const Lead(
+            id: 'lead-1',
+            name: 'Unassigned One',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+          const Lead(
+            id: 'lead-2',
+            name: 'Assigned Two',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: 'agent-1',
+            assignedUserName: 'Mock Agent One',
+          ),
+        ];
+
+        final cubit = LeadListCubit(
+          repository,
+          initialQuery: const LeadQuery(isAssigned: false),
+        );
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(
+          buildTestWidget(cubit: cubit, isDistributionMode: true),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Selection mode is active immediately
+        expect(find.text('0 selected'), findsOneWidget);
+        expect(
+          find.byKey(const Key('lead_list_cancel_selection_button')),
+          findsOneWidget,
+        );
+
+        // 2. Only unassigned lead is candidate (assigned lead is filtered out)
+        expect(find.text('Unassigned One'), findsOneWidget);
+        expect(find.text('Assigned Two'), findsNothing);
+
+        // 3. Selection of candidate works
+        await tester.tap(find.byKey(const Key('lead_select_checkbox_lead-1')));
+        await tester.pumpAndSettle();
+        expect(find.text('1 selected'), findsOneWidget);
+
+        // 4. Cancel selection mode shows "Distribute Leads" AppBar
+        await tester.tap(
+          find.byKey(const Key('lead_list_cancel_selection_button')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Distribute Leads'), findsOneWidget);
+        expect(
+          find.byKey(const Key('lead_list_select_mode_button')),
+          findsOneWidget,
+        );
+
+        // 5. Active filter chip for Unassigned is locked
+        expect(
+          find.byKey(const Key('active_filter_assignment_chip')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('active_filters_clear_all')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'distribution context search preserves isAssigned = false invariant',
+      (tester) async {
+        repository.filterByQuery = true;
+        repository.leads = [
+          const Lead(
+            id: 'lead-1',
+            name: 'Alice Unassigned',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+          const Lead(
+            id: 'lead-2',
+            name: 'Bob Unassigned',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+          const Lead(
+            id: 'lead-3',
+            name: 'Alice Assigned',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: 'agent-1',
+            assignedUserName: 'Mock Agent One',
+          ),
+        ];
+
+        final cubit = LeadListCubit(
+          repository,
+          initialQuery: const LeadQuery(isAssigned: false),
+        );
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(
+          buildTestWidget(cubit: cubit, isDistributionMode: true),
+        );
+        await tester.pumpAndSettle();
+
+        // Exit selection mode to interact with search field
+        await tester.tap(
+          find.byKey(const Key('lead_list_cancel_selection_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Search for 'Alice'
+        await tester.enterText(find.byType(TextField), 'Alice');
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await tester.pumpAndSettle();
+
+        // Alice Unassigned is visible, Alice Assigned never appears
+        expect(find.text('Alice Unassigned'), findsOneWidget);
+        expect(find.text('Bob Unassigned'), findsNothing);
+        expect(find.text('Alice Assigned'), findsNothing);
+
+        // Clearing search restores Unassigned leads only
+        await tester.tap(find.byTooltip('Clear Search'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Alice Unassigned'), findsOneWidget);
+        expect(find.text('Bob Unassigned'), findsOneWidget);
+        expect(find.text('Alice Assigned'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'filter modal locks assignment to Unassigned in distribution mode',
+      (tester) async {
+        repository.filterByQuery = true;
+        repository.leads = [
+          const Lead(
+            id: 'lead-1',
+            name: 'Lead One',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+        ];
+
+        final cubit = LeadListCubit(
+          repository,
+          initialQuery: const LeadQuery(isAssigned: false),
+        );
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(
+          buildTestWidget(cubit: cubit, isDistributionMode: true),
+        );
+        await tester.pumpAndSettle();
+
+        // Exit selection mode and open filters
+        await tester.tap(
+          find.byKey(const Key('lead_list_cancel_selection_button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_filter_button')));
+        await tester.pumpAndSettle();
+
+        // Locked notice is visible
+        expect(
+          find.text('Locked to Unassigned in distribution mode.'),
+          findsOneWidget,
+        );
+
+        // Radio tiles for All/Assigned/Unassigned are hidden
+        expect(find.byKey(const Key('filter_radio_all')), findsNothing);
+        expect(find.byKey(const Key('filter_radio_assigned')), findsNothing);
+        expect(find.byKey(const Key('filter_radio_unassigned')), findsNothing);
+        expect(find.byKey(const Key('filter_assignee_dropdown')), findsNothing);
+
+        // Apply filters preserves isAssigned = false
+        await tester.tap(find.byKey(const Key('filter_apply_button')));
+        await tester.pumpAndSettle();
+
+        expect(cubit.currentQuery.isAssigned, isFalse);
+      },
+    );
+
+    testWidgets(
+      'empty distribution state shows truthful message and disabled bulk action',
+      (tester) async {
+        repository.filterByQuery = true;
+        repository.leads = [
+          const Lead(
+            id: 'lead-1',
+            name: 'Assigned Lead',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: 'agent-1',
+            assignedUserName: 'Mock Agent One',
+          ),
+        ];
+
+        final cubit = LeadListCubit(
+          repository,
+          initialQuery: const LeadQuery(isAssigned: false),
+        );
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(
+          buildTestWidget(cubit: cubit, isDistributionMode: true),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('No unassigned leads available'), findsOneWidget);
+        expect(
+          find.text('All leads have been assigned or no leads are available.'),
+          findsOneWidget,
+        );
+
+        final assignButtonFinder = find.byKey(
+          const Key('lead_list_assign_leads_button'),
+        );
+        expect(
+          tester.widget<FilledButton>(assignButtonFinder).onPressed,
+          isNull,
+        );
+      },
+    );
+
+    testWidgets(
+      'multiple batches in one session: selection mode remains active and assigns sequentially',
+      (tester) async {
+        repository.filterByQuery = true;
+        repository.leads = [
+          const Lead(
+            id: 'lead-1',
+            name: 'Batch Alpha',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+          const Lead(
+            id: 'lead-2',
+            name: 'Batch Beta',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+        ];
+
+        final cubit = LeadListCubit(
+          repository,
+          initialQuery: const LeadQuery(isAssigned: false),
+        );
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(
+          buildTestWidget(cubit: cubit, isDistributionMode: true),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Select Batch Alpha
+        await tester.tap(find.byKey(const Key('lead_select_checkbox_lead-1')));
+        await tester.pumpAndSettle();
+
+        // Assign Batch Alpha
+        await tester.tap(
+          find.byKey(const Key('lead_list_assign_leads_button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_assignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent One').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('bulk_assign_dialog_submit_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Batch Alpha disappeared; Batch Beta is still available
+        expect(find.text('Batch Alpha'), findsNothing);
+        expect(find.text('Batch Beta'), findsOneWidget);
+
+        // Selection mode remained active (key feature for multiple distribution batches!)
+        expect(find.text('0 selected'), findsOneWidget);
+
+        // 2. Select Batch Beta
+        await tester.tap(find.byKey(const Key('lead_select_checkbox_lead-2')));
+        await tester.pumpAndSettle();
+        expect(find.text('1 selected'), findsOneWidget);
+
+        // Assign Batch Beta
+        await tester.tap(
+          find.byKey(const Key('lead_list_assign_leads_button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_assignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent Two').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('bulk_assign_dialog_submit_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Both assigned; list is now empty
+        expect(find.text('Batch Beta'), findsNothing);
+        expect(find.text('No unassigned leads available'), findsOneWidget);
+        expect(repository.assignLeadsCallCount, 2);
+      },
+    );
+
+    testWidgets(
+      'responsive layouts and dark theme render distribution mode without overflow',
+      (tester) async {
+        repository.filterByQuery = true;
+        repository.leads = [
+          const Lead(
+            id: 'lead-1',
+            name: 'Responsive Lead',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+        ];
+
+        final sizes = [
+          const Size(320, 568),
+          const Size(360, 640),
+          const Size(768, 1024),
+          const Size(1200, 800),
+        ];
+
+        for (final size in sizes) {
+          final cubit = LeadListCubit(
+            repository,
+            initialQuery: const LeadQuery(isAssigned: false),
+          );
+          await cubit.loadLeads();
+
+          await tester.pumpWidget(
+            buildTestWidget(
+              cubit: cubit,
+              size: size,
+              theme: ThemeData.dark(),
+              isDistributionMode: true,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(tester.takeException(), isNull);
+          expect(find.text('0 selected'), findsOneWidget);
         }
       },
     );

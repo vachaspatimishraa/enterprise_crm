@@ -5,9 +5,11 @@ import 'lead_list_state.dart';
 
 class LeadListCubit extends Cubit<LeadListState> {
   final LeadRepository _repository;
-  LeadQuery _currentQuery = const LeadQuery();
+  LeadQuery _currentQuery;
 
-  LeadListCubit(this._repository) : super(const LeadListInitial());
+  LeadListCubit(this._repository, {LeadQuery initialQuery = const LeadQuery()})
+    : _currentQuery = initialQuery,
+      super(const LeadListInitial());
 
   LeadQuery get currentQuery => _currentQuery;
 
