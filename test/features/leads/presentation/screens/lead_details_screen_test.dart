@@ -25,6 +25,7 @@ class _FakeLeadRepository implements LeadRepository {
   bool shouldThrowOnGetLeadByIdAfterAssignment = false;
   bool shouldThrowOnReassignLead = false;
   bool shouldThrowOnGetLeadByIdAfterReassignment = false;
+  bool returnNullOnGetLeadByIdAfterReassignment = false;
   Completer<Lead?>? completer;
   Completer<void>? assignLeadCompleter;
   Completer<void>? reassignLeadCompleter;
@@ -44,6 +45,9 @@ class _FakeLeadRepository implements LeadRepository {
         (shouldThrowOnGetLeadByIdAfterReassignment &&
             reassignLeadCallCount > 0)) {
       throw Exception('Database connection failed');
+    }
+    if (returnNullOnGetLeadByIdAfterReassignment && reassignLeadCallCount > 0) {
+      return null;
     }
     return leads.cast<Lead?>().firstWhere(
       (l) => l?.id == leadId,
@@ -1261,5 +1265,193 @@ void main() {
         await tester.pumpAndSettle();
       }
     });
+
+    testWidgets(
+      'current assignee missing from getAssignableUsers: header truthfully displays current name and selector shows only repository candidates',
+      (tester) async {
+        const currentAssigneeLead = Lead(
+          id: 'lead-assigned-old',
+          name: 'Customer X',
+          source: LeadSource.manual,
+          assignedUserId: 'agent-old',
+          assignedUserName: 'Old Agent',
+        );
+        repository.leads = [currentAssigneeLead];
+        repository.assignees = [agent1, agent2]; // does NOT include agent-old
+
+        await tester.pumpWidget(buildTestWidget(leadId: 'lead-assigned-old'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('reassign_lead_button')));
+        await tester.pumpAndSettle();
+
+        // 1. Current assignee header truthfully shows 'Old Agent' inside the dialog
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('reassign_lead_dialog')),
+            matching: find.text('Old Agent'),
+          ),
+          findsOneWidget,
+        );
+
+        // 2. Open dropdown
+        await tester.tap(find.byKey(const Key('lead_reassignee_dropdown')));
+        await tester.pumpAndSettle();
+
+        // 3. Dropdown shows agent1 and agent2 only, does not fabricate Old Agent
+        expect(find.text('Mock Agent One'), findsWidgets);
+        expect(find.text('Mock Agent Two'), findsWidgets);
+        expect(find.text('Old Agent (Current)'), findsNothing);
+
+        // 4. Selecting Mock Agent One succeeds
+        await tester.tap(find.text('Mock Agent One').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('reassign_dialog_submit_button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(repository.reassignLeadCallCount, 1);
+        expect(repository.lastReassignmentRequest!.newAssigneeId, 'agent-1');
+        expect(find.byKey(const Key('reassign_lead_dialog')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'empty replacement set: getAssignableUsers returns empty list -> truthful empty message and Reassign disabled',
+      (tester) async {
+        repository.leads = [assignedLead];
+        repository.assignees = [];
+
+        await tester.pumpWidget(buildTestWidget(leadId: 'lead-assigned'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('reassign_lead_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('reassign_lead_dialog')), findsOneWidget);
+        expect(
+          find.byKey(const Key('reassign_assignee_selector_empty')),
+          findsOneWidget,
+        );
+        expect(find.text('No assignable users available.'), findsOneWidget);
+
+        // Reassign button is disabled
+        final submitBtn = tester.widget<FilledButton>(
+          find.byKey(const Key('reassign_dialog_submit_button')),
+        );
+        expect(submitBtn.onPressed, isNull);
+        expect(repository.reassignLeadCallCount, 0);
+      },
+    );
+
+    testWidgets(
+      'empty replacement set: getAssignableUsers returns only current assignee -> no valid replacement choice and Reassign disabled',
+      (tester) async {
+        repository.leads = [assignedLead]; // assignedUserId: 'agent-1'
+        repository.assignees = [agent1]; // only agent-1
+
+        await tester.pumpWidget(buildTestWidget(leadId: 'lead-assigned'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('reassign_lead_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('reassign_lead_dialog')), findsOneWidget);
+        expect(
+          find.byKey(const Key('lead_reassignee_dropdown')),
+          findsOneWidget,
+        );
+
+        // Open dropdown: current assignee is disabled
+        await tester.tap(find.byKey(const Key('lead_reassignee_dropdown')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Mock Agent One (Current)'), findsOneWidget);
+
+        // Reassign button is disabled
+        final submitBtn = tester.widget<FilledButton>(
+          find.byKey(const Key('reassign_dialog_submit_button')),
+        );
+        expect(submitBtn.onPressed, isNull);
+        expect(repository.reassignLeadCallCount, 0);
+      },
+    );
+
+    testWidgets(
+      'missing lead during refresh: reassign succeeds but getLeadById returns null -> displays not-found state without repeating reassignment',
+      (tester) async {
+        repository.leads = [assignedLead];
+        repository.assignees = [agent1, agent2];
+        repository.returnNullOnGetLeadByIdAfterReassignment = true;
+
+        await tester.pumpWidget(buildTestWidget(leadId: 'lead-assigned'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('reassign_lead_button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_reassignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent Two').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('reassign_dialog_submit_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Mutation succeeded once
+        expect(repository.reassignLeadCallCount, 1);
+        expect(find.byKey(const Key('reassign_lead_dialog')), findsNothing);
+
+        // Shows not-found state
+        expect(find.text('Lead not found'), findsOneWidget);
+
+        // Retrying detail reload does NOT re-run reassignLead
+        repository.returnNullOnGetLeadByIdAfterReassignment = false;
+        await tester.tap(find.widgetWithText(OutlinedButton, 'Retry'));
+        await tester.pumpAndSettle();
+
+        expect(repository.reassignLeadCallCount, 1);
+        expect(find.text('Mock Agent Two'), findsWidgets);
+      },
+    );
+
+    testWidgets(
+      'cancellation: opening dialog, selecting candidate and reason, then tapping Cancel aborts with zero repository mutations',
+      (tester) async {
+        repository.leads = [assignedLead];
+        repository.assignees = [agent1, agent2];
+
+        await tester.pumpWidget(buildTestWidget(leadId: 'lead-assigned'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('reassign_lead_button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_reassignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent Two').last);
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('reassign_dialog_reason_input')),
+          'Cancelled transfer request',
+        );
+        await tester.pumpAndSettle();
+
+        // Cancel
+        await tester.tap(
+          find.byKey(const Key('reassign_dialog_cancel_button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('reassign_lead_dialog')), findsNothing);
+        expect(repository.reassignLeadCallCount, 0);
+        expect(find.text('Mock Agent One'), findsWidgets);
+      },
+    );
   });
 }

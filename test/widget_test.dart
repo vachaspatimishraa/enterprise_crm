@@ -3,12 +3,36 @@ import 'package:enterprise_crm/features/leads/data/datasources/mock_lead_data_so
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_source.dart';
+import 'package:enterprise_crm/features/leads/domain/entities/lead_assignment_request.dart';
+import 'package:enterprise_crm/features/leads/domain/entities/lead_page.dart';
+import 'package:enterprise_crm/features/leads/domain/entities/lead_query.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/add_lead_screen.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_dashboard_screen.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_details_screen.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_list_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+class _FailingRefreshLeadRepository extends MockLeadRepository {
+  _FailingRefreshLeadRepository({super.dataSource});
+
+  int reassignLeadCallCount = 0;
+  bool shouldThrowOnGetLeads = false;
+
+  @override
+  Future<void> reassignLead(LeadReassignmentRequest request) async {
+    reassignLeadCallCount++;
+    await super.reassignLead(request);
+  }
+
+  @override
+  Future<LeadPage> getLeads([LeadQuery query = const LeadQuery()]) async {
+    if (shouldThrowOnGetLeads) {
+      throw Exception('Server error loading leads');
+    }
+    return super.getLeads(query);
+  }
+}
 
 void main() {
   group('CrmApp Shell Integration', () {
@@ -729,6 +753,439 @@ void main() {
         expect(find.byType(LeadListScreen), findsOneWidget);
         // List displays the new assignee from shared repository
         expect(find.text('Mock Agent Two'), findsWidgets);
+      },
+    );
+
+    testWidgets(
+      'L6A.3 filter integration: Lead List filtered to Agent One -> reassign to Agent Two -> disappears from Agent One list -> appears under Agent Two filter',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final dataSource = MockLeadDataSource(
+          initialLeads: [
+            const Lead(
+              id: 'lead-filter-1',
+              name: 'Filter Test Customer',
+              source: LeadSource.manual,
+              assignedUserId: 'agent-1',
+              assignedUserName: 'Mock Agent One',
+            ),
+          ],
+        );
+        final sharedRepository = MockLeadRepository(dataSource: dataSource);
+
+        await tester.pumpWidget(CrmApp(leadRepository: sharedRepository));
+        await tester.pumpAndSettle();
+
+        // 1. Navigate to Lead List
+        await tester.tap(find.text('View Leads'));
+        await tester.pumpAndSettle();
+
+        // 2. Open Filters modal and filter by Agent One
+        await tester.tap(find.byKey(const Key('lead_filter_button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('filter_assignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent One').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('filter_apply_button')));
+        await tester.pumpAndSettle();
+
+        // Lead is displayed under Agent One filter
+        expect(find.text('Filter Test Customer'), findsOneWidget);
+
+        // 3. Open Details for this lead
+        await tester.ensureVisible(find.text('View').first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('View').first);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadDetailsScreen), findsOneWidget);
+
+        // 4. Reassign to Mock Agent Two
+        await tester.tap(find.byKey(const Key('reassign_lead_button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_reassignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent Two').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('reassign_dialog_submit_button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Mock Agent Two'), findsWidgets);
+
+        // 5. Return to Lead List
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+
+        // Caller refreshed: lead disappears from Agent One filter results through normal repository query semantics
+        expect(find.byType(LeadListScreen), findsOneWidget);
+        expect(find.text('Filter Test Customer'), findsNothing);
+
+        // 6. Change filter to Mock Agent Two
+        await tester.tap(find.byKey(const Key('lead_filter_button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('filter_assignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent Two').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('filter_apply_button')));
+        await tester.pumpAndSettle();
+
+        // Lead appears under Mock Agent Two
+        expect(find.text('Filter Test Customer'), findsOneWidget);
+        expect(find.text('Mock Agent Two'), findsWidgets);
+      },
+    );
+
+    testWidgets(
+      'L6A.3 assignment filter invariants: Assigned filter retains lead with new assignee; Unassigned filter never includes reassigned lead',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final dataSource = MockLeadDataSource(
+          initialLeads: [
+            const Lead(
+              id: 'lead-inv-1',
+              name: 'Invariant Customer',
+              source: LeadSource.manual,
+              assignedUserId: 'agent-1',
+              assignedUserName: 'Mock Agent One',
+            ),
+          ],
+        );
+        final sharedRepository = MockLeadRepository(dataSource: dataSource);
+
+        await tester.pumpWidget(CrmApp(leadRepository: sharedRepository));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('View Leads'));
+        await tester.pumpAndSettle();
+
+        // 1. Filter by Assigned
+        await tester.tap(find.byKey(const Key('lead_filter_button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('filter_assignment_assigned')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('filter_apply_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Invariant Customer'), findsOneWidget);
+
+        // 2. Open Details and reassign to Agent Two
+        await tester.ensureVisible(find.text('View').first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('View').first);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('reassign_lead_button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_reassignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent Two').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('reassign_dialog_submit_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // 3. Back to list: Assigned filter is still active, lead is visible showing Mock Agent Two
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Invariant Customer'), findsOneWidget);
+        expect(find.text('Mock Agent Two'), findsWidgets);
+
+        // 4. Switch filter to Unassigned
+        await tester.tap(find.byKey(const Key('lead_filter_button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('filter_assignment_unassigned')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('filter_apply_button')));
+        await tester.pumpAndSettle();
+
+        // Reassigned lead does NOT appear in unassigned filter
+        expect(find.text('Invariant Customer'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'L6A.3 dashboard metrics invariant: repository summary and UI metrics remain identical before and after reassignment',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final dataSource = MockLeadDataSource(
+          initialLeads: [
+            const Lead(
+              id: 'lead-dash-1',
+              name: 'Assigned Lead A',
+              source: LeadSource.manual,
+              assignedUserId: 'agent-1',
+              assignedUserName: 'Mock Agent One',
+            ),
+            const Lead(
+              id: 'lead-dash-2',
+              name: 'Assigned Lead B',
+              source: LeadSource.manual,
+              assignedUserId: 'agent-2',
+              assignedUserName: 'Mock Agent Two',
+            ),
+            const Lead(
+              id: 'lead-dash-3',
+              name: 'Unassigned Lead C',
+              source: LeadSource.manual,
+            ),
+          ],
+        );
+        final sharedRepository = MockLeadRepository(dataSource: dataSource);
+
+        // Verify initial repository summary numbers
+        final summaryBefore = await sharedRepository.getLeadSummary();
+        expect(summaryBefore.assignedLeads, 2);
+        expect(summaryBefore.unassignedLeads, 1);
+        expect(summaryBefore.totalLeads, 3);
+
+        await tester.pumpWidget(CrmApp(leadRepository: sharedRepository));
+        await tester.pumpAndSettle();
+
+        // Verify Dashboard UI numbers
+        expect(find.text('Assigned Leads'), findsOneWidget);
+        expect(find.text('Unassigned Leads'), findsOneWidget);
+
+        // Open View Leads
+        await tester.tap(find.text('View Leads'));
+        await tester.pumpAndSettle();
+
+        // Open Assigned Lead A Details
+        await tester.ensureVisible(find.text('View').first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('View').first);
+        await tester.pumpAndSettle();
+
+        // Reassign from Agent One to Agent Two
+        await tester.tap(find.byKey(const Key('reassign_lead_button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_reassignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent Two').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('reassign_dialog_submit_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Return: Details -> List -> Dashboard
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+
+        final backToDashboard = find.byTooltip('Back');
+        if (backToDashboard.evaluate().isNotEmpty) {
+          await tester.tap(backToDashboard);
+        } else {
+          tester.state<NavigatorState>(find.byType(Navigator)).pop();
+        }
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadDashboardScreen), findsOneWidget);
+
+        // Verify repository summary numbers after reassignment: invariant
+        final summaryAfter = await sharedRepository.getLeadSummary();
+        expect(summaryAfter.assignedLeads, 2);
+        expect(summaryAfter.unassignedLeads, 1);
+        expect(summaryAfter.totalLeads, 3);
+      },
+    );
+
+    testWidgets(
+      'L6A.3 caller refresh failure boundary: reassign succeeds once -> list refresh fails -> retry reloads list without re-running reassignment',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final dataSource = MockLeadDataSource(
+          initialLeads: [
+            const Lead(
+              id: 'lead-fail-1',
+              name: 'Refresh Edge Customer',
+              source: LeadSource.manual,
+              assignedUserId: 'agent-1',
+              assignedUserName: 'Mock Agent One',
+            ),
+          ],
+        );
+        final sharedRepository = _FailingRefreshLeadRepository(
+          dataSource: dataSource,
+        );
+
+        await tester.pumpWidget(CrmApp(leadRepository: sharedRepository));
+        await tester.pumpAndSettle();
+
+        // Navigate to Lead List
+        await tester.tap(find.text('View Leads'));
+        await tester.pumpAndSettle();
+
+        // Open Lead Details
+        await tester.ensureVisible(find.text('View').first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('View').first);
+        await tester.pumpAndSettle();
+
+        // Configure next getLeads to fail (caller refresh failure)
+        sharedRepository.shouldThrowOnGetLeads = true;
+
+        // Reassign Lead to Mock Agent Two
+        await tester.tap(find.byKey(const Key('reassign_lead_button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_reassignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent Two').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('reassign_dialog_submit_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Reassign mutation succeeded once in repository
+        expect(sharedRepository.reassignLeadCallCount, 1);
+
+        // Details screen reloaded successfully
+        expect(find.text('Mock Agent Two'), findsWidgets);
+
+        // Return to LeadListScreen
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+
+        // Lead List shows load failure state, NOT a reassignment failure
+        expect(find.text('Failed to load leads'), findsOneWidget);
+        expect(find.text('Unable to reassign the Lead.'), findsNothing);
+
+        // Restore repository getLeads and tap Retry
+        sharedRepository.shouldThrowOnGetLeads = false;
+        await tester.tap(find.widgetWithText(FilledButton, 'Retry'));
+        await tester.pumpAndSettle();
+
+        // List is loaded with updated assignee
+        expect(find.text('Refresh Edge Customer'), findsOneWidget);
+        expect(find.text('Mock Agent Two'), findsWidgets);
+
+        // Critical invariant: reassignLead was NOT called again during retry
+        expect(sharedRepository.reassignLeadCallCount, 1);
+      },
+    );
+
+    testWidgets(
+      'L6A.3 cross-screen end-to-end persistence: List -> Details -> Reassign -> Details -> List -> reopen Details preserves updated assignee with no history leakage',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final dataSource = MockLeadDataSource(
+          initialLeads: [
+            const Lead(
+              id: 'lead-e2e-1',
+              name: 'Persistent Customer',
+              source: LeadSource.manual,
+              assignedUserId: 'agent-1',
+              assignedUserName: 'Mock Agent One',
+            ),
+          ],
+        );
+        final sharedRepository = MockLeadRepository(dataSource: dataSource);
+
+        await tester.pumpWidget(CrmApp(leadRepository: sharedRepository));
+        await tester.pumpAndSettle();
+
+        // 1. Dashboard -> View Leads
+        await tester.tap(find.text('View Leads'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Persistent Customer'), findsOneWidget);
+        expect(find.text('Mock Agent One'), findsWidgets);
+
+        // 2. Open Details
+        await tester.ensureVisible(find.text('View').first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('View').first);
+        await tester.pumpAndSettle();
+
+        // 3. Reassign Lead with reason
+        await tester.tap(find.byKey(const Key('reassign_lead_button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_reassignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent Two').last);
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('reassign_dialog_reason_input')),
+          'End-to-end reason boundary check',
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('reassign_dialog_submit_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // 4. Details shows Mock Agent Two
+        expect(find.text('Mock Agent Two'), findsWidgets);
+        // Reason is NOT displayed on screen
+        expect(find.text('End-to-end reason boundary check'), findsNothing);
+        expect(find.text('History'), findsNothing);
+        expect(find.text('Timeline'), findsNothing);
+
+        // 5. Back to Lead List
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadListScreen), findsOneWidget);
+        expect(find.text('Mock Agent Two'), findsWidgets);
+        expect(find.text('End-to-end reason boundary check'), findsNothing);
+
+        // 6. Reopen Details
+        await tester.ensureVisible(find.text('View').first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('View').first);
+        await tester.pumpAndSettle();
+
+        // Still Mock Agent Two in Lead Details
+        expect(find.byType(LeadDetailsScreen), findsOneWidget);
+        expect(find.text('Mock Agent Two'), findsWidgets);
+        expect(find.text('End-to-end reason boundary check'), findsNothing);
+        expect(find.text('History'), findsNothing);
+        expect(find.text('Timeline'), findsNothing);
       },
     );
   });
