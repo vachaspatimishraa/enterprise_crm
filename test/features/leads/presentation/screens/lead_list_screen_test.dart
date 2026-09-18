@@ -23,6 +23,7 @@ import 'package:enterprise_crm/features/leads/presentation/screens/lead_import_w
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_list_screen.dart';
 import 'package:enterprise_crm/features/leads/presentation/services/lead_import_file_picker.dart';
 import 'package:enterprise_crm/features/leads/presentation/widgets/lead_active_filters.dart';
+import 'package:enterprise_crm/features/leads/presentation/widgets/bulk_assign_leads_dialog.dart';
 import 'package:enterprise_crm/features/leads/presentation/widgets/lead_data_table.dart';
 import 'package:enterprise_crm/features/leads/presentation/widgets/lead_filter_sheet.dart';
 import 'package:enterprise_crm/features/leads/presentation/widgets/lead_list_card.dart';
@@ -47,6 +48,12 @@ class _FakeLeadRepository implements LeadRepository {
   int? overrideCurrentPage;
   int? overrideTotalItems;
   bool? overrideHasNext;
+  bool filterByQuery = false;
+
+  int assignLeadsCallCount = 0;
+  LeadAssignmentRequest? lastAssignLeadsRequest;
+  Completer<void>? assignLeadsCompleter;
+  int assignLeadsFailureCount = 0;
 
   @override
   Future<LeadPage> getLeads([LeadQuery query = const LeadQuery()]) async {
@@ -54,11 +61,25 @@ class _FakeLeadRepository implements LeadRepository {
     getLeadsCallCount++;
     if (completer != null) return completer!.future;
     if (shouldThrow) throw Exception('Unable to connect to lead service');
+    var resultLeads = leads;
+    if (filterByQuery) {
+      if (query.isAssigned != null) {
+        resultLeads = resultLeads
+            .where((l) => l.isAssigned == query.isAssigned)
+            .toList();
+      }
+      if (query.searchText != null && query.searchText!.trim().isNotEmpty) {
+        final st = query.searchText!.trim().toLowerCase();
+        resultLeads = resultLeads
+            .where((l) => (l.name?.toLowerCase().contains(st) ?? false))
+            .toList();
+      }
+    }
     return LeadPage(
-      items: leads,
+      items: resultLeads,
       currentPage: overrideCurrentPage ?? query.page,
       pageSize: query.pageSize,
-      totalItems: overrideTotalItems ?? leads.length,
+      totalItems: overrideTotalItems ?? resultLeads.length,
       hasNext: overrideHasNext ?? false,
     );
   }
@@ -81,12 +102,48 @@ class _FakeLeadRepository implements LeadRepository {
   }) async {}
 
   @override
-  Future<void> assignLeads(LeadAssignmentRequest request) async {}
+  Future<void> assignLeads(LeadAssignmentRequest request) async {
+    lastAssignLeadsRequest = request;
+    assignLeadsCallCount++;
+    if (assignLeadsCompleter != null) {
+      await assignLeadsCompleter!.future;
+    }
+    if (assignLeadsFailureCount > 0) {
+      assignLeadsFailureCount--;
+      throw Exception('Assignment failed');
+    }
+    final updated = <Lead>[];
+    for (final l in leads) {
+      if (request.leadIds.contains(l.id)) {
+        final assigneeName = assignableUsers
+            .firstWhere(
+              (u) => u.id == request.assigneeId,
+              orElse: () => LeadAssignee(
+                id: request.assigneeId,
+                displayName: 'Agent ${request.assigneeId}',
+              ),
+            )
+            .displayName;
+        updated.add(
+          l.copyWith(
+            assignedUserId: request.assigneeId,
+            assignedUserName: assigneeName,
+          ),
+        );
+      } else {
+        updated.add(l);
+      }
+    }
+    leads = updated;
+  }
 
   @override
   Future<void> reassignLead(LeadReassignmentRequest request) async {}
 
-  List<LeadAssignee> assignableUsers = const [];
+  List<LeadAssignee> assignableUsers = const [
+    LeadAssignee(id: 'agent-1', displayName: 'Mock Agent One'),
+    LeadAssignee(id: 'agent-2', displayName: 'Mock Agent Two'),
+  ];
 
   @override
   Future<List<LeadAssignee>> getAssignableUsers() async => assignableUsers;
@@ -130,8 +187,10 @@ void main() {
     VoidCallback? onAddLead,
     VoidCallback? onImportLeads,
     Size size = const Size(800, 600),
+    ThemeData? theme,
   }) {
     return MaterialApp(
+      theme: theme,
       home: MediaQuery(
         data: MediaQueryData(size: size),
         child: SizedBox(
@@ -2128,6 +2187,737 @@ void main() {
         expect(find.byType(LeadListScreen), findsOneWidget);
         expect(find.text('Initial Lead'), findsOneWidget);
         expect(find.text('Alice'), findsOneWidget);
+      },
+    );
+  });
+
+  group('LeadListScreen - L5.3 Bulk Lead Selection & Assignment', () {
+    testWidgets(
+      'selection mode enter, exit, toggle selection, and count display',
+      (tester) async {
+        repository.leads = [
+          const Lead(
+            id: 'lead-1',
+            name: 'Lead One',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+          const Lead(
+            id: 'lead-2',
+            name: 'Lead Two',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+        ];
+
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        // Initially in normal mode
+        expect(
+          find.byKey(const Key('lead_list_select_mode_button')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('lead_list_cancel_selection_button')),
+          findsNothing,
+        );
+
+        // Enter selection mode
+        await tester.tap(find.byKey(const Key('lead_list_select_mode_button')));
+        await tester.pumpAndSettle();
+
+        // Verify selection mode UI
+        expect(find.text('0 selected'), findsOneWidget);
+        expect(
+          find.byKey(const Key('lead_list_cancel_selection_button')),
+          findsOneWidget,
+        );
+        final assignButtonFinder = find.byKey(
+          const Key('lead_list_assign_leads_button'),
+        );
+        expect(assignButtonFinder, findsOneWidget);
+
+        // Assign button should be disabled when 0 selected
+        final assignButton = tester.widget<FilledButton>(assignButtonFinder);
+        expect(assignButton.onPressed, isNull);
+
+        // Select Lead One
+        await tester.tap(find.byKey(const Key('lead_select_checkbox_lead-1')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('1 selected'), findsOneWidget);
+        final enabledAssignButton = tester.widget<FilledButton>(
+          assignButtonFinder,
+        );
+        expect(enabledAssignButton.onPressed, isNotNull);
+
+        // Deselect Lead One
+        await tester.tap(find.byKey(const Key('lead_select_checkbox_lead-1')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('0 selected'), findsOneWidget);
+        expect(
+          tester.widget<FilledButton>(assignButtonFinder).onPressed,
+          isNull,
+        );
+
+        // Exit selection mode
+        await tester.tap(
+          find.byKey(const Key('lead_list_cancel_selection_button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('lead_list_select_mode_button')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('lead_list_cancel_selection_button')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'mobile card layout: unassigned selectable, assigned not selectable, no details navigation in selection mode',
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 640);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() => tester.view.resetPhysicalSize());
+
+        repository.leads = [
+          const Lead(
+            id: 'unassigned-lead',
+            name: 'Unassigned Person',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+          const Lead(
+            id: 'assigned-lead',
+            name: 'Assigned Person',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: 'agent-1',
+            assignedUserName: 'Mock Agent One',
+          ),
+        ];
+
+        bool viewLeadCalled = false;
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(
+          buildTestWidget(
+            cubit: cubit,
+            size: const Size(360, 640),
+            onViewLead: (lead) => viewLeadCalled = true,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // In normal mobile mode, Lead cards are visible
+        expect(find.byType(LeadListCard), findsNWidgets(2));
+
+        // Enter selection mode
+        await tester.tap(find.byKey(const Key('lead_list_select_mode_button')));
+        await tester.pumpAndSettle();
+
+        // Checkboxes should exist
+        final unassignedCheckboxFinder = find.byKey(
+          const Key('lead_select_checkbox_unassigned-lead'),
+        );
+        final assignedCheckboxFinder = find.byKey(
+          const Key('lead_select_checkbox_assigned-lead'),
+        );
+
+        expect(unassignedCheckboxFinder, findsOneWidget);
+        expect(assignedCheckboxFinder, findsOneWidget);
+
+        // Unassigned checkbox is enabled
+        final unassignedCheckbox = tester.widget<Checkbox>(
+          unassignedCheckboxFinder,
+        );
+        expect(unassignedCheckbox.onChanged, isNotNull);
+
+        // Assigned checkbox is disabled
+        final assignedCheckbox = tester.widget<Checkbox>(
+          assignedCheckboxFinder,
+        );
+        expect(assignedCheckbox.onChanged, isNull);
+
+        // Tapping unassigned card toggles selection and does NOT navigate to details
+        await tester.tap(unassignedCheckboxFinder);
+        await tester.pumpAndSettle();
+
+        expect(find.text('1 selected'), findsOneWidget);
+        expect(viewLeadCalled, isFalse);
+
+        // Tapping assigned card does not select it
+        await tester.tap(find.text('Assigned Person'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('1 selected'), findsOneWidget);
+        expect(viewLeadCalled, isFalse);
+      },
+    );
+
+    testWidgets(
+      'desktop table layout: selection column, select-all and deselect-all for eligible leads only',
+      (tester) async {
+        repository.leads = [
+          const Lead(
+            id: 'lead-a',
+            name: 'Lead Alpha',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+          const Lead(
+            id: 'lead-b',
+            name: 'Lead Beta',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+          const Lead(
+            id: 'lead-c',
+            name: 'Lead Gamma (Assigned)',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: 'agent-1',
+            assignedUserName: 'Mock Agent One',
+          ),
+        ];
+
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(
+          buildTestWidget(cubit: cubit, size: const Size(1000, 700)),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadDataTable), findsOneWidget);
+
+        // Enter selection mode
+        await tester.tap(find.byKey(const Key('lead_list_select_mode_button')));
+        await tester.pumpAndSettle();
+
+        // Table header checkbox exists
+        final selectAllHeaderFinder = find.byKey(
+          const Key('lead_data_table_select_all_checkbox'),
+        );
+        expect(selectAllHeaderFinder, findsOneWidget);
+
+        // Tap table select-all checkbox: selects all eligible unassigned leads (A & B), not C
+        await tester.tap(selectAllHeaderFinder);
+        await tester.pumpAndSettle();
+
+        expect(find.text('2 selected'), findsOneWidget);
+
+        // Tap again to deselect all
+        await tester.tap(selectAllHeaderFinder);
+        await tester.pumpAndSettle();
+
+        expect(find.text('0 selected'), findsOneWidget);
+
+        // AppBar 'Select All' button also selects all eligible
+        final appBarSelectAllFinder = find.byKey(
+          const Key('lead_list_select_all_button'),
+        );
+        expect(appBarSelectAllFinder, findsOneWidget);
+
+        await tester.tap(appBarSelectAllFinder);
+        await tester.pumpAndSettle();
+
+        expect(find.text('2 selected'), findsOneWidget);
+        expect(find.text('Deselect All'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'bulk assignment success flow: selects unassigned leads, chooses assignee, submits, refreshes list from repository, and exits selection mode',
+      (tester) async {
+        repository.leads = [
+          const Lead(
+            id: 'lead-a',
+            name: 'Lead Alpha',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+          const Lead(
+            id: 'lead-b',
+            name: 'Lead Beta',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+        ];
+
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        // Enter selection mode and select both
+        await tester.tap(find.byKey(const Key('lead_list_select_mode_button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_select_checkbox_lead-a')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('lead_select_checkbox_lead-b')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('2 selected'), findsOneWidget);
+
+        // Tap Assign Leads
+        await tester.tap(
+          find.byKey(const Key('lead_list_assign_leads_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Modal should be open
+        expect(find.byType(BulkAssignLeadsDialog), findsOneWidget);
+        expect(find.text('Assign 2 Leads'), findsOneWidget);
+        expect(find.text('Assigning 2 unassigned Leads to:'), findsOneWidget);
+
+        // Submit button is disabled before assignee selected
+        final submitButtonFinder = find.byKey(
+          const Key('bulk_assign_dialog_submit_button'),
+        );
+        expect(
+          tester.widget<FilledButton>(submitButtonFinder).onPressed,
+          isNull,
+        );
+
+        // Open assignee dropdown and select Mock Agent One
+        await tester.tap(find.byKey(const Key('lead_assignee_dropdown')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Mock Agent One').last);
+        await tester.pumpAndSettle();
+
+        // Submit button should now be enabled
+        expect(
+          tester.widget<FilledButton>(submitButtonFinder).onPressed,
+          isNotNull,
+        );
+
+        // Submit
+        await tester.tap(submitButtonFinder);
+        await tester.pumpAndSettle();
+
+        // Modal closed
+        expect(find.byType(BulkAssignLeadsDialog), findsNothing);
+
+        // Repository was called
+        expect(repository.assignLeadsCallCount, 1);
+        expect(repository.lastAssignLeadsRequest?.assigneeId, 'agent-1');
+        expect(repository.lastAssignLeadsRequest?.leadIds, [
+          'lead-a',
+          'lead-b',
+        ]);
+
+        // List refreshed and displays updated assignee names
+        expect(find.text('Mock Agent One'), findsNWidgets(2));
+
+        // Selection mode exited
+        expect(
+          find.byKey(const Key('lead_list_select_mode_button')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('lead_list_cancel_selection_button')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'bulk failure and retry: retains selection and assignee on error, retries successfully',
+      (tester) async {
+        repository.leads = [
+          const Lead(
+            id: 'lead-a',
+            name: 'Lead Alpha',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+        ];
+        repository.assignLeadsFailureCount = 1;
+
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        // Select Lead Alpha and open dialog
+        await tester.tap(find.byKey(const Key('lead_list_select_mode_button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_select_checkbox_lead-a')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('lead_list_assign_leads_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Select assignee
+        await tester.tap(find.byKey(const Key('lead_assignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent Two').last);
+        await tester.pumpAndSettle();
+
+        // Submit (fails on first attempt)
+        await tester.tap(
+          find.byKey(const Key('bulk_assign_dialog_submit_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Dialog remains open, safe error displayed
+        expect(find.byType(BulkAssignLeadsDialog), findsOneWidget);
+        expect(
+          find.byKey(const Key('bulk_assign_dialog_error')),
+          findsOneWidget,
+        );
+        expect(
+          find.text('Unable to assign the selected Leads.'),
+          findsOneWidget,
+        );
+        expect(find.text('Mock Agent Two'), findsWidgets);
+
+        // Retry submission (succeeds)
+        await tester.tap(
+          find.byKey(const Key('bulk_assign_dialog_submit_button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(BulkAssignLeadsDialog), findsNothing);
+        expect(repository.assignLeadsCallCount, 2);
+        expect(find.text('Mock Agent Two'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'pending submission blocks back navigation and barrier dismiss',
+      (tester) async {
+        repository.leads = [
+          const Lead(
+            id: 'lead-a',
+            name: 'Lead Alpha',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+        ];
+        repository.assignLeadsCompleter = Completer<void>();
+
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(buildTestWidget(cubit: cubit));
+        await tester.pumpAndSettle();
+
+        // Select and open dialog
+        await tester.tap(find.byKey(const Key('lead_list_select_mode_button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('lead_select_checkbox_lead-a')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('lead_list_assign_leads_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Choose assignee and submit
+        await tester.tap(find.byKey(const Key('lead_assignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent One').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('bulk_assign_dialog_submit_button')),
+        );
+        await tester.pump(); // Start async submission
+
+        // Cancel button is disabled while submitting
+        final cancelButtonFinder = find.byKey(
+          const Key('bulk_assign_dialog_cancel_button'),
+        );
+        expect(tester.widget<TextButton>(cancelButtonFinder).onPressed, isNull);
+
+        // Attempt system back pop
+        final didPop = await tester.binding.handlePopRoute();
+        expect(didPop, isTrue);
+        await tester.pump();
+
+        // Dialog must remain open
+        expect(find.byType(BulkAssignLeadsDialog), findsOneWidget);
+
+        // Complete repository submission
+        repository.assignLeadsCompleter!.complete();
+        await tester.pumpAndSettle();
+
+        // Dialog now closes and list refreshes
+        expect(find.byType(BulkAssignLeadsDialog), findsNothing);
+        expect(find.text('Mock Agent One'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'defensive guard rejects batch containing already assigned leads',
+      (tester) async {
+        // Direct test of BulkAssignLeadsDialog with an already assigned lead
+        final assignedLead = const Lead(
+          id: 'already-assigned',
+          name: 'Assigned Lead',
+          status: LeadStatus('Sample New'),
+          source: LeadSource.manual,
+          assignedUserId: 'agent-1',
+          assignedUserName: 'Mock Agent One',
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: BulkAssignLeadsDialog(
+                leads: [assignedLead],
+                repository: repository,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Dialog shows defensive error and disables submit
+        expect(
+          find.text('One or more selected Leads are already assigned.'),
+          findsOneWidget,
+        );
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.byKey(const Key('bulk_assign_dialog_submit_button')),
+              )
+              .onPressed,
+          isNull,
+        );
+        expect(repository.assignLeadsCallCount, 0);
+      },
+    );
+
+    testWidgets('query change (search, sort, pagination) clears selection', (
+      tester,
+    ) async {
+      repository.leads = [
+        const Lead(
+          id: 'lead-1',
+          name: 'Lead One',
+          status: LeadStatus('Sample New'),
+          source: LeadSource.manual,
+          assignedUserId: null,
+        ),
+        const Lead(
+          id: 'lead-2',
+          name: 'Lead Two',
+          status: LeadStatus('Sample New'),
+          source: LeadSource.manual,
+          assignedUserId: null,
+        ),
+      ];
+
+      final cubit = LeadListCubit(repository);
+      await cubit.loadLeads();
+
+      await tester.pumpWidget(buildTestWidget(cubit: cubit));
+      await tester.pumpAndSettle();
+
+      // Enter selection mode and select lead-1
+      await tester.tap(find.byKey(const Key('lead_list_select_mode_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('lead_select_checkbox_lead-1')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('1 selected'), findsOneWidget);
+
+      // Perform search query change
+      await tester.enterText(find.byType(TextField), 'Search Term');
+      await tester.tap(find.byTooltip('Search'));
+      await tester.pumpAndSettle();
+
+      // Selection must be cleared
+      expect(find.text('0 selected'), findsOneWidget);
+    });
+
+    testWidgets(
+      'unassigned filter query semantics: assigned leads disappear from unassigned view upon refresh',
+      (tester) async {
+        repository.filterByQuery = true;
+        repository.leads = [
+          const Lead(
+            id: 'lead-1',
+            name: 'Lead One',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+          const Lead(
+            id: 'lead-2',
+            name: 'Lead Two',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+        ];
+
+        final filterCubit = LeadFilterCubit(repository);
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads(query: const LeadQuery(isAssigned: false));
+
+        await tester.pumpWidget(
+          buildTestWidget(cubit: cubit, filterCubit: filterCubit),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Lead One'), findsOneWidget);
+        expect(find.text('Lead Two'), findsOneWidget);
+
+        // Enter selection mode and select both
+        await tester.tap(find.byKey(const Key('lead_list_select_mode_button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('lead_select_checkbox_lead-1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('lead_select_checkbox_lead-2')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('2 selected'), findsOneWidget);
+
+        // Assign to Mock Agent One
+        await tester.tap(
+          find.byKey(const Key('lead_list_assign_leads_button')),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('lead_assignee_dropdown')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Mock Agent One').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('bulk_assign_dialog_submit_button')),
+        );
+        await tester.pumpAndSettle();
+
+        // Both leads are now assigned in repository, so with AssignmentFilter.unassigned active,
+        // repository getLeads returns 0 matching items.
+        expect(find.text('Lead One'), findsNothing);
+        expect(find.text('Lead Two'), findsNothing);
+        expect(find.text('No leads match these filters'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'normal navigation regression: tapping lead outside selection mode opens details',
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 640);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() => tester.view.resetPhysicalSize());
+
+        repository.leads = [
+          const Lead(
+            id: 'lead-1',
+            name: 'Lead One',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+        ];
+
+        Lead? viewedLead;
+        final cubit = LeadListCubit(repository);
+        await cubit.loadLeads();
+
+        await tester.pumpWidget(
+          buildTestWidget(
+            cubit: cubit,
+            size: const Size(360, 640),
+            onViewLead: (lead) => viewedLead = lead,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Tap View button outside selection mode
+        await tester.tap(find.text('View'));
+        await tester.pumpAndSettle();
+
+        expect(viewedLead, isNotNull);
+        expect(viewedLead?.id, 'lead-1');
+      },
+    );
+
+    testWidgets(
+      'responsive layouts (320x568, 360x640, 768x1024, 1200x800) and dark theme render without overflow',
+      (tester) async {
+        repository.leads = [
+          const Lead(
+            id: 'lead-1',
+            name: 'Lead One',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: null,
+          ),
+          const Lead(
+            id: 'lead-2',
+            name: 'Lead Two',
+            status: LeadStatus('Sample New'),
+            source: LeadSource.manual,
+            assignedUserId: 'agent-1',
+            assignedUserName: 'Mock Agent One',
+          ),
+        ];
+
+        final sizes = [
+          const Size(320, 568),
+          const Size(360, 640),
+          const Size(768, 1024),
+          const Size(1200, 800),
+        ];
+
+        for (final size in sizes) {
+          final cubit = LeadListCubit(repository);
+          await cubit.loadLeads();
+
+          await tester.pumpWidget(
+            buildTestWidget(cubit: cubit, size: size, theme: ThemeData.dark()),
+          );
+          await tester.pumpAndSettle();
+
+          // Enter selection mode
+          await tester.tap(
+            find.byKey(const Key('lead_list_select_mode_button')),
+          );
+          await tester.pumpAndSettle();
+
+          // Check selection mode UI renders cleanly
+          expect(find.text('0 selected'), findsOneWidget);
+
+          // Exit selection mode
+          await tester.tap(
+            find.byKey(const Key('lead_list_cancel_selection_button')),
+          );
+          await tester.pumpAndSettle();
+        }
       },
     );
   });

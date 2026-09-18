@@ -7,32 +7,60 @@ export '../utils/lead_display_formatters.dart';
 class LeadListCard extends StatelessWidget {
   final Lead lead;
   final void Function(Lead lead)? onViewLead;
+  final bool isSelectionMode;
+  final bool isSelected;
+  final ValueChanged<bool?>? onSelectChanged;
 
-  const LeadListCard({super.key, required this.lead, this.onViewLead});
+  const LeadListCard({
+    super.key,
+    required this.lead,
+    this.onViewLead,
+    this.isSelectionMode = false,
+    this.isSelected = false,
+    this.onSelectChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final canSelect = !lead.isAssigned;
 
     return Card(
       elevation: 0,
+      color: (isSelectionMode && isSelected)
+          ? colorScheme.primaryContainer.withAlpha(50)
+          : null,
       shape: RoundedRectangleBorder(
-        side: BorderSide(color: colorScheme.outlineVariant),
+        side: BorderSide(
+          color: (isSelectionMode && isSelected)
+              ? colorScheme.primary
+              : colorScheme.outlineVariant,
+        ),
         borderRadius: BorderRadius.circular(12),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: onViewLead != null ? () => onViewLead!(lead) : null,
+        onTap: isSelectionMode
+            ? (canSelect ? () => onSelectChanged?.call(!isSelected) : null)
+            : (onViewLead != null ? () => onViewLead!(lead) : null),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. Header: Name & View Action
+              // 1. Header: Name & View Action (or Checkbox in selection mode)
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
+                  if (isSelectionMode) ...[
+                    Checkbox(
+                      key: Key('lead_select_checkbox_${lead.id}'),
+                      value: isSelected,
+                      onChanged: canSelect ? onSelectChanged : null,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   Expanded(
                     child: Text(
                       formatLeadName(lead.name),
@@ -43,21 +71,23 @@ class LeadListCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: onViewLead != null
-                        ? () => onViewLead!(lead)
-                        : null,
-                    icon: const Icon(Icons.visibility_outlined, size: 16),
-                    label: const Text('View'),
-                    style: OutlinedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
+                  if (!isSelectionMode) ...[
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: onViewLead != null
+                          ? () => onViewLead!(lead)
+                          : null,
+                      icon: const Icon(Icons.visibility_outlined, size: 16),
+                      label: const Text('View'),
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
               const SizedBox(height: 8),

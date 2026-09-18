@@ -9,6 +9,7 @@ import '../bloc/lead_filter_cubit.dart';
 import '../bloc/lead_filter_state.dart';
 import '../bloc/lead_list_cubit.dart';
 import '../bloc/lead_list_state.dart';
+import '../widgets/bulk_assign_leads_dialog.dart';
 import '../widgets/lead_active_filters.dart';
 import '../widgets/lead_data_table.dart';
 import '../widgets/lead_filter_sheet.dart';
@@ -138,6 +139,8 @@ class _LeadListView extends StatefulWidget {
 
 class _LeadListViewState extends State<_LeadListView> {
   late final TextEditingController _searchController;
+  bool _isSelectionMode = false;
+  final Set<String> _selectedLeadIds = {};
 
   @override
   void initState() {
@@ -164,7 +167,113 @@ class _LeadListViewState extends State<_LeadListView> {
     setState(() {});
   }
 
+  void _enterSelectionMode() {
+    setState(() {
+      _isSelectionMode = true;
+      _selectedLeadIds.clear();
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _isSelectionMode = false;
+      _selectedLeadIds.clear();
+    });
+  }
+
+  void _clearSelection() {
+    if (_selectedLeadIds.isNotEmpty) {
+      setState(() {
+        _selectedLeadIds.clear();
+      });
+    }
+  }
+
+  void _toggleLeadSelection(Lead lead) {
+    if (lead.isAssigned) return;
+    setState(() {
+      if (_selectedLeadIds.contains(lead.id)) {
+        _selectedLeadIds.remove(lead.id);
+      } else {
+        _selectedLeadIds.add(lead.id);
+      }
+    });
+  }
+
+  void _toggleSelectAll(List<Lead> visibleLeads) {
+    final eligible = visibleLeads.where((l) => !l.isAssigned).toList();
+    if (eligible.isEmpty) return;
+
+    final allSelected = eligible.every((l) => _selectedLeadIds.contains(l.id));
+    setState(() {
+      if (allSelected) {
+        for (final l in eligible) {
+          _selectedLeadIds.remove(l.id);
+        }
+      } else {
+        for (final l in eligible) {
+          _selectedLeadIds.add(l.id);
+        }
+      }
+    });
+  }
+
+  bool _isAllEligibleSelected(List<Lead> visibleLeads) {
+    final eligible = visibleLeads.where((l) => !l.isAssigned).toList();
+    if (eligible.isEmpty) return false;
+    return eligible.every((l) => _selectedLeadIds.contains(l.id));
+  }
+
+  Future<void> _openBulkAssignDialog(List<Lead> visibleLeads) async {
+    final selectedLeads = visibleLeads
+        .where((l) => _selectedLeadIds.contains(l.id))
+        .toList();
+
+    if (selectedLeads.isEmpty) return;
+
+    // Defensive check: ensure no assigned leads slip into the batch
+    if (selectedLeads.any((l) => l.isAssigned)) {
+      setState(() {
+        _selectedLeadIds.removeWhere((id) {
+          final l = visibleLeads.where((lead) => lead.id == id).firstOrNull;
+          return l == null || l.isAssigned;
+        });
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cannot assign already-assigned Leads.')),
+      );
+      return;
+    }
+
+    LeadRepository? repo = widget.repository;
+    if (repo == null) {
+      try {
+        repo = context.read<LeadRepository>();
+      } catch (_) {}
+    }
+
+    if (repo == null) {
+      _showComingSoon(context, 'Assign Leads');
+      return;
+    }
+
+    final leadsSnapshot = List<Lead>.unmodifiable(selectedLeads);
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) =>
+          BulkAssignLeadsDialog(leads: leadsSnapshot, repository: repo!),
+    );
+
+    if (result == true && mounted) {
+      _exitSelectionMode();
+      context.read<LeadListCubit>().refreshLeads();
+    }
+  }
+
   void _performSearch() {
+    _clearSelection();
     final raw = _searchController.text;
     final trimmed = raw.trim();
     final cubit = context.read<LeadListCubit>();
@@ -179,6 +288,7 @@ class _LeadListViewState extends State<_LeadListView> {
   }
 
   void _clearSearch() {
+    _clearSelection();
     _searchController.clear();
     final cubit = context.read<LeadListCubit>();
     final newQuery = cubit.currentQuery.copyWith(clearSearch: true, page: 1);
@@ -186,6 +296,7 @@ class _LeadListViewState extends State<_LeadListView> {
   }
 
   void _clearFilters() {
+    _clearSelection();
     final cubit = context.read<LeadListCubit>();
     final newQuery = cubit.currentQuery.copyWith(
       clearSource: true,
@@ -197,12 +308,14 @@ class _LeadListViewState extends State<_LeadListView> {
   }
 
   void _removeSourceFilter() {
+    _clearSelection();
     final cubit = context.read<LeadListCubit>();
     final newQuery = cubit.currentQuery.copyWith(clearSource: true, page: 1);
     cubit.applyQuery(newQuery);
   }
 
   void _removeAssignmentFilter() {
+    _clearSelection();
     final cubit = context.read<LeadListCubit>();
     final newQuery = cubit.currentQuery.copyWith(
       clearIsAssigned: true,
@@ -212,6 +325,7 @@ class _LeadListViewState extends State<_LeadListView> {
   }
 
   void _removeAssigneeFilter() {
+    _clearSelection();
     final cubit = context.read<LeadListCubit>();
     final newQuery = cubit.currentQuery.copyWith(
       clearAssignedUser: true,
@@ -222,12 +336,14 @@ class _LeadListViewState extends State<_LeadListView> {
 
   void _onPreviousPage(int currentPage) {
     if (currentPage <= 1) return;
+    _clearSelection();
     final cubit = context.read<LeadListCubit>();
     final newQuery = cubit.currentQuery.copyWith(page: currentPage - 1);
     cubit.applyQuery(newQuery);
   }
 
   void _onNextPage(int currentPage) {
+    _clearSelection();
     final cubit = context.read<LeadListCubit>();
     final newQuery = cubit.currentQuery.copyWith(page: currentPage + 1);
     cubit.applyQuery(newQuery);
@@ -247,6 +363,7 @@ class _LeadListViewState extends State<_LeadListView> {
       currentQuery: cubit.currentQuery,
       filterCubit: filterCubit,
       onApply: (newQuery) {
+        _clearSelection();
         cubit.applyQuery(newQuery);
       },
     );
@@ -311,43 +428,131 @@ class _LeadListViewState extends State<_LeadListView> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Leads'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh Leads',
-            onPressed: () {
-              context.read<LeadListCubit>().refreshLeads();
-            },
-          ),
-          IconButton(
-            key: const Key('lead_list_import_button'),
-            icon: const Icon(Icons.upload_file),
-            tooltip: 'Import Leads',
-            onPressed:
-                widget.onImportLeads ?? () => _openImportWorkflow(context),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: FilledButton.icon(
-              onPressed:
-                  widget.onAddLead ??
-                  () => _showComingSoon(context, 'Add Lead'),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add Lead'),
-              style: FilledButton.styleFrom(
+      appBar: _isSelectionMode
+          ? AppBar(
+              leadingWidth: 36,
+              leading: IconButton(
+                key: const Key('lead_list_cancel_selection_button'),
                 visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.close),
+                tooltip: 'Cancel Selection',
+                onPressed: _exitSelectionMode,
               ),
+              titleSpacing: 4,
+              title: Text(
+                '${_selectedLeadIds.length} selected',
+                key: const Key('lead_list_selected_count'),
+                style: const TextStyle(fontSize: 14),
+              ),
+              actions: [
+                BlocBuilder<LeadListCubit, LeadListState>(
+                  builder: (context, state) {
+                    final leads = state is LeadListLoaded
+                        ? state.leads
+                        : <Lead>[];
+                    final hasEligible = leads.any((l) => !l.isAssigned);
+                    final allSelected = _isAllEligibleSelected(leads);
+
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextButton(
+                          key: const Key('lead_list_select_all_button'),
+                          onPressed: hasEligible
+                              ? () => _toggleSelectAll(leads)
+                              : null,
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          child: Text(
+                            allSelected ? 'Deselect All' : 'Select All',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8, left: 2),
+                          child: FilledButton(
+                            key: const Key('lead_list_assign_leads_button'),
+                            onPressed: _selectedLeadIds.isNotEmpty
+                                ? () => _openBulkAssignDialog(leads)
+                                : null,
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            child: const Text(
+                              'Assign Leads',
+                              style: TextStyle(fontSize: 13),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            )
+          : AppBar(
+              titleSpacing: 8,
+              title: const Text('Leads'),
+              actions: [
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Refresh Leads',
+                  onPressed: () {
+                    context.read<LeadListCubit>().refreshLeads();
+                  },
+                ),
+                IconButton(
+                  key: const Key('lead_list_select_mode_button'),
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.checklist),
+                  tooltip: 'Select Leads',
+                  onPressed: _enterSelectionMode,
+                ),
+                IconButton(
+                  key: const Key('lead_list_import_button'),
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.upload_file),
+                  tooltip: 'Import Leads',
+                  onPressed:
+                      widget.onImportLeads ??
+                      () => _openImportWorkflow(context),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, right: 8),
+                  child: FilledButton.icon(
+                    onPressed:
+                        widget.onAddLead ??
+                        () => _showComingSoon(context, 'Add Lead'),
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Add Lead'),
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
       body: BlocConsumer<LeadListCubit, LeadListState>(
         listener: (context, state) {
           final queryText = _getQueryFromState(state).searchText ?? '';
           if (_searchController.text != queryText && queryText.isEmpty) {
             _searchController.text = '';
+          }
+          if (state is LeadListLoaded) {
+            _selectedLeadIds.removeWhere((id) {
+              final lead = state.leads.where((l) => l.id == id).firstOrNull;
+              return lead == null || lead.isAssigned;
+            });
+          } else {
+            _clearSelection();
           }
         },
         builder: (context, state) {
@@ -443,6 +648,7 @@ class _LeadListViewState extends State<_LeadListView> {
           initialValue: currentSortIndex >= 0 ? currentSortIndex : 0,
           tooltip: 'Sort Leads',
           onSelected: (int selectedIndex) {
+            _clearSelection();
             final selectedSort = leadSortOptions[selectedIndex];
             final cubit = context.read<LeadListCubit>();
             final newQuery = cubit.currentQuery.copyWith(
@@ -875,9 +1081,13 @@ class _LeadListViewState extends State<_LeadListView> {
                 itemCount: state.leads.length,
                 separatorBuilder: (_, index) => const SizedBox(height: 12),
                 itemBuilder: (context, index) {
+                  final lead = state.leads[index];
                   return LeadListCard(
-                    lead: state.leads[index],
+                    lead: lead,
                     onViewLead: widget.onViewLead,
+                    isSelectionMode: _isSelectionMode,
+                    isSelected: _selectedLeadIds.contains(lead.id),
+                    onSelectChanged: (_) => _toggleLeadSelection(lead),
                   );
                 },
               )
@@ -895,6 +1105,11 @@ class _LeadListViewState extends State<_LeadListView> {
                     child: LeadDataTable(
                       leads: state.leads,
                       onViewLead: widget.onViewLead,
+                      isSelectionMode: _isSelectionMode,
+                      selectedLeadIds: _selectedLeadIds,
+                      onToggleSelect: _toggleLeadSelection,
+                      onSelectAll: (_) => _toggleSelectAll(state.leads),
+                      allEligibleSelected: _isAllEligibleSelected(state.leads),
                     ),
                   ),
                 ),
