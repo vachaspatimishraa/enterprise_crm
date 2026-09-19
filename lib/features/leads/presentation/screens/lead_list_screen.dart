@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../data/services/lead_export_file_saver.dart';
 import '../../domain/entities/lead.dart';
 import '../../domain/entities/lead_assignee.dart';
 import '../../domain/entities/lead_query.dart';
@@ -12,6 +13,7 @@ import '../bloc/lead_list_state.dart';
 import '../widgets/bulk_assign_leads_dialog.dart';
 import '../widgets/lead_active_filters.dart';
 import '../widgets/lead_data_table.dart';
+import '../widgets/lead_export_dialog.dart';
 import '../widgets/lead_filter_sheet.dart';
 import '../widgets/lead_list_card.dart';
 import '../widgets/lead_pagination_controls.dart';
@@ -26,6 +28,7 @@ class LeadListScreen extends StatelessWidget {
   final VoidCallback? onAddLead;
   final VoidCallback? onImportLeads;
   final LeadImportFilePicker? filePicker;
+  final LeadExportFileSaver? exportFileSaver;
   final bool isDistributionMode;
 
   const LeadListScreen({
@@ -37,6 +40,7 @@ class LeadListScreen extends StatelessWidget {
     this.onAddLead,
     this.onImportLeads,
     this.filePicker,
+    this.exportFileSaver,
     this.isDistributionMode = false,
   });
 
@@ -59,6 +63,7 @@ class LeadListScreen extends StatelessWidget {
             onImportLeads: onImportLeads,
             repository: repo,
             filePicker: filePicker,
+            exportFileSaver: exportFileSaver,
             isDistributionMode: isDistributionMode,
           ),
         );
@@ -77,6 +82,7 @@ class LeadListScreen extends StatelessWidget {
             onImportLeads: onImportLeads,
             repository: repo,
             filePicker: filePicker,
+            exportFileSaver: exportFileSaver,
             isDistributionMode: isDistributionMode,
           ),
         );
@@ -89,6 +95,7 @@ class LeadListScreen extends StatelessWidget {
           onImportLeads: onImportLeads,
           repository: repo,
           filePicker: filePicker,
+          exportFileSaver: exportFileSaver,
           isDistributionMode: isDistributionMode,
         ),
       );
@@ -116,6 +123,7 @@ class LeadListScreen extends StatelessWidget {
           onImportLeads: onImportLeads,
           repository: repo,
           filePicker: filePicker,
+          exportFileSaver: exportFileSaver,
           isDistributionMode: isDistributionMode,
         ),
       );
@@ -127,6 +135,7 @@ class LeadListScreen extends StatelessWidget {
       onImportLeads: onImportLeads,
       repository: repo,
       filePicker: filePicker,
+      exportFileSaver: exportFileSaver,
       isDistributionMode: isDistributionMode,
     );
   }
@@ -138,6 +147,7 @@ class _LeadListView extends StatefulWidget {
   final VoidCallback? onImportLeads;
   final LeadRepository? repository;
   final LeadImportFilePicker? filePicker;
+  final LeadExportFileSaver? exportFileSaver;
   final bool isDistributionMode;
 
   const _LeadListView({
@@ -146,6 +156,7 @@ class _LeadListView extends StatefulWidget {
     this.onImportLeads,
     this.repository,
     this.filePicker,
+    this.exportFileSaver,
     this.isDistributionMode = false,
   });
 
@@ -452,6 +463,45 @@ class _LeadListViewState extends State<_LeadListView> {
     }
   }
 
+  Future<void> _openExportDialog() async {
+    LeadRepository? repo = widget.repository;
+    if (repo == null) {
+      try {
+        repo = context.read<LeadRepository>();
+      } catch (_) {}
+    }
+    if (repo == null) {
+      _showComingSoon(context, 'Export Leads');
+      return;
+    }
+
+    LeadExportFileSaver? saver = widget.exportFileSaver;
+    if (saver == null) {
+      try {
+        saver = context.read<LeadExportFileSaver>();
+      } catch (_) {}
+    }
+    saver ??= const DefaultLeadExportFileSaver();
+
+    final currentQuerySnapshot = _getQueryFromState(
+      context.read<LeadListCubit>().state,
+    );
+
+    final result = await showLeadExportDialog(
+      context: context,
+      repository: repo,
+      fileSaver: saver,
+      query: currentQuerySnapshot,
+      contextExplanation:
+          'All Leads matching the current search and filters will be exported across all pages.',
+    );
+    if (result == true && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Lead export saved.')));
+    }
+  }
+
   LeadQuery _getQueryFromState(LeadListState state) {
     return switch (state) {
       LeadListInitial() => context.read<LeadListCubit>().currentQuery,
@@ -547,13 +597,18 @@ class _LeadListViewState extends State<_LeadListView> {
                 ],
               )
             : AppBar(
-                titleSpacing: 8,
+                titleSpacing: 4,
                 title: Text(
                   widget.isDistributionMode ? 'Distribute Leads' : 'Leads',
                 ),
                 actions: [
                   IconButton(
                     visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                     icon: const Icon(Icons.refresh),
                     tooltip: 'Refresh Leads',
                     onPressed: () {
@@ -563,6 +618,11 @@ class _LeadListViewState extends State<_LeadListView> {
                   IconButton(
                     key: const Key('lead_list_select_mode_button'),
                     visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                     icon: const Icon(Icons.checklist),
                     tooltip: 'Select Leads',
                     onPressed: _enterSelectionMode,
@@ -571,14 +631,31 @@ class _LeadListViewState extends State<_LeadListView> {
                     IconButton(
                       key: const Key('lead_list_import_button'),
                       visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
                       icon: const Icon(Icons.upload_file),
                       tooltip: 'Import Leads',
                       onPressed:
                           widget.onImportLeads ??
                           () => _openImportWorkflow(context),
                     ),
+                    IconButton(
+                      key: const Key('lead_list_export_button'),
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      icon: const Icon(Icons.download_outlined),
+                      tooltip: 'Export Leads',
+                      onPressed: _openExportDialog,
+                    ),
                     Padding(
-                      padding: const EdgeInsets.only(left: 4, right: 8),
+                      padding: const EdgeInsets.only(left: 2, right: 4),
                       child: FilledButton.icon(
                         onPressed:
                             widget.onAddLead ??
@@ -587,7 +664,7 @@ class _LeadListViewState extends State<_LeadListView> {
                         label: const Text('Add Lead'),
                         style: FilledButton.styleFrom(
                           visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
                         ),
                       ),
                     ),

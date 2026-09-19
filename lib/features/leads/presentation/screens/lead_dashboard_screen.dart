@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../data/services/lead_export_file_saver.dart';
+import '../../domain/entities/lead_query.dart';
 import '../../domain/repositories/lead_repository.dart';
 import '../bloc/lead_dashboard_cubit.dart';
 import '../bloc/lead_dashboard_state.dart';
+import '../widgets/lead_export_dialog.dart';
 import '../widgets/lead_quick_action.dart';
 import '../widgets/lead_summary_card.dart';
 import 'lead_import_workflow_screen.dart';
@@ -16,6 +19,7 @@ class LeadDashboardScreen extends StatelessWidget {
   final VoidCallback? onImportLeads;
   final VoidCallback? onDistributeLeads;
   final VoidCallback? onExportLeads;
+  final LeadExportFileSaver? fileSaver;
 
   const LeadDashboardScreen({
     super.key,
@@ -26,6 +30,7 @@ class LeadDashboardScreen extends StatelessWidget {
     this.onImportLeads,
     this.onDistributeLeads,
     this.onExportLeads,
+    this.fileSaver,
   });
 
   @override
@@ -40,6 +45,7 @@ class LeadDashboardScreen extends StatelessWidget {
           onDistributeLeads: onDistributeLeads,
           onExportLeads: onExportLeads,
           repository: repository,
+          fileSaver: fileSaver,
         ),
       );
     }
@@ -54,6 +60,7 @@ class LeadDashboardScreen extends StatelessWidget {
           onDistributeLeads: onDistributeLeads,
           onExportLeads: onExportLeads,
           repository: repository,
+          fileSaver: fileSaver,
         ),
       );
     }
@@ -66,6 +73,7 @@ class LeadDashboardScreen extends StatelessWidget {
       onDistributeLeads: onDistributeLeads,
       onExportLeads: onExportLeads,
       repository: repository,
+      fileSaver: fileSaver,
     );
   }
 }
@@ -77,6 +85,7 @@ class _LeadDashboardView extends StatelessWidget {
   final VoidCallback? onDistributeLeads;
   final VoidCallback? onExportLeads;
   final LeadRepository? repository;
+  final LeadExportFileSaver? fileSaver;
 
   const _LeadDashboardView({
     this.onViewLeads,
@@ -85,6 +94,7 @@ class _LeadDashboardView extends StatelessWidget {
     this.onDistributeLeads,
     this.onExportLeads,
     this.repository,
+    this.fileSaver,
   });
 
   void _showComingSoon(BuildContext context, String actionName) {
@@ -140,6 +150,40 @@ class _LeadDashboardView extends StatelessWidget {
     );
     if (result == true && context.mounted) {
       dashboardCubit.loadDashboard();
+    }
+  }
+
+  Future<void> _openExportDialog(BuildContext context) async {
+    LeadRepository? repo = repository;
+    if (repo == null) {
+      try {
+        repo = context.read<LeadRepository>();
+      } catch (_) {}
+    }
+    if (repo == null) {
+      _showComingSoon(context, 'Export Leads');
+      return;
+    }
+
+    LeadExportFileSaver? saver = fileSaver;
+    if (saver == null) {
+      try {
+        saver = context.read<LeadExportFileSaver>();
+      } catch (_) {}
+    }
+    saver ??= const DefaultLeadExportFileSaver();
+
+    final result = await showLeadExportDialog(
+      context: context,
+      repository: repo,
+      fileSaver: saver,
+      query: const LeadQuery(),
+      contextExplanation: 'All Leads will be exported.',
+    );
+    if (result == true && context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Lead export saved.')));
     }
   }
 
@@ -425,8 +469,7 @@ class _LeadDashboardView extends StatelessWidget {
                     label: 'Export Leads',
                     icon: Icons.download_outlined,
                     onPressed:
-                        onExportLeads ??
-                        () => _showComingSoon(context, 'Export Leads'),
+                        onExportLeads ?? () => _openExportDialog(context),
                   ),
                 ],
               ),

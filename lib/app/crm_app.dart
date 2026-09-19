@@ -12,39 +12,54 @@ import '../features/leads/presentation/screens/edit_lead_screen.dart';
 import '../features/leads/presentation/screens/lead_dashboard_screen.dart';
 import '../features/leads/presentation/screens/lead_details_screen.dart';
 import '../features/leads/presentation/screens/lead_import_workflow_screen.dart';
+import '../features/leads/data/services/lead_export_file_saver.dart';
 import '../features/leads/presentation/screens/lead_list_screen.dart';
 import '../features/leads/presentation/services/lead_import_file_picker.dart';
+import '../features/leads/presentation/widgets/lead_export_dialog.dart';
 
 /// Top-level application widget for the Enterprise CRM.
 class CrmApp extends StatelessWidget {
   final LeadRepository leadRepository;
   final LeadImportFilePicker? filePicker;
+  final LeadExportFileSaver? exportFileSaver;
 
-  const CrmApp({super.key, required this.leadRepository, this.filePicker});
+  const CrmApp({
+    super.key,
+    required this.leadRepository,
+    this.filePicker,
+    this.exportFileSaver,
+  });
 
   @override
   Widget build(BuildContext context) {
     return RepositoryProvider<LeadRepository>.value(
       value: leadRepository,
-      child: MaterialApp(
-        title: 'Enterprise CRM',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.deepPurple,
-            brightness: Brightness.light,
+      child: RepositoryProvider<LeadExportFileSaver>.value(
+        value: exportFileSaver ?? const DefaultLeadExportFileSaver(),
+        child: MaterialApp(
+          title: 'Enterprise CRM',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            useMaterial3: true,
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: Colors.deepPurple,
+              brightness: Brightness.light,
+            ),
+          ),
+          darkTheme: ThemeData(
+            useMaterial3: true,
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: Colors.deepPurple,
+              brightness: Brightness.dark,
+            ),
+          ),
+          themeMode: ThemeMode.system,
+          home: CrmHomeScreen(
+            repository: leadRepository,
+            filePicker: filePicker,
+            exportFileSaver: exportFileSaver,
           ),
         ),
-        darkTheme: ThemeData(
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.deepPurple,
-            brightness: Brightness.dark,
-          ),
-        ),
-        themeMode: ThemeMode.system,
-        home: CrmHomeScreen(repository: leadRepository, filePicker: filePicker),
       ),
     );
   }
@@ -54,8 +69,14 @@ class CrmApp extends StatelessWidget {
 class CrmHomeScreen extends StatefulWidget {
   final LeadRepository repository;
   final LeadImportFilePicker? filePicker;
+  final LeadExportFileSaver? exportFileSaver;
 
-  const CrmHomeScreen({super.key, required this.repository, this.filePicker});
+  const CrmHomeScreen({
+    super.key,
+    required this.repository,
+    this.filePicker,
+    this.exportFileSaver,
+  });
 
   @override
   State<CrmHomeScreen> createState() => _CrmHomeScreenState();
@@ -63,11 +84,14 @@ class CrmHomeScreen extends StatefulWidget {
 
 class _CrmHomeScreenState extends State<CrmHomeScreen> {
   late final LeadDashboardCubit _dashboardCubit;
+  late final LeadExportFileSaver _exportFileSaver;
 
   @override
   void initState() {
     super.initState();
     _dashboardCubit = LeadDashboardCubit(widget.repository)..loadDashboard();
+    _exportFileSaver =
+        widget.exportFileSaver ?? const DefaultLeadExportFileSaver();
   }
 
   @override
@@ -84,6 +108,7 @@ class _CrmHomeScreenState extends State<CrmHomeScreen> {
           cubit: listCubit,
           repository: widget.repository,
           filePicker: widget.filePicker,
+          exportFileSaver: _exportFileSaver,
           onViewLead: (lead) => _openLeadDetails(
             listContext,
             lead.id,
@@ -217,15 +242,32 @@ class _CrmHomeScreenState extends State<CrmHomeScreen> {
     }
   }
 
+  void _openExportLeads() async {
+    final result = await showLeadExportDialog(
+      context: context,
+      repository: widget.repository,
+      fileSaver: _exportFileSaver,
+      query: const LeadQuery(),
+      contextExplanation: 'All Leads will be exported.',
+    );
+    if (result == true && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Lead export saved.')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return LeadDashboardScreen(
       cubit: _dashboardCubit,
       repository: widget.repository,
+      fileSaver: _exportFileSaver,
       onViewLeads: () => _openLeadList(context),
       onAddLead: () => _openAddLead(context),
       onImportLeads: () => _openImportWorkflow(context),
       onDistributeLeads: () => _openDistributeLeads(context),
+      onExportLeads: _openExportLeads,
     );
   }
 }
