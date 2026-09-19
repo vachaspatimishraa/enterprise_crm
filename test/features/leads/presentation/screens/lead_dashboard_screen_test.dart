@@ -167,7 +167,6 @@ void main() {
 
   Widget buildTestWidget({
     LeadDashboardCubit? cubit,
-    VoidCallback? onViewLeads,
     void Function(LeadQuery query)? onNavigateToLeads,
     VoidCallback? onAddLead,
     VoidCallback? onImportLeads,
@@ -185,7 +184,6 @@ void main() {
         child: LeadDashboardScreen(
           cubit: cubit,
           repository: repository,
-          onViewLeads: onViewLeads,
           onNavigateToLeads: onNavigateToLeads,
           onAddLead: onAddLead,
           onImportLeads: onImportLeads,
@@ -228,7 +226,7 @@ void main() {
       expect(find.text('CSV Leads'), findsOneWidget);
 
       // Verify quick action buttons exist
-      expect(find.text('View Leads'), findsOneWidget);
+      expect(find.text('View Leads'), findsNothing);
       expect(find.text('Add Lead'), findsOneWidget);
       expect(find.text('Import Leads'), findsOneWidget);
       expect(find.text('Distribute Leads'), findsOneWidget);
@@ -294,7 +292,6 @@ void main() {
     });
 
     testWidgets('quick action callbacks trigger when tapped', (tester) async {
-      bool viewTapped = false;
       bool addTapped = false;
 
       repository.leads = [const Lead(id: '1', source: LeadSource.manual)];
@@ -302,17 +299,9 @@ void main() {
       await cubit.loadDashboard();
 
       await tester.pumpWidget(
-        buildTestWidget(
-          cubit: cubit,
-          onViewLeads: () => viewTapped = true,
-          onAddLead: () => addTapped = true,
-        ),
+        buildTestWidget(cubit: cubit, onAddLead: () => addTapped = true),
       );
       await tester.pumpAndSettle();
-
-      await tester.tap(find.text('View Leads'));
-      await tester.pumpAndSettle();
-      expect(viewTapped, isTrue);
 
       await tester.tap(find.text('Add Lead'));
       await tester.pumpAndSettle();

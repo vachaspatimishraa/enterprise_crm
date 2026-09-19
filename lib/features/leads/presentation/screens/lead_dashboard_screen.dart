@@ -16,7 +16,6 @@ import 'lead_list_screen.dart';
 class LeadDashboardScreen extends StatelessWidget {
   final LeadDashboardCubit? cubit;
   final LeadRepository? repository;
-  final VoidCallback? onViewLeads;
   final void Function(LeadQuery query)? onNavigateToLeads;
   final VoidCallback? onAddLead;
   final VoidCallback? onImportLeads;
@@ -29,7 +28,6 @@ class LeadDashboardScreen extends StatelessWidget {
     super.key,
     this.cubit,
     this.repository,
-    this.onViewLeads,
     this.onNavigateToLeads,
     this.onAddLead,
     this.onImportLeads,
@@ -45,7 +43,6 @@ class LeadDashboardScreen extends StatelessWidget {
       return BlocProvider.value(
         value: cubit!,
         child: _LeadDashboardView(
-          onViewLeads: onViewLeads,
           onNavigateToLeads: onNavigateToLeads,
           onAddLead: onAddLead,
           onImportLeads: onImportLeads,
@@ -62,7 +59,6 @@ class LeadDashboardScreen extends StatelessWidget {
       return BlocProvider(
         create: (_) => LeadDashboardCubit(repository!)..loadDashboard(),
         child: _LeadDashboardView(
-          onViewLeads: onViewLeads,
           onNavigateToLeads: onNavigateToLeads,
           onAddLead: onAddLead,
           onImportLeads: onImportLeads,
@@ -77,7 +73,6 @@ class LeadDashboardScreen extends StatelessWidget {
 
     // Attempt to use already provided Cubit from ancestor context
     return _LeadDashboardView(
-      onViewLeads: onViewLeads,
       onNavigateToLeads: onNavigateToLeads,
       onAddLead: onAddLead,
       onImportLeads: onImportLeads,
@@ -91,7 +86,6 @@ class LeadDashboardScreen extends StatelessWidget {
 }
 
 class _LeadDashboardView extends StatelessWidget {
-  final VoidCallback? onViewLeads;
   final void Function(LeadQuery query)? onNavigateToLeads;
   final VoidCallback? onAddLead;
   final VoidCallback? onImportLeads;
@@ -102,7 +96,6 @@ class _LeadDashboardView extends StatelessWidget {
   final LeadExportFileSaver? fileSaver;
 
   const _LeadDashboardView({
-    this.onViewLeads,
     this.onNavigateToLeads,
     this.onAddLead,
     this.onImportLeads,
@@ -514,14 +507,6 @@ class _LeadDashboardView extends StatelessWidget {
                 spacing: 12,
                 runSpacing: 12,
                 children: [
-                  LeadQuickAction(
-                    label: 'View Leads',
-                    icon: Icons.list_alt_outlined,
-                    isPrimary: true,
-                    onPressed:
-                        onViewLeads ??
-                        () => _openLeadList(context, const LeadQuery()),
-                  ),
                   LeadQuickAction(
                     label: 'Add Lead',
                     icon: Icons.add_outlined,

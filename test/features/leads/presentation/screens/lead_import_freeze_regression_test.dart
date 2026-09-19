@@ -95,8 +95,8 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Open Lead List
-        await tester.tap(find.text('View Leads'));
+        // Open Lead List via Total Leads card
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
         expect(find.byType(LeadListScreen), findsOneWidget);
 

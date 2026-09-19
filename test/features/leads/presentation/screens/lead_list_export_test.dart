@@ -69,7 +69,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // Navigate to Lead List screen
-        await tester.tap(find.text('View Leads'));
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
 
         // Verify export action button is present in AppBar
@@ -117,7 +117,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('View Leads'));
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('lead_list_export_button')));
@@ -158,7 +158,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('View Leads'));
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
 
         // Initially present in normal mode
@@ -253,7 +253,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('View Leads'));
+      await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
       await tester.pumpAndSettle();
 
       // Enter search query in search TextField
@@ -309,7 +309,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('View Leads'));
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
 
         // Open export dialog
@@ -410,7 +410,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('View Leads'));
+      await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
       await tester.pumpAndSettle();
 
       // Enter search for 'Mehta' (Rohan Mehta)
@@ -453,7 +453,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('View Leads'));
+      await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('lead_list_export_button')));
@@ -492,7 +492,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('View Leads'));
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('lead_list_export_button')));

@@ -271,7 +271,6 @@ class _CrmHomeScreenState extends State<CrmHomeScreen> {
       repository: widget.repository,
       filePicker: widget.filePicker,
       fileSaver: _exportFileSaver,
-      onViewLeads: () => _openLeadList(context),
       onNavigateToLeads: (query) => _openLeadList(context, initialQuery: query),
       onAddLead: () => _openAddLead(context),
       onImportLeads: () => _openImportWorkflow(context),

@@ -56,21 +56,21 @@ void main() {
         expect(find.text('Overview & Summary'), findsOneWidget);
         expect(find.text('Total Leads'), findsOneWidget);
         expect(find.text('Quick Actions'), findsOneWidget);
-        expect(find.text('View Leads'), findsOneWidget);
+        expect(find.text('View Leads'), findsNothing);
         expect(find.text('Add Lead'), findsOneWidget);
         expect(find.text('Import Leads'), findsOneWidget);
       },
     );
 
     testWidgets(
-      'navigation: tapping View Leads opens LeadListScreen and Back returns to Dashboard',
+      'navigation: tapping Total Leads card opens LeadListScreen and Back returns to Dashboard',
       (tester) async {
         final repository = MockLeadRepository();
         await tester.pumpWidget(CrmApp(leadRepository: repository));
         await tester.pumpAndSettle();
 
-        // Tap 'View Leads' Quick Action on Dashboard
-        await tester.tap(find.text('View Leads'));
+        // Tap 'Total Leads' Summary Card on Dashboard
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
 
         // Verified: LeadListScreen is open
@@ -106,7 +106,8 @@ void main() {
         expect(find.text('Import Leads'), findsOneWidget);
 
         // 2. Navigate to LeadListScreen
-        await tester.tap(find.text('View Leads'));
+        // Navigate to Lead List via Total Leads card
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
 
         // LeadListScreen has AppBar import button
@@ -166,14 +167,14 @@ void main() {
         expect(find.byType(LeadDashboardScreen), findsOneWidget);
         expect(find.text('2'), findsWidgets);
 
-        // Scroll to and tap 'View Leads' Quick Action
+        // Tap Total Leads card to view all leads
         await tester.scrollUntilVisible(
-          find.text('View Leads'),
+          find.byKey(const Key('dashboard_card_total_leads')),
           200,
           scrollable: find.byType(Scrollable).first,
         );
         await tester.pumpAndSettle();
-        await tester.tap(find.text('View Leads'));
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
 
         expect(find.byType(LeadListScreen), findsOneWidget);
@@ -231,7 +232,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // 1. Navigate to Lead List from Dashboard
-        await tester.tap(find.text('View Leads'));
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
 
         expect(find.byType(LeadListScreen), findsOneWidget);
@@ -374,7 +375,7 @@ void main() {
     );
 
     testWidgets(
-      'L5.4 ordinary View Leads regression: opening View Leads does not force Unassigned filter or selection mode',
+      'L5.4 ordinary Total Leads regression: opening Total Leads does not force Unassigned filter or selection mode',
       (tester) async {
         final dataSource = MockLeadDataSource(
           initialLeads: [
@@ -397,8 +398,8 @@ void main() {
         await tester.pumpWidget(CrmApp(leadRepository: repository));
         await tester.pumpAndSettle();
 
-        // Tap View Leads
-        await tester.tap(find.text('View Leads'));
+        // Tap Total Leads card
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
 
         // Screen is regular LeadListScreen
@@ -625,8 +626,8 @@ void main() {
 
         expect(find.byType(LeadDashboardScreen), findsOneWidget);
 
-        // 4. Dashboard -> View Leads (Ordinary Lead List)
-        await tester.tap(find.text('View Leads'));
+        // 4. Dashboard -> Total Leads (Ordinary Lead List)
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
 
         expect(find.byType(LeadListScreen), findsOneWidget);
@@ -701,8 +702,8 @@ void main() {
         await tester.pumpWidget(CrmApp(leadRepository: sharedRepository));
         await tester.pumpAndSettle();
 
-        // 1. Dashboard -> View Leads
-        await tester.tap(find.text('View Leads'));
+        // 1. Dashboard -> Total Leads
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
 
         expect(find.byType(LeadListScreen), findsOneWidget);
@@ -781,7 +782,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // 1. Navigate to Lead List
-        await tester.tap(find.text('View Leads'));
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
 
         // 2. Open Filters modal and filter by Agent One
@@ -873,7 +874,7 @@ void main() {
         await tester.pumpWidget(CrmApp(leadRepository: sharedRepository));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('View Leads'));
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
 
         // 1. Filter by Assigned
@@ -975,8 +976,8 @@ void main() {
         expect(find.text('Assigned Leads'), findsOneWidget);
         expect(find.text('Unassigned Leads'), findsOneWidget);
 
-        // Open View Leads
-        await tester.tap(find.text('View Leads'));
+        // Open Total Leads
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
 
         // Open Assigned Lead A Details
@@ -1048,7 +1049,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // Navigate to Lead List
-        await tester.tap(find.text('View Leads'));
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
 
         // Open Lead Details
@@ -1126,8 +1127,8 @@ void main() {
         await tester.pumpWidget(CrmApp(leadRepository: sharedRepository));
         await tester.pumpAndSettle();
 
-        // 1. Dashboard -> View Leads
-        await tester.tap(find.text('View Leads'));
+        // 1. Dashboard -> Total Leads
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
         await tester.pumpAndSettle();
 
         expect(find.text('Persistent Customer'), findsOneWidget);
