@@ -11,9 +11,11 @@ import 'package:enterprise_crm/features/leads/domain/entities/lead_summary.dart'
 import 'package:enterprise_crm/features/leads/domain/repositories/lead_repository.dart';
 import 'package:enterprise_crm/features/leads/presentation/bloc/lead_dashboard_cubit.dart';
 import 'package:enterprise_crm/features/leads/presentation/bloc/lead_dashboard_state.dart';
+import 'package:enterprise_crm/features/leads/data/services/lead_export_file_saver.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_dashboard_screen.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_import_workflow_screen.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_list_screen.dart';
+import 'package:enterprise_crm/features/leads/presentation/services/lead_import_file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -30,6 +32,14 @@ class _FakeLeadRepository implements LeadRepository {
     if (query.isAssigned != null) {
       filtered = filtered
           .where((l) => l.isAssigned == query.isAssigned)
+          .toList();
+    }
+    if (query.source != null) {
+      filtered = filtered.where((l) => l.source == query.source).toList();
+    }
+    if (query.assignedUserId != null) {
+      filtered = filtered
+          .where((l) => l.assignedUserId == query.assignedUserId)
           .toList();
     }
     if (query.searchText != null && query.searchText!.isNotEmpty) {
@@ -158,23 +168,31 @@ void main() {
   Widget buildTestWidget({
     LeadDashboardCubit? cubit,
     VoidCallback? onViewLeads,
+    void Function(LeadQuery query)? onNavigateToLeads,
     VoidCallback? onAddLead,
     VoidCallback? onImportLeads,
     VoidCallback? onDistributeLeads,
     VoidCallback? onExportLeads,
+    LeadImportFilePicker? filePicker,
+    LeadExportFileSaver? fileSaver,
+    ThemeData? theme,
     Size size = const Size(1200, 800),
   }) {
     return MaterialApp(
+      theme: theme,
       home: MediaQuery(
         data: MediaQueryData(size: size),
         child: LeadDashboardScreen(
           cubit: cubit,
           repository: repository,
           onViewLeads: onViewLeads,
+          onNavigateToLeads: onNavigateToLeads,
           onAddLead: onAddLead,
           onImportLeads: onImportLeads,
           onDistributeLeads: onDistributeLeads,
           onExportLeads: onExportLeads,
+          filePicker: filePicker,
+          fileSaver: fileSaver,
         ),
       ),
     );
@@ -452,5 +470,449 @@ void main() {
         expect((cubit.state as LeadDashboardLoaded).metrics, initialMetrics);
       },
     );
+
+    group('FIX 3 — All 6 Dashboard Summary Cards Clickable', () {
+      final leadManualAssigned = const Lead(
+        id: 'lead-1',
+        name: 'Manual Assigned Lead',
+        source: LeadSource.manual,
+        assignedUserId: 'u1',
+        assignedUserName: 'Agent 1',
+      );
+      final leadManualUnassigned = const Lead(
+        id: 'lead-2',
+        name: 'Manual Unassigned Lead',
+        source: LeadSource.manual,
+      );
+      final leadExcelAssigned = const Lead(
+        id: 'lead-3',
+        name: 'Excel Assigned Lead',
+        source: LeadSource.excel,
+        assignedUserId: 'u2',
+        assignedUserName: 'Agent 2',
+      );
+      final leadExcelUnassigned = const Lead(
+        id: 'lead-4',
+        name: 'Excel Unassigned Lead',
+        source: LeadSource.excel,
+      );
+      final leadCsvAssigned = const Lead(
+        id: 'lead-5',
+        name: 'CSV Assigned Lead',
+        source: LeadSource.csv,
+        assignedUserId: 'u3',
+        assignedUserName: 'Agent 3',
+      );
+      final leadCsvUnassigned = const Lead(
+        id: 'lead-6',
+        name: 'CSV Unassigned Lead',
+        source: LeadSource.csv,
+      );
+
+      final fixtureLeads = [
+        leadManualAssigned,
+        leadManualUnassigned,
+        leadExcelAssigned,
+        leadExcelUnassigned,
+        leadCsvAssigned,
+        leadCsvUnassigned,
+      ];
+
+      testWidgets(
+        'tapping Total Leads card navigates to LeadList with default query (all leads)',
+        (tester) async {
+          repository.leads = fixtureLeads;
+          final cubit = LeadDashboardCubit(repository);
+          await cubit.loadDashboard();
+
+          await tester.pumpWidget(buildTestWidget(cubit: cubit));
+          await tester.pumpAndSettle();
+
+          final totalCard = find.byKey(const Key('dashboard_card_total_leads'));
+          expect(totalCard, findsOneWidget);
+          await tester.tap(totalCard);
+          await tester.pumpAndSettle();
+
+          expect(find.byType(LeadListScreen), findsOneWidget);
+          expect(find.text('Manual Assigned Lead'), findsOneWidget);
+          expect(find.text('Manual Unassigned Lead'), findsOneWidget);
+          expect(find.text('Excel Assigned Lead'), findsOneWidget);
+          expect(find.text('Excel Unassigned Lead'), findsOneWidget);
+          expect(find.text('CSV Assigned Lead'), findsOneWidget);
+          expect(find.text('CSV Unassigned Lead'), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'tapping Assigned Leads card navigates to LeadList with isAssigned = true',
+        (tester) async {
+          repository.leads = fixtureLeads;
+          final cubit = LeadDashboardCubit(repository);
+          await cubit.loadDashboard();
+
+          await tester.pumpWidget(buildTestWidget(cubit: cubit));
+          await tester.pumpAndSettle();
+
+          final assignedCard = find.byKey(
+            const Key('dashboard_card_assigned_leads'),
+          );
+          expect(assignedCard, findsOneWidget);
+          await tester.tap(assignedCard);
+          await tester.pumpAndSettle();
+
+          expect(find.byType(LeadListScreen), findsOneWidget);
+          // Only assigned leads visible
+          expect(find.text('Manual Assigned Lead'), findsOneWidget);
+          expect(find.text('Excel Assigned Lead'), findsOneWidget);
+          expect(find.text('CSV Assigned Lead'), findsOneWidget);
+          // Unassigned leads not visible
+          expect(find.text('Manual Unassigned Lead'), findsNothing);
+          expect(find.text('Excel Unassigned Lead'), findsNothing);
+          expect(find.text('CSV Unassigned Lead'), findsNothing);
+
+          // Visible filter reflects Assigned
+          expect(find.text('Assigned'), findsWidgets);
+        },
+      );
+
+      testWidgets(
+        'tapping Unassigned Leads card navigates to LeadList with isAssigned = false',
+        (tester) async {
+          repository.leads = fixtureLeads;
+          final cubit = LeadDashboardCubit(repository);
+          await cubit.loadDashboard();
+
+          await tester.pumpWidget(buildTestWidget(cubit: cubit));
+          await tester.pumpAndSettle();
+
+          final unassignedCard = find.byKey(
+            const Key('dashboard_card_unassigned_leads'),
+          );
+          expect(unassignedCard, findsOneWidget);
+          await tester.tap(unassignedCard);
+          await tester.pumpAndSettle();
+
+          expect(find.byType(LeadListScreen), findsOneWidget);
+          // Only unassigned leads visible
+          expect(find.text('Manual Unassigned Lead'), findsOneWidget);
+          expect(find.text('Excel Unassigned Lead'), findsOneWidget);
+          expect(find.text('CSV Unassigned Lead'), findsOneWidget);
+          // Assigned leads not visible
+          expect(find.text('Manual Assigned Lead'), findsNothing);
+          expect(find.text('Excel Assigned Lead'), findsNothing);
+          expect(find.text('CSV Assigned Lead'), findsNothing);
+
+          // Visible filter reflects Unassigned
+          expect(find.text('Unassigned'), findsWidgets);
+        },
+      );
+
+      testWidgets(
+        'tapping Manual Leads card navigates to LeadList with source = manual',
+        (tester) async {
+          repository.leads = fixtureLeads;
+          final cubit = LeadDashboardCubit(repository);
+          await cubit.loadDashboard();
+
+          await tester.pumpWidget(buildTestWidget(cubit: cubit));
+          await tester.pumpAndSettle();
+
+          final manualCard = find.byKey(
+            const Key('dashboard_card_manual_leads'),
+          );
+          expect(manualCard, findsOneWidget);
+          await tester.tap(manualCard);
+          await tester.pumpAndSettle();
+
+          expect(find.byType(LeadListScreen), findsOneWidget);
+          // Only manual leads visible
+          expect(find.text('Manual Assigned Lead'), findsOneWidget);
+          expect(find.text('Manual Unassigned Lead'), findsOneWidget);
+          // Excel and CSV leads not visible
+          expect(find.text('Excel Assigned Lead'), findsNothing);
+          expect(find.text('CSV Assigned Lead'), findsNothing);
+
+          // Visible filter reflects Manual
+          expect(find.text('Manual'), findsWidgets);
+        },
+      );
+
+      testWidgets(
+        'tapping Excel Leads card navigates to LeadList with source = excel',
+        (tester) async {
+          repository.leads = fixtureLeads;
+          final cubit = LeadDashboardCubit(repository);
+          await cubit.loadDashboard();
+
+          await tester.pumpWidget(buildTestWidget(cubit: cubit));
+          await tester.pumpAndSettle();
+
+          final excelCard = find.byKey(const Key('dashboard_card_excel_leads'));
+          expect(excelCard, findsOneWidget);
+          await tester.tap(excelCard);
+          await tester.pumpAndSettle();
+
+          expect(find.byType(LeadListScreen), findsOneWidget);
+          // Only Excel leads visible
+          expect(find.text('Excel Assigned Lead'), findsOneWidget);
+          expect(find.text('Excel Unassigned Lead'), findsOneWidget);
+          // Manual and CSV leads not visible
+          expect(find.text('Manual Assigned Lead'), findsNothing);
+          expect(find.text('CSV Assigned Lead'), findsNothing);
+
+          // Visible filter reflects Excel
+          expect(find.text('Excel'), findsWidgets);
+        },
+      );
+
+      testWidgets(
+        'tapping CSV Leads card navigates to LeadList with source = csv',
+        (tester) async {
+          repository.leads = fixtureLeads;
+          final cubit = LeadDashboardCubit(repository);
+          await cubit.loadDashboard();
+
+          await tester.pumpWidget(buildTestWidget(cubit: cubit));
+          await tester.pumpAndSettle();
+
+          final csvCard = find.byKey(const Key('dashboard_card_csv_leads'));
+          expect(csvCard, findsOneWidget);
+          await tester.tap(csvCard);
+          await tester.pumpAndSettle();
+
+          expect(find.byType(LeadListScreen), findsOneWidget);
+          // Only CSV leads visible
+          expect(find.text('CSV Assigned Lead'), findsOneWidget);
+          expect(find.text('CSV Unassigned Lead'), findsOneWidget);
+          // Manual and Excel leads not visible
+          expect(find.text('Manual Assigned Lead'), findsNothing);
+          expect(find.text('Excel Assigned Lead'), findsNothing);
+
+          // Visible filter reflects CSV
+          expect(find.text('CSV'), findsWidgets);
+        },
+      );
+
+      testWidgets(
+        'onNavigateToLeads callback receives exact query for all six cards',
+        (tester) async {
+          repository.leads = fixtureLeads;
+          final cubit = LeadDashboardCubit(repository);
+          await cubit.loadDashboard();
+
+          final receivedQueries = <LeadQuery>[];
+          await tester.pumpWidget(
+            buildTestWidget(
+              cubit: cubit,
+              onNavigateToLeads: (q) => receivedQueries.add(q),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // 1. Total Leads
+          await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
+          await tester.pumpAndSettle();
+          expect(receivedQueries.last, const LeadQuery());
+
+          // 2. Assigned Leads
+          await tester.tap(
+            find.byKey(const Key('dashboard_card_assigned_leads')),
+          );
+          await tester.pumpAndSettle();
+          expect(receivedQueries.last, const LeadQuery(isAssigned: true));
+
+          // 3. Unassigned Leads
+          await tester.tap(
+            find.byKey(const Key('dashboard_card_unassigned_leads')),
+          );
+          await tester.pumpAndSettle();
+          expect(receivedQueries.last, const LeadQuery(isAssigned: false));
+
+          // 4. Manual Leads
+          await tester.tap(
+            find.byKey(const Key('dashboard_card_manual_leads')),
+          );
+          await tester.pumpAndSettle();
+          expect(
+            receivedQueries.last,
+            const LeadQuery(source: LeadSource.manual),
+          );
+
+          // 5. Excel Leads
+          await tester.tap(find.byKey(const Key('dashboard_card_excel_leads')));
+          await tester.pumpAndSettle();
+          expect(
+            receivedQueries.last,
+            const LeadQuery(source: LeadSource.excel),
+          );
+
+          // 6. CSV Leads
+          await tester.tap(find.byKey(const Key('dashboard_card_csv_leads')));
+          await tester.pumpAndSettle();
+          expect(receivedQueries.last, const LeadQuery(source: LeadSource.csv));
+
+          expect(receivedQueries.length, 6);
+        },
+      );
+
+      testWidgets(
+        'search after navigating from Excel card filters within Excel leads and preserves source filter',
+        (tester) async {
+          repository.leads = fixtureLeads;
+          final cubit = LeadDashboardCubit(repository);
+          await cubit.loadDashboard();
+
+          await tester.pumpWidget(buildTestWidget(cubit: cubit));
+          await tester.pumpAndSettle();
+
+          // Tap Excel Leads
+          await tester.tap(find.byKey(const Key('dashboard_card_excel_leads')));
+          await tester.pumpAndSettle();
+
+          expect(find.byType(LeadListScreen), findsOneWidget);
+          expect(find.text('Excel Assigned Lead'), findsOneWidget);
+          expect(find.text('Excel Unassigned Lead'), findsOneWidget);
+
+          // Search for "Excel Assigned"
+          final searchInput = find.byType(TextField);
+          expect(searchInput, findsOneWidget);
+          await tester.enterText(searchInput, 'Excel Assigned');
+          await tester.pumpAndSettle();
+
+          final searchIcon = find.byTooltip('Search');
+          await tester.tap(searchIcon);
+          await tester.pumpAndSettle();
+
+          // Only Excel Assigned Lead matches both source=excel and search=Assigned
+          expect(find.text('Excel Assigned Lead'), findsOneWidget);
+          expect(find.text('Excel Unassigned Lead'), findsNothing);
+          expect(find.text('Manual Assigned Lead'), findsNothing);
+        },
+      );
+
+      testWidgets(
+        'back from LeadList to Dashboard preserves exact summary metrics without mutation',
+        (tester) async {
+          repository.leads = fixtureLeads;
+          final cubit = LeadDashboardCubit(repository);
+          await cubit.loadDashboard();
+
+          await tester.pumpWidget(buildTestWidget(cubit: cubit));
+          await tester.pumpAndSettle();
+
+          final initialMetrics = (cubit.state as LeadDashboardLoaded).metrics;
+
+          // Navigate to CSV Leads
+          await tester.tap(find.byKey(const Key('dashboard_card_csv_leads')));
+          await tester.pumpAndSettle();
+
+          expect(find.byType(LeadListScreen), findsOneWidget);
+
+          // Pop route back to Dashboard
+          Navigator.of(tester.element(find.byType(LeadListScreen))).pop();
+          await tester.pumpAndSettle();
+
+          expect(find.byType(LeadDashboardScreen), findsOneWidget);
+          expect(cubit.state, isA<LeadDashboardLoaded>());
+          final finalMetrics = (cubit.state as LeadDashboardLoaded).metrics;
+          expect(finalMetrics.totalLeads, initialMetrics.totalLeads);
+          expect(finalMetrics.assignedLeads, initialMetrics.assignedLeads);
+          expect(finalMetrics.unassignedLeads, initialMetrics.unassignedLeads);
+          expect(finalMetrics.manualLeads, initialMetrics.manualLeads);
+          expect(finalMetrics.excelLeads, initialMetrics.excelLeads);
+          expect(finalMetrics.csvLeads, initialMetrics.csvLeads);
+        },
+      );
+
+      testWidgets(
+        'responsive layouts (320x568, 360x640, 768x1024, 1200x800) render clickable cards without overflow',
+        (tester) async {
+          repository.leads = fixtureLeads;
+          final cubit = LeadDashboardCubit(repository);
+          await cubit.loadDashboard();
+
+          final sizes = [
+            const Size(320, 568),
+            const Size(360, 640),
+            const Size(768, 1024),
+            const Size(1200, 800),
+          ];
+
+          for (final size in sizes) {
+            await tester.pumpWidget(buildTestWidget(cubit: cubit, size: size));
+            await tester.pumpAndSettle();
+
+            expect(
+              find.byKey(const Key('dashboard_card_total_leads')),
+              findsOneWidget,
+            );
+            expect(
+              find.byKey(const Key('dashboard_card_assigned_leads')),
+              findsOneWidget,
+            );
+            expect(
+              find.byKey(const Key('dashboard_card_unassigned_leads')),
+              findsOneWidget,
+            );
+            expect(
+              find.byKey(const Key('dashboard_card_manual_leads')),
+              findsOneWidget,
+            );
+            expect(
+              find.byKey(const Key('dashboard_card_excel_leads')),
+              findsOneWidget,
+            );
+            expect(
+              find.byKey(const Key('dashboard_card_csv_leads')),
+              findsOneWidget,
+            );
+            expect(tester.takeException(), isNull);
+          }
+        },
+      );
+
+      testWidgets(
+        'dark theme renders all six clickable summary cards cleanly',
+        (tester) async {
+          repository.leads = fixtureLeads;
+          final cubit = LeadDashboardCubit(repository);
+          await cubit.loadDashboard();
+
+          await tester.pumpWidget(
+            buildTestWidget(
+              cubit: cubit,
+              theme: ThemeData.dark(useMaterial3: true),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(
+            find.byKey(const Key('dashboard_card_total_leads')),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(const Key('dashboard_card_assigned_leads')),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(const Key('dashboard_card_unassigned_leads')),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(const Key('dashboard_card_manual_leads')),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(const Key('dashboard_card_excel_leads')),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(const Key('dashboard_card_csv_leads')),
+            findsOneWidget,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    });
   });
 }

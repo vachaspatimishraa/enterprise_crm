@@ -147,7 +147,7 @@ class _LeadImportWorkflowScreenState extends State<LeadImportWorkflowScreen> {
     if (widget.onCancel != null) {
       widget.onCancel!();
     } else {
-      Navigator.of(context).maybePop(false);
+      Navigator.of(context).pop(false);
     }
   }
 

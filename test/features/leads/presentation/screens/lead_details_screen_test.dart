@@ -1453,5 +1453,127 @@ void main() {
         expect(find.text('Mock Agent One'), findsWidgets);
       },
     );
+
+    group('FIX 2 — Remove Duplicate Edit Pencil From Lead Details', () {
+      testWidgets(
+        'assigned lead: top-right pencil icon is absent from AppBar, Edit Lead button is present and works',
+        (tester) async {
+          repository.leads = [assignedLead];
+          Lead? editedLead;
+
+          await tester.pumpWidget(
+            buildTestWidget(
+              leadId: 'lead-assigned',
+              onEditLead: (lead) => editedLead = lead,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // 1. AppBar has no edit pencil icon / actions
+          final appBarFinder = find.byType(AppBar);
+          expect(appBarFinder, findsOneWidget);
+          expect(
+            find.descendant(
+              of: appBarFinder,
+              matching: find.byIcon(Icons.edit_outlined),
+            ),
+            findsNothing,
+          );
+          expect(
+            find.descendant(
+              of: appBarFinder,
+              matching: find.byIcon(Icons.edit),
+            ),
+            findsNothing,
+          );
+
+          // 2. Body Edit Lead button is present
+          final editButton = find.widgetWithText(FilledButton, 'Edit Lead');
+          expect(editButton, findsOneWidget);
+
+          // 3. Tap Edit Lead triggers edit flow
+          await tester.tap(editButton);
+          await tester.pumpAndSettle();
+
+          expect(editedLead, isNotNull);
+          expect(editedLead!.id, 'lead-assigned');
+        },
+      );
+
+      testWidgets(
+        'unassigned lead: top-right pencil icon is absent, Edit Lead button is present and works',
+        (tester) async {
+          repository.leads = [unassignedLead];
+          Lead? editedLead;
+
+          await tester.pumpWidget(
+            buildTestWidget(
+              leadId: 'lead-unassigned',
+              onEditLead: (lead) => editedLead = lead,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // AppBar edit pencil is absent
+          final appBarFinder = find.byType(AppBar);
+          expect(
+            find.descendant(
+              of: appBarFinder,
+              matching: find.byIcon(Icons.edit_outlined),
+            ),
+            findsNothing,
+          );
+
+          // Edit Lead button is present
+          final editButton = find.widgetWithText(FilledButton, 'Edit Lead');
+          expect(editButton, findsOneWidget);
+
+          // Tap triggers edit flow
+          await tester.tap(editButton);
+          await tester.pumpAndSettle();
+
+          expect(editedLead, isNotNull);
+          expect(editedLead!.id, 'lead-unassigned');
+        },
+      );
+
+      testWidgets(
+        'mobile viewport (< 600px): top-right pencil is absent, Edit Lead button is present and works',
+        (tester) async {
+          repository.leads = [assignedLead];
+          Lead? editedLead;
+
+          await tester.pumpWidget(
+            buildTestWidget(
+              leadId: 'lead-assigned',
+              size: const Size(360, 640),
+              onEditLead: (lead) => editedLead = lead,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // AppBar has no edit action
+          final appBarFinder = find.byType(AppBar);
+          expect(
+            find.descendant(
+              of: appBarFinder,
+              matching: find.byIcon(Icons.edit_outlined),
+            ),
+            findsNothing,
+          );
+
+          // Mobile full-width Edit Lead button is present
+          final editButton = find.widgetWithText(FilledButton, 'Edit Lead');
+          expect(editButton, findsOneWidget);
+
+          await tester.ensureVisible(editButton);
+          await tester.tap(editButton);
+          await tester.pumpAndSettle();
+
+          expect(editedLead, isNotNull);
+          expect(editedLead!.id, 'lead-assigned');
+        },
+      );
+    });
   });
 }

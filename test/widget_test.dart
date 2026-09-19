@@ -1188,5 +1188,151 @@ void main() {
         expect(find.text('Timeline'), findsNothing);
       },
     );
+
+    group('FIX 3 — Six Dashboard Summary Cards CrmApp Integration', () {
+      testWidgets('tapping Total Leads card opens Lead List with all leads', (
+        tester,
+      ) async {
+        final repository = MockLeadRepository();
+        await tester.pumpWidget(CrmApp(leadRepository: repository));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('dashboard_card_total_leads')));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadListScreen), findsOneWidget);
+        expect(find.text('Aarav Sharma'), findsOneWidget);
+        expect(find.text('Pooja Verma'), findsOneWidget);
+        expect(find.text('Rohan Mehta'), findsOneWidget);
+        expect(find.text('Sneha Patel'), findsOneWidget);
+        expect(find.text('Vikram Joshi'), findsOneWidget);
+
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+        expect(find.byType(LeadDashboardScreen), findsOneWidget);
+        expect(find.text('Total Leads'), findsOneWidget);
+      });
+
+      testWidgets(
+        'tapping Assigned Leads card opens Lead List with assigned leads only',
+        (tester) async {
+          final repository = MockLeadRepository();
+          await tester.pumpWidget(CrmApp(leadRepository: repository));
+          await tester.pumpAndSettle();
+
+          await tester.tap(
+            find.byKey(const Key('dashboard_card_assigned_leads')),
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.byType(LeadListScreen), findsOneWidget);
+          expect(find.text('Aarav Sharma'), findsOneWidget);
+          expect(find.text('Rohan Mehta'), findsOneWidget);
+          expect(find.text('Vikram Joshi'), findsOneWidget);
+          expect(find.text('Pooja Verma'), findsNothing);
+          expect(find.text('Sneha Patel'), findsNothing);
+
+          await tester.tap(find.byType(BackButton));
+          await tester.pumpAndSettle();
+          expect(find.byType(LeadDashboardScreen), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'tapping Unassigned Leads card opens Lead List with unassigned leads only',
+        (tester) async {
+          final repository = MockLeadRepository();
+          await tester.pumpWidget(CrmApp(leadRepository: repository));
+          await tester.pumpAndSettle();
+
+          await tester.tap(
+            find.byKey(const Key('dashboard_card_unassigned_leads')),
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.byType(LeadListScreen), findsOneWidget);
+          expect(find.text('Pooja Verma'), findsOneWidget);
+          expect(find.text('Sneha Patel'), findsOneWidget);
+          expect(find.text('Aarav Sharma'), findsNothing);
+          expect(find.text('Rohan Mehta'), findsNothing);
+          expect(find.text('Vikram Joshi'), findsNothing);
+
+          await tester.tap(find.byType(BackButton));
+          await tester.pumpAndSettle();
+          expect(find.byType(LeadDashboardScreen), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'tapping Manual Leads card opens Lead List with manual leads only',
+        (tester) async {
+          final repository = MockLeadRepository();
+          await tester.pumpWidget(CrmApp(leadRepository: repository));
+          await tester.pumpAndSettle();
+
+          await tester.tap(
+            find.byKey(const Key('dashboard_card_manual_leads')),
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.byType(LeadListScreen), findsOneWidget);
+          expect(find.text('Aarav Sharma'), findsOneWidget);
+          expect(find.text('Sneha Patel'), findsOneWidget);
+          expect(find.text('Pooja Verma'), findsNothing);
+          expect(find.text('Rohan Mehta'), findsNothing);
+          expect(find.text('Vikram Joshi'), findsNothing);
+
+          await tester.tap(find.byType(BackButton));
+          await tester.pumpAndSettle();
+          expect(find.byType(LeadDashboardScreen), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'tapping Excel Leads card opens Lead List with excel leads only',
+        (tester) async {
+          final repository = MockLeadRepository();
+          await tester.pumpWidget(CrmApp(leadRepository: repository));
+          await tester.pumpAndSettle();
+
+          await tester.tap(find.byKey(const Key('dashboard_card_excel_leads')));
+          await tester.pumpAndSettle();
+
+          expect(find.byType(LeadListScreen), findsOneWidget);
+          expect(find.text('Pooja Verma'), findsOneWidget);
+          expect(find.text('Vikram Joshi'), findsOneWidget);
+          expect(find.text('Aarav Sharma'), findsNothing);
+          expect(find.text('Rohan Mehta'), findsNothing);
+          expect(find.text('Sneha Patel'), findsNothing);
+
+          await tester.tap(find.byType(BackButton));
+          await tester.pumpAndSettle();
+          expect(find.byType(LeadDashboardScreen), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'tapping CSV Leads card opens Lead List with CSV leads only',
+        (tester) async {
+          final repository = MockLeadRepository();
+          await tester.pumpWidget(CrmApp(leadRepository: repository));
+          await tester.pumpAndSettle();
+
+          await tester.tap(find.byKey(const Key('dashboard_card_csv_leads')));
+          await tester.pumpAndSettle();
+
+          expect(find.byType(LeadListScreen), findsOneWidget);
+          expect(find.text('Rohan Mehta'), findsOneWidget);
+          expect(find.text('Aarav Sharma'), findsNothing);
+          expect(find.text('Pooja Verma'), findsNothing);
+          expect(find.text('Sneha Patel'), findsNothing);
+          expect(find.text('Vikram Joshi'), findsNothing);
+
+          await tester.tap(find.byType(BackButton));
+          await tester.pumpAndSettle();
+          expect(find.byType(LeadDashboardScreen), findsOneWidget);
+        },
+      );
+    });
   });
 }

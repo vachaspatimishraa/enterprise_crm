@@ -30,6 +30,7 @@ class LeadListScreen extends StatelessWidget {
   final LeadImportFilePicker? filePicker;
   final LeadExportFileSaver? exportFileSaver;
   final bool isDistributionMode;
+  final LeadQuery? initialQuery;
 
   const LeadListScreen({
     super.key,
@@ -42,6 +43,7 @@ class LeadListScreen extends StatelessWidget {
     this.filePicker,
     this.exportFileSaver,
     this.isDistributionMode = false,
+    this.initialQuery,
   });
 
   @override
@@ -65,6 +67,7 @@ class LeadListScreen extends StatelessWidget {
             filePicker: filePicker,
             exportFileSaver: exportFileSaver,
             isDistributionMode: isDistributionMode,
+            initialQuery: initialQuery,
           ),
         );
       }
@@ -84,6 +87,7 @@ class LeadListScreen extends StatelessWidget {
             filePicker: filePicker,
             exportFileSaver: exportFileSaver,
             isDistributionMode: isDistributionMode,
+            initialQuery: initialQuery,
           ),
         );
       }
@@ -97,20 +101,23 @@ class LeadListScreen extends StatelessWidget {
           filePicker: filePicker,
           exportFileSaver: exportFileSaver,
           isDistributionMode: isDistributionMode,
+          initialQuery: initialQuery,
         ),
       );
     }
 
     if (repo != null) {
+      final effectiveInitialQuery =
+          initialQuery ??
+          (isDistributionMode
+              ? const LeadQuery(isAssigned: false)
+              : const LeadQuery());
       return MultiBlocProvider(
         providers: [
           BlocProvider(
-            create: (_) => LeadListCubit(
-              repo,
-              initialQuery: isDistributionMode
-                  ? const LeadQuery(isAssigned: false)
-                  : const LeadQuery(),
-            )..loadLeads(),
+            create: (_) =>
+                LeadListCubit(repo, initialQuery: effectiveInitialQuery)
+                  ..loadLeads(),
           ),
           BlocProvider(
             create: (_) =>
@@ -125,6 +132,7 @@ class LeadListScreen extends StatelessWidget {
           filePicker: filePicker,
           exportFileSaver: exportFileSaver,
           isDistributionMode: isDistributionMode,
+          initialQuery: initialQuery,
         ),
       );
     }
@@ -137,6 +145,7 @@ class LeadListScreen extends StatelessWidget {
       filePicker: filePicker,
       exportFileSaver: exportFileSaver,
       isDistributionMode: isDistributionMode,
+      initialQuery: initialQuery,
     );
   }
 }
@@ -149,6 +158,7 @@ class _LeadListView extends StatefulWidget {
   final LeadImportFilePicker? filePicker;
   final LeadExportFileSaver? exportFileSaver;
   final bool isDistributionMode;
+  final LeadQuery? initialQuery;
 
   const _LeadListView({
     this.onViewLead,
@@ -158,6 +168,7 @@ class _LeadListView extends StatefulWidget {
     this.filePicker,
     this.exportFileSaver,
     this.isDistributionMode = false,
+    this.initialQuery,
   });
 
   @override
@@ -182,6 +193,9 @@ class _LeadListViewState extends State<_LeadListView> {
 
     if (widget.isDistributionMode && cubit.currentQuery.isAssigned != false) {
       cubit.applyQuery(cubit.currentQuery.copyWith(isAssigned: false));
+    } else if (widget.initialQuery != null &&
+        cubit.currentQuery != widget.initialQuery) {
+      cubit.applyQuery(widget.initialQuery!);
     } else if (cubit.state is LeadListInitial) {
       cubit.loadLeads();
     }

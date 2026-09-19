@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../data/services/lead_export_file_saver.dart';
 import '../../domain/entities/lead_query.dart';
+import '../../domain/entities/lead_source.dart';
 import '../../domain/repositories/lead_repository.dart';
 import '../bloc/lead_dashboard_cubit.dart';
 import '../bloc/lead_dashboard_state.dart';
+import '../services/lead_import_file_picker.dart';
 import '../widgets/lead_export_dialog.dart';
 import '../widgets/lead_quick_action.dart';
 import '../widgets/lead_summary_card.dart';
@@ -15,10 +17,12 @@ class LeadDashboardScreen extends StatelessWidget {
   final LeadDashboardCubit? cubit;
   final LeadRepository? repository;
   final VoidCallback? onViewLeads;
+  final void Function(LeadQuery query)? onNavigateToLeads;
   final VoidCallback? onAddLead;
   final VoidCallback? onImportLeads;
   final VoidCallback? onDistributeLeads;
   final VoidCallback? onExportLeads;
+  final LeadImportFilePicker? filePicker;
   final LeadExportFileSaver? fileSaver;
 
   const LeadDashboardScreen({
@@ -26,10 +30,12 @@ class LeadDashboardScreen extends StatelessWidget {
     this.cubit,
     this.repository,
     this.onViewLeads,
+    this.onNavigateToLeads,
     this.onAddLead,
     this.onImportLeads,
     this.onDistributeLeads,
     this.onExportLeads,
+    this.filePicker,
     this.fileSaver,
   });
 
@@ -40,11 +46,13 @@ class LeadDashboardScreen extends StatelessWidget {
         value: cubit!,
         child: _LeadDashboardView(
           onViewLeads: onViewLeads,
+          onNavigateToLeads: onNavigateToLeads,
           onAddLead: onAddLead,
           onImportLeads: onImportLeads,
           onDistributeLeads: onDistributeLeads,
           onExportLeads: onExportLeads,
           repository: repository,
+          filePicker: filePicker,
           fileSaver: fileSaver,
         ),
       );
@@ -55,11 +63,13 @@ class LeadDashboardScreen extends StatelessWidget {
         create: (_) => LeadDashboardCubit(repository!)..loadDashboard(),
         child: _LeadDashboardView(
           onViewLeads: onViewLeads,
+          onNavigateToLeads: onNavigateToLeads,
           onAddLead: onAddLead,
           onImportLeads: onImportLeads,
           onDistributeLeads: onDistributeLeads,
           onExportLeads: onExportLeads,
           repository: repository,
+          filePicker: filePicker,
           fileSaver: fileSaver,
         ),
       );
@@ -68,11 +78,13 @@ class LeadDashboardScreen extends StatelessWidget {
     // Attempt to use already provided Cubit from ancestor context
     return _LeadDashboardView(
       onViewLeads: onViewLeads,
+      onNavigateToLeads: onNavigateToLeads,
       onAddLead: onAddLead,
       onImportLeads: onImportLeads,
       onDistributeLeads: onDistributeLeads,
       onExportLeads: onExportLeads,
       repository: repository,
+      filePicker: filePicker,
       fileSaver: fileSaver,
     );
   }
@@ -80,20 +92,24 @@ class LeadDashboardScreen extends StatelessWidget {
 
 class _LeadDashboardView extends StatelessWidget {
   final VoidCallback? onViewLeads;
+  final void Function(LeadQuery query)? onNavigateToLeads;
   final VoidCallback? onAddLead;
   final VoidCallback? onImportLeads;
   final VoidCallback? onDistributeLeads;
   final VoidCallback? onExportLeads;
   final LeadRepository? repository;
+  final LeadImportFilePicker? filePicker;
   final LeadExportFileSaver? fileSaver;
 
   const _LeadDashboardView({
     this.onViewLeads,
+    this.onNavigateToLeads,
     this.onAddLead,
     this.onImportLeads,
     this.onDistributeLeads,
     this.onExportLeads,
     this.repository,
+    this.filePicker,
     this.fileSaver,
   });
 
@@ -104,6 +120,38 @@ class _LeadDashboardView extends StatelessWidget {
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  Future<void> _openLeadList(BuildContext context, LeadQuery query) async {
+    if (onNavigateToLeads != null) {
+      onNavigateToLeads!(query);
+      return;
+    }
+    LeadRepository? repo = repository;
+    if (repo == null) {
+      try {
+        repo = context.read<LeadRepository>();
+      } catch (_) {}
+    }
+    if (repo == null) {
+      _showComingSoon(context, 'View Leads');
+      return;
+    }
+
+    final dashboardCubit = context.read<LeadDashboardCubit>();
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => LeadListScreen(
+          repository: repo,
+          initialQuery: query,
+          filePicker: filePicker,
+          exportFileSaver: fileSaver,
+        ),
+      ),
+    );
+    if (context.mounted) {
+      dashboardCubit.loadDashboard();
+    }
   }
 
   Future<void> _openImportWorkflow(BuildContext context) async {
@@ -121,7 +169,8 @@ class _LeadDashboardView extends StatelessWidget {
     final dashboardCubit = context.read<LeadDashboardCubit>();
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => LeadImportWorkflowScreen(repository: repo!),
+        builder: (_) =>
+            LeadImportWorkflowScreen(repository: repo!, filePicker: filePicker),
       ),
     );
     if (result == true && context.mounted) {
@@ -386,40 +435,67 @@ class _LeadDashboardView extends StatelessWidget {
                 childAspectRatio: childAspectRatio,
                 children: [
                   LeadSummaryCard(
+                    key: const Key('dashboard_card_total_leads'),
                     title: 'Total Leads',
                     count: metrics.totalLeads,
                     icon: Icons.people_alt_outlined,
                     accentColor: theme.colorScheme.primary,
+                    onTap: () => _openLeadList(context, const LeadQuery()),
                   ),
                   LeadSummaryCard(
+                    key: const Key('dashboard_card_assigned_leads'),
                     title: 'Assigned Leads',
                     count: metrics.assignedLeads,
                     icon: Icons.assignment_ind_outlined,
                     accentColor: Colors.teal,
+                    onTap: () => _openLeadList(
+                      context,
+                      const LeadQuery(isAssigned: true),
+                    ),
                   ),
                   LeadSummaryCard(
+                    key: const Key('dashboard_card_unassigned_leads'),
                     title: 'Unassigned Leads',
                     count: metrics.unassignedLeads,
                     icon: Icons.person_add_disabled_outlined,
                     accentColor: Colors.deepOrange,
+                    onTap: () => _openLeadList(
+                      context,
+                      const LeadQuery(isAssigned: false),
+                    ),
                   ),
                   LeadSummaryCard(
+                    key: const Key('dashboard_card_manual_leads'),
                     title: 'Manual Leads',
                     count: metrics.manualLeads,
                     icon: Icons.edit_note_outlined,
                     accentColor: Colors.purple,
+                    onTap: () => _openLeadList(
+                      context,
+                      const LeadQuery(source: LeadSource.manual),
+                    ),
                   ),
                   LeadSummaryCard(
+                    key: const Key('dashboard_card_excel_leads'),
                     title: 'Excel Leads',
                     count: metrics.excelLeads,
                     icon: Icons.table_chart_outlined,
                     accentColor: Colors.green,
+                    onTap: () => _openLeadList(
+                      context,
+                      const LeadQuery(source: LeadSource.excel),
+                    ),
                   ),
                   LeadSummaryCard(
+                    key: const Key('dashboard_card_csv_leads'),
                     title: 'CSV Leads',
                     count: metrics.csvLeads,
                     icon: Icons.insert_drive_file_outlined,
                     accentColor: Colors.blue,
+                    onTap: () => _openLeadList(
+                      context,
+                      const LeadQuery(source: LeadSource.csv),
+                    ),
                   ),
                 ],
               ),
@@ -444,7 +520,7 @@ class _LeadDashboardView extends StatelessWidget {
                     isPrimary: true,
                     onPressed:
                         onViewLeads ??
-                        () => _showComingSoon(context, 'View Leads'),
+                        () => _openLeadList(context, const LeadQuery()),
                   ),
                   LeadQuickAction(
                     label: 'Add Lead',

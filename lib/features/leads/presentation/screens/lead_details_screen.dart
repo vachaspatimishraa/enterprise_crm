@@ -177,25 +177,7 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Lead Details'),
-        actions: [
-          BlocBuilder<LeadDetailsCubit, LeadDetailsState>(
-            builder: (context, state) {
-              if (state is LeadDetailsLoaded) {
-                return IconButton(
-                  icon: const Icon(Icons.edit_outlined),
-                  tooltip: 'Edit Lead',
-                  onPressed: widget.onEditLead != null
-                      ? () => widget.onEditLead!(state.lead)
-                      : () => _showComingSoon(context, 'Edit Lead'),
-                );
-              }
-              return const SizedBox.shrink();
-            },
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Lead Details')),
       body: BlocBuilder<LeadDetailsCubit, LeadDetailsState>(
         builder: (context, state) {
           return switch (state) {

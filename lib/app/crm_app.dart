@@ -100,8 +100,14 @@ class _CrmHomeScreenState extends State<CrmHomeScreen> {
     super.dispose();
   }
 
-  void _openLeadList(BuildContext context) async {
-    final listCubit = LeadListCubit(widget.repository);
+  void _openLeadList(
+    BuildContext context, {
+    LeadQuery initialQuery = const LeadQuery(),
+  }) async {
+    final listCubit = LeadListCubit(
+      widget.repository,
+      initialQuery: initialQuery,
+    );
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (listContext) => LeadListScreen(
@@ -109,6 +115,7 @@ class _CrmHomeScreenState extends State<CrmHomeScreen> {
           repository: widget.repository,
           filePicker: widget.filePicker,
           exportFileSaver: _exportFileSaver,
+          initialQuery: initialQuery,
           onViewLead: (lead) => _openLeadDetails(
             listContext,
             lead.id,
@@ -262,8 +269,10 @@ class _CrmHomeScreenState extends State<CrmHomeScreen> {
     return LeadDashboardScreen(
       cubit: _dashboardCubit,
       repository: widget.repository,
+      filePicker: widget.filePicker,
       fileSaver: _exportFileSaver,
       onViewLeads: () => _openLeadList(context),
+      onNavigateToLeads: (query) => _openLeadList(context, initialQuery: query),
       onAddLead: () => _openAddLead(context),
       onImportLeads: () => _openImportWorkflow(context),
       onDistributeLeads: () => _openDistributeLeads(context),
