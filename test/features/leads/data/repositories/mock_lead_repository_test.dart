@@ -1,5 +1,10 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:csv/csv.dart';
 import 'package:enterprise_crm/features/leads/data/datasources/mock_lead_data_source.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
+import 'package:enterprise_crm/features/leads/data/services/lead_export_serializer.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_assignment_request.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_draft.dart';
@@ -9,7 +14,64 @@ import 'package:enterprise_crm/features/leads/domain/entities/lead_query.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_sort.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_source.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_status.dart';
+import 'package:excel/excel.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+String _cellToString(CellValue? cellValue) {
+  if (cellValue == null) return '';
+  switch (cellValue) {
+    case TextCellValue(:final value):
+      return value.toString();
+    case IntCellValue(:final value):
+      return value.toString();
+    case DoubleCellValue(:final value):
+      return value.toString();
+    case DateCellValue(:final year, :final month, :final day):
+      return '$year-$month-$day';
+    case DateTimeCellValue(:final year, :final month, :final day):
+      return '$year-$month-$day';
+    case BoolCellValue(:final value):
+      return value.toString();
+    case TimeCellValue(:final hour, :final minute):
+      return '$hour:$minute';
+    case FormulaCellValue(:final formula):
+      return formula;
+  }
+}
+
+List<List<String>> _decodeCsv(Uint8List bytes) {
+  final csvString = utf8.decode(bytes);
+  const decoder = CsvDecoder(
+    dynamicTyping: false,
+    parseHeaders: false,
+    skipEmptyLines: false,
+  );
+  final rawRows = decoder.convert(csvString);
+  return rawRows
+      .map((row) => row.map((cell) => cell?.toString() ?? '').toList())
+      .toList();
+}
+
+List<List<String>> _decodeXlsx(Uint8List bytes, {String sheetName = 'Leads'}) {
+  final excel = Excel.decodeBytes(bytes);
+  expect(excel.tables.containsKey(sheetName), isTrue);
+  final sheet = excel.tables[sheetName]!;
+  final rows = <List<String>>[];
+  for (final rawRow in sheet.rows) {
+    rows.add(rawRow.map((cell) => _cellToString(cell?.value)).toList());
+  }
+  return rows;
+}
+
+class _ThrowingFakeSerializer implements LeadExportSerializer {
+  @override
+  LeadExportContent serialize({
+    required List<Lead> leads,
+    required LeadExportFormat format,
+  }) {
+    throw const FormatException('Simulated serialization error');
+  }
+}
 
 void main() {
   late MockLeadRepository repository;
@@ -234,7 +296,7 @@ void main() {
     });
   });
 
-  group('MockLeadRepository - Import & Export placeholders', () {
+  group('MockLeadRepository - Import placeholder', () {
     test('returns deterministic mock import result', () async {
       final result = await repository.importLeads(
         const LeadImportRequest(
@@ -248,18 +310,372 @@ void main() {
       expect(result.importedRows, 8);
       expect(result.duplicateRows, 1);
     });
+  });
 
-    test('returns deterministic mock export result', () async {
-      final result = await repository.exportLeads(
+  group('MockLeadRepository - Lead Export & Query Integration', () {
+    test(
+      'exports default leads to Excel with correct metadata and matching rows',
+      () async {
+        final result = await repository.exportLeads(
+          const LeadExportRequest(
+            query: LeadQuery(),
+            format: LeadExportFormat.excel,
+          ),
+        );
+
+        expect(result.fileName, 'leads_export.xlsx');
+        expect(result.fileReference, isA<LeadExportContent>());
+        final content = result.fileReference as LeadExportContent;
+        expect(content.extension, 'xlsx');
+        expect(
+          content.mimeType,
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
+        expect(content.bytes.isNotEmpty, isTrue);
+
+        final rows = _decodeXlsx(content.bytes);
+        expect(rows.length, 9); // header + 8 default leads
+        expect(rows[0], DefaultLeadExportSerializer.exportHeaders);
+        expect(rows[1][0], 'Aarav Sharma');
+        expect(rows[1][1], '+91 9876543210');
+      },
+    );
+
+    test(
+      'exports default leads to CSV with correct metadata and matching rows',
+      () async {
+        final result = await repository.exportLeads(
+          const LeadExportRequest(
+            query: LeadQuery(),
+            format: LeadExportFormat.csv,
+          ),
+        );
+
+        expect(result.fileName, 'leads_export.csv');
+        expect(result.fileReference, isA<LeadExportContent>());
+        final content = result.fileReference as LeadExportContent;
+        expect(content.extension, 'csv');
+        expect(content.mimeType, 'text/csv');
+        expect(content.bytes.isNotEmpty, isTrue);
+
+        final rows = _decodeCsv(content.bytes);
+        expect(rows.length, 9); // header + 8 default leads
+        expect(rows[0], DefaultLeadExportSerializer.exportHeaders);
+        expect(rows[1][0], 'Aarav Sharma');
+      },
+    );
+
+    test(
+      'CRITICAL REGRESSION: ignores pagination and exports ALL matching leads across multiple pages',
+      () async {
+        final customLeads = List.generate(
+          25,
+          (i) => Lead(
+            id: 'lead-multi-$i',
+            name: 'Lead Number ${i.toString().padLeft(2, '0')}',
+            phone: '+919999000${i.toString().padLeft(3, '0')}',
+            source: LeadSource.manual,
+          ),
+        );
+        final customRepo = MockLeadRepository(
+          dataSource: MockLeadDataSource(initialLeads: customLeads),
+        );
+
+        const query = LeadQuery(page: 2, pageSize: 5);
+
+        // getLeads respects pagination
+        final page = await customRepo.getLeads(query);
+        expect(page.items.length, 5);
+        expect(page.currentPage, 2);
+        expect(page.totalItems, 25);
+        expect(page.hasNext, isTrue);
+
+        // exportLeads ignores pagination and exports all 25 leads
+        final exportResult = await customRepo.exportLeads(
+          const LeadExportRequest(query: query, format: LeadExportFormat.csv),
+        );
+        final rows = _decodeCsv(
+          (exportResult.fileReference as LeadExportContent).bytes,
+        );
+        expect(rows.length, 26); // header + 25 leads
+        expect(rows[0], DefaultLeadExportSerializer.exportHeaders);
+        expect(rows[1][0], 'Lead Number 00');
+        expect(rows[25][0], 'Lead Number 24');
+      },
+    );
+
+    test('applies search filter (name, phone, email) to export rows', () async {
+      final resultName = await repository.exportLeads(
         const LeadExportRequest(
-          query: LeadQuery(),
-          format: LeadExportFormat.excel,
+          query: LeadQuery(searchText: 'aarav'),
+          format: LeadExportFormat.csv,
         ),
       );
+      final rowsName = _decodeCsv(
+        (resultName.fileReference as LeadExportContent).bytes,
+      );
+      expect(rowsName.length, 2);
+      expect(rowsName[1][0], 'Aarav Sharma');
 
-      expect(result.fileName, 'mock_leads_export.xlsx');
-      expect(result.fileReference, 'mock-export-ref-excel');
+      final resultPhone = await repository.exportLeads(
+        const LeadExportRequest(
+          query: LeadQuery(searchText: '9876543210'),
+          format: LeadExportFormat.csv,
+        ),
+      );
+      final rowsPhone = _decodeCsv(
+        (resultPhone.fileReference as LeadExportContent).bytes,
+      );
+      expect(rowsPhone.length, 2);
+      expect(rowsPhone[1][0], 'Aarav Sharma');
     });
+
+    test('applies source filter to export rows', () async {
+      final result = await repository.exportLeads(
+        const LeadExportRequest(
+          query: LeadQuery(source: LeadSource.csv),
+          format: LeadExportFormat.csv,
+        ),
+      );
+      final rows = _decodeCsv(
+        (result.fileReference as LeadExportContent).bytes,
+      );
+      expect(rows.length, greaterThan(1));
+      for (var i = 1; i < rows.length; i++) {
+        expect(rows[i][4], 'csv');
+      }
+    });
+
+    test('applies status filter using LeadStatus value equality', () async {
+      final result = await repository.exportLeads(
+        const LeadExportRequest(
+          query: LeadQuery(status: LeadStatus('Sample New')),
+          format: LeadExportFormat.csv,
+        ),
+      );
+      final rows = _decodeCsv(
+        (result.fileReference as LeadExportContent).bytes,
+      );
+      expect(rows.length, greaterThan(1));
+      for (var i = 1; i < rows.length; i++) {
+        expect(rows[i][3], 'Sample New');
+      }
+    });
+
+    test('applies isAssigned filter (assigned vs unassigned)', () async {
+      final assignedResult = await repository.exportLeads(
+        const LeadExportRequest(
+          query: LeadQuery(isAssigned: true),
+          format: LeadExportFormat.csv,
+        ),
+      );
+      final assignedRows = _decodeCsv(
+        (assignedResult.fileReference as LeadExportContent).bytes,
+      );
+      expect(assignedRows.length, greaterThan(1));
+      for (var i = 1; i < assignedRows.length; i++) {
+        expect(assignedRows[i][5], isNotEmpty);
+      }
+
+      final unassignedResult = await repository.exportLeads(
+        const LeadExportRequest(
+          query: LeadQuery(isAssigned: false),
+          format: LeadExportFormat.csv,
+        ),
+      );
+      final unassignedRows = _decodeCsv(
+        (unassignedResult.fileReference as LeadExportContent).bytes,
+      );
+      expect(unassignedRows.length, greaterThan(1));
+      for (var i = 1; i < unassignedRows.length; i++) {
+        expect(unassignedRows[i][5], isEmpty);
+      }
+    });
+
+    test(
+      'applies specific assignee filter without exporting assignedUserId',
+      () async {
+        final result = await repository.exportLeads(
+          const LeadExportRequest(
+            query: LeadQuery(assignedUserId: 'agent-1'),
+            format: LeadExportFormat.csv,
+          ),
+        );
+        final rows = _decodeCsv(
+          (result.fileReference as LeadExportContent).bytes,
+        );
+        expect(rows.length, greaterThan(1));
+        for (var i = 1; i < rows.length; i++) {
+          expect(rows[i][5], 'Mock Agent One');
+        }
+        final csvString = utf8.decode(
+          (result.fileReference as LeadExportContent).bytes,
+        );
+        expect(csvString, isNot(contains('agent-1')));
+      },
+    );
+
+    test('applies combined filters and sort', () async {
+      final result = await repository.exportLeads(
+        const LeadExportRequest(
+          query: LeadQuery(
+            searchText: 'a',
+            source: LeadSource.manual,
+            isAssigned: true,
+            sort: LeadSort(
+              field: LeadSortField.name,
+              direction: LeadSortDirection.ascending,
+            ),
+          ),
+          format: LeadExportFormat.csv,
+        ),
+      );
+      final rows = _decodeCsv(
+        (result.fileReference as LeadExportContent).bytes,
+      );
+      expect(rows.length, greaterThan(1));
+      for (var i = 1; i < rows.length; i++) {
+        expect(rows[i][4], 'manual');
+        expect(rows[i][5], isNotEmpty);
+      }
+    });
+
+    test('preserves sorting order across sort options (nulls last)', () async {
+      // 1. Name Ascending (nulls/empty last)
+      final ascResult = await repository.exportLeads(
+        const LeadExportRequest(
+          query: LeadQuery(
+            sort: LeadSort(
+              field: LeadSortField.name,
+              direction: LeadSortDirection.ascending,
+            ),
+          ),
+          format: LeadExportFormat.csv,
+        ),
+      );
+      final ascRows = _decodeCsv(
+        (ascResult.fileReference as LeadExportContent).bytes,
+      );
+      final namesAsc = [for (var i = 1; i < ascRows.length; i++) ascRows[i][0]];
+      expect(namesAsc, [
+        'Aarav Sharma',
+        'Ananya Gupta',
+        'Karan Malhotra',
+        'Pooja Verma',
+        'Rohan Mehta',
+        'Sneha Patel',
+        'Vikram Joshi',
+        '',
+      ]);
+
+      // 2. Name Descending (nulls/empty last)
+      final descResult = await repository.exportLeads(
+        const LeadExportRequest(
+          query: LeadQuery(
+            sort: LeadSort(
+              field: LeadSortField.name,
+              direction: LeadSortDirection.descending,
+            ),
+          ),
+          format: LeadExportFormat.csv,
+        ),
+      );
+      final descRows = _decodeCsv(
+        (descResult.fileReference as LeadExportContent).bytes,
+      );
+      final namesDesc = [
+        for (var i = 1; i < descRows.length; i++) descRows[i][0],
+      ];
+      expect(namesDesc, [
+        'Vikram Joshi',
+        'Sneha Patel',
+        'Rohan Mehta',
+        'Pooja Verma',
+        'Karan Malhotra',
+        'Ananya Gupta',
+        'Aarav Sharma',
+        '',
+      ]);
+    });
+
+    test(
+      'exports headers only when query matches zero leads without error',
+      () async {
+        final result = await repository.exportLeads(
+          const LeadExportRequest(
+            query: LeadQuery(searchText: 'non-existent-lead-query-xyz'),
+            format: LeadExportFormat.csv,
+          ),
+        );
+        final rows = _decodeCsv(
+          (result.fileReference as LeadExportContent).bytes,
+        );
+        expect(rows.length, 1);
+        expect(rows.first, DefaultLeadExportSerializer.exportHeaders);
+      },
+    );
+
+    test(
+      'truthfully exports updated assignee for reassigned leads with no history',
+      () async {
+        await repository.reassignLead(
+          const LeadReassignmentRequest(
+            leadId: 'mock-lead-1',
+            newAssigneeId: 'agent-2',
+            reason: 'Workload rebalance',
+          ),
+        );
+
+        final result = await repository.exportLeads(
+          const LeadExportRequest(
+            query: LeadQuery(searchText: 'Aarav Sharma'),
+            format: LeadExportFormat.csv,
+          ),
+        );
+        final rows = _decodeCsv(
+          (result.fileReference as LeadExportContent).bytes,
+        );
+        expect(rows.length, 2);
+        expect(rows[1][0], 'Aarav Sharma');
+        expect(rows[1][5], 'Mock Agent Two');
+        final raw = utf8.decode(
+          (result.fileReference as LeadExportContent).bytes,
+        );
+        expect(raw, isNot(contains('Mock Agent One')));
+        expect(raw, isNot(contains('Workload rebalance')));
+      },
+    );
+
+    test('propagates serialization exception when serializer fails', () async {
+      final throwingRepo = MockLeadRepository(
+        exportSerializer: _ThrowingFakeSerializer(),
+      );
+
+      expect(
+        () => throwingRepo.exportLeads(
+          const LeadExportRequest(
+            query: LeadQuery(),
+            format: LeadExportFormat.csv,
+          ),
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test(
+      'export does not mutate repository state or lead summary counts',
+      () async {
+        final summaryBefore = await repository.getLeadSummary();
+        await repository.exportLeads(
+          const LeadExportRequest(
+            query: LeadQuery(searchText: 'aarav'),
+            format: LeadExportFormat.excel,
+          ),
+        );
+        final summaryAfter = await repository.getLeadSummary();
+        expect(summaryAfter, summaryBefore);
+      },
+    );
   });
 
   group('MockLeadRepository - Lead Summary & Pagination Independence', () {

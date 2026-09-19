@@ -9,10 +9,14 @@ import '../../domain/entities/lead_query.dart';
 import '../../domain/entities/lead_summary.dart';
 import '../../domain/repositories/lead_repository.dart';
 import '../datasources/mock_lead_data_source.dart';
+import '../services/lead_export_serializer.dart';
 
 class MockLeadRepository implements LeadRepository {
-  MockLeadRepository({MockLeadDataSource? dataSource})
-    : _dataSource = dataSource ?? MockLeadDataSource();
+  MockLeadRepository({
+    MockLeadDataSource? dataSource,
+    LeadExportSerializer? exportSerializer,
+  }) : _dataSource =
+           dataSource ?? MockLeadDataSource(exportSerializer: exportSerializer);
 
   final MockLeadDataSource _dataSource;
 

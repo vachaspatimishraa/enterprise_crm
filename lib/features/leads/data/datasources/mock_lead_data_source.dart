@@ -10,12 +10,15 @@ import '../../domain/entities/lead_sort.dart';
 import '../../domain/entities/lead_source.dart';
 import '../../domain/entities/lead_status.dart';
 import '../../domain/entities/lead_summary.dart';
+import '../services/lead_export_serializer.dart';
 
 class MockLeadDataSource {
   MockLeadDataSource({
     List<Lead>? initialLeads,
     List<LeadAssignee>? initialAssignees,
-  }) {
+    LeadExportSerializer? exportSerializer,
+  }) : _exportSerializer =
+           exportSerializer ?? const DefaultLeadExportSerializer() {
     _leads = initialLeads != null
         ? List<Lead>.from(initialLeads)
         : _defaultLeads();
@@ -24,6 +27,7 @@ class MockLeadDataSource {
         : _defaultAssignees();
   }
 
+  final LeadExportSerializer _exportSerializer;
   late final List<Lead> _leads;
   late final List<LeadAssignee> _assignees;
   int _idCounter = 100;
@@ -133,7 +137,7 @@ class MockLeadDataSource {
     ),
   ];
 
-  Future<LeadPage> getLeads([LeadQuery query = const LeadQuery()]) async {
+  List<Lead> _resolveMatchingLeads(LeadQuery query) {
     var filtered = List<Lead>.from(_leads);
 
     // 1. Search (case-insensitive across name, phone, email)
@@ -224,6 +228,12 @@ class MockLeadDataSource {
         return a.id.compareTo(b.id);
       });
     }
+
+    return filtered;
+  }
+
+  Future<LeadPage> getLeads([LeadQuery query = const LeadQuery()]) async {
+    final filtered = _resolveMatchingLeads(query);
 
     // 4. Pagination
     final totalItems = filtered.length;
@@ -438,10 +448,15 @@ class MockLeadDataSource {
   }
 
   Future<LeadExportResult> exportLeads(LeadExportRequest request) async {
+    final matching = _resolveMatchingLeads(request.query);
+    final content = _exportSerializer.serialize(
+      leads: matching,
+      format: request.format,
+    );
     final extension = request.format == LeadExportFormat.excel ? 'xlsx' : 'csv';
     return LeadExportResult(
-      fileReference: 'mock-export-ref-${request.format.name}',
-      fileName: 'mock_leads_export.$extension',
+      fileReference: content,
+      fileName: 'leads_export.$extension',
     );
   }
 }
