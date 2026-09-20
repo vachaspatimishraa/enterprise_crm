@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../../auth/domain/entities/crm_module.dart';
 import '../../../auth/domain/entities/current_user.dart';
+import '../../../user_management/domain/repositories/user_management_repository.dart';
+import '../../../user_management/presentation/screens/users_and_access_screen.dart';
 import '../widgets/crm_app_header.dart';
 import '../widgets/crm_module_card.dart';
 import 'module_placeholder_screen.dart';
-import 'users_and_access_placeholder_screen.dart';
 
 /// Global Admin Dashboard providing access to all 8 CRM business modules
 /// and the Administration section.
@@ -13,12 +14,14 @@ class AdminDashboardScreen extends StatelessWidget {
   final CurrentUser user;
   final VoidCallback onLogout;
   final VoidCallback onOpenLeadManagement;
+  final UserManagementRepository? userManagementRepository;
 
   const AdminDashboardScreen({
     super.key,
     required this.user,
     required this.onLogout,
     required this.onOpenLeadManagement,
+    this.userManagementRepository,
   });
 
   void _openModule(BuildContext context, CrmModule module) {
@@ -36,7 +39,10 @@ class AdminDashboardScreen extends StatelessWidget {
   void _openUsersAndAccess(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => const UsersAndAccessPlaceholderScreen(),
+        builder: (_) => UsersAndAccessScreen(
+          user: user,
+          repository: userManagementRepository,
+        ),
       ),
     );
   }

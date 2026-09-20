@@ -6,6 +6,7 @@ import 'package:enterprise_crm/features/dashboard/presentation/screens/user_dash
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_lead_placeholder_screen.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_dashboard_screen.dart';
+import 'package:enterprise_crm/features/user_management/data/repositories/mock_user_management_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -13,10 +14,12 @@ void main() {
   group('Auth Navigation & Routing Integration Tests', () {
     late MockLeadRepository leadRepository;
     late MockAuthRepository authRepository;
+    late MockUserManagementRepository userManagementRepository;
 
     setUp(() {
       leadRepository = MockLeadRepository();
       authRepository = MockAuthRepository();
+      userManagementRepository = MockUserManagementRepository();
     });
 
     testWidgets(
@@ -26,6 +29,7 @@ void main() {
           CrmApp(
             leadRepository: leadRepository,
             authRepository: authRepository,
+            userManagementRepository: userManagementRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -49,6 +53,7 @@ void main() {
           CrmApp(
             leadRepository: leadRepository,
             authRepository: authRepository,
+            userManagementRepository: userManagementRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -103,6 +108,7 @@ void main() {
           CrmApp(
             leadRepository: leadRepository,
             authRepository: authRepository,
+            userManagementRepository: userManagementRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -151,6 +157,7 @@ void main() {
           CrmApp(
             leadRepository: leadRepository,
             authRepository: authRepository,
+            userManagementRepository: userManagementRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -198,6 +205,7 @@ void main() {
           CrmApp(
             leadRepository: leadRepository,
             authRepository: authRepository,
+            userManagementRepository: userManagementRepository,
           ),
         );
         await tester.pumpAndSettle();

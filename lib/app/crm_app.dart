@@ -7,6 +7,7 @@ import '../features/auth/presentation/bloc/auth_state.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/dashboard/presentation/screens/admin_dashboard_screen.dart';
 import '../features/dashboard/presentation/screens/user_dashboard_screen.dart';
+import '../features/user_management/domain/repositories/user_management_repository.dart';
 import '../features/leads/domain/entities/lead.dart';
 import '../features/leads/domain/entities/lead_query.dart';
 import '../features/leads/domain/repositories/lead_repository.dart';
@@ -29,6 +30,7 @@ class CrmApp extends StatefulWidget {
   final LeadImportFilePicker? filePicker;
   final LeadExportFileSaver? exportFileSaver;
   final AuthRepository? authRepository;
+  final UserManagementRepository? userManagementRepository;
 
   const CrmApp({
     super.key,
@@ -36,7 +38,11 @@ class CrmApp extends StatefulWidget {
     this.filePicker,
     this.exportFileSaver,
     this.authRepository,
-  });
+    this.userManagementRepository,
+  }) : assert(
+         authRepository == null || userManagementRepository != null,
+         'userManagementRepository must be provided when authRepository is enabled',
+       );
 
   @override
   State<CrmApp> createState() => _CrmAppState();
@@ -91,6 +97,7 @@ class _CrmAppState extends State<CrmApp> {
                   return AdminDashboardScreen(
                     user: user,
                     onLogout: () => _authCubit!.logout(),
+                    userManagementRepository: widget.userManagementRepository,
                     onOpenLeadManagement: () {
                       _navigatorKey.currentState?.push(
                         MaterialPageRoute(
@@ -152,6 +159,13 @@ class _CrmAppState extends State<CrmApp> {
     if (widget.authRepository != null) {
       app = RepositoryProvider<AuthRepository>.value(
         value: widget.authRepository!,
+        child: app,
+      );
+    }
+
+    if (widget.userManagementRepository != null) {
+      app = RepositoryProvider<UserManagementRepository>.value(
+        value: widget.userManagementRepository!,
         child: app,
       );
     }

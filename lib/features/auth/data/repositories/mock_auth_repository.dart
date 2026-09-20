@@ -22,7 +22,7 @@ class MockAuthRepository implements AuthRepository {
       CrmModule.approvalsNotifications,
       CrmModule.vendorManagement,
     },
-    permissions: {'*'},
+    permissions: {},
   );
 
   /// Predefined mock standard user with limited module access.
