@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../../../auth/domain/entities/current_user.dart';
 
 /// Simplified application header displayed across authenticated CRM dashboards.
+///
+/// Places user avatar and display name on the far left, and the
+/// logout action on the far right.
 class CrmAppHeader extends StatelessWidget {
   final CurrentUser user;
   final VoidCallback onLogout;
@@ -16,7 +19,7 @@ class CrmAppHeader extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // On narrow viewports, display only avatar + logout to prevent crowding
+        // On very narrow viewports (< 420px), display only avatar + logout to prevent crowding
         final isNarrow = constraints.maxWidth < 420;
 
         return Container(
@@ -30,22 +33,8 @@ class CrmAppHeader extends StatelessWidget {
             ),
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              const Spacer(),
-              if (!isNarrow && user.displayName.isNotEmpty) ...[
-                Flexible(
-                  child: Text(
-                    user.displayName,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 12),
-              ],
+              // Far Left: Avatar first
               CircleAvatar(
                 radius: 16,
                 backgroundColor: colorScheme.primaryContainer,
@@ -59,7 +48,24 @@ class CrmAppHeader extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+
+              // Display Name immediately after Avatar
+              if (!isNarrow && user.displayName.isNotEmpty) ...[
+                const SizedBox(width: 12),
+                Text(
+                  user.displayName,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+
+              // Spacer pushing logout to the far right edge
+              const Spacer(),
+
+              // Far Right: Only Logout
               IconButton(
                 key: const Key('crm_header_logout_button'),
                 icon: const Icon(Icons.logout),

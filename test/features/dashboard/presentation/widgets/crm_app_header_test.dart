@@ -8,7 +8,7 @@ Widget _buildHeaderTestApp({
   required CurrentUser user,
   VoidCallback? onLogout,
   ThemeMode themeMode = ThemeMode.light,
-  Size size = const Size(1024, 768),
+  double? width,
 }) {
   return MaterialApp(
     theme: ThemeData(useMaterial3: true, brightness: Brightness.light),
@@ -16,7 +16,7 @@ Widget _buildHeaderTestApp({
     themeMode: themeMode,
     home: Scaffold(
       body: SizedBox(
-        width: size.width,
+        width: width,
         child: CrmAppHeader(user: user, onLogout: onLogout ?? () {}),
       ),
     ),
@@ -24,7 +24,7 @@ Widget _buildHeaderTestApp({
 }
 
 void main() {
-  group('CrmAppHeader Tests (UI-P1)', () {
+  group('CrmAppHeader Tests (UI-P1.1 Final Alignment)', () {
     testWidgets(
       'absent application branding (no Enterprise CRM and no briefcase icon)',
       (tester) async {
@@ -33,67 +33,96 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Brand text and icon MUST NOT be present
+        // Brand text and icon MUST NOT be present in authenticated header
         expect(find.text('Enterprise CRM'), findsNothing);
         expect(find.byIcon(Icons.business_center), findsNothing);
       },
     );
 
-    testWidgets('shows Administrator only once with avatar and logout on right', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _buildHeaderTestApp(user: MockAuthRepository.mockAdmin),
-      );
-      await tester.pumpAndSettle();
+    testWidgets(
+      'Admin layout: avatar [A] is on the far left, followed by Administrator, with only Logout on far right',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildHeaderTestApp(user: MockAuthRepository.mockAdmin),
+        );
+        await tester.pumpAndSettle();
 
-      // Administrator appears exactly once
-      expect(find.text('Administrator'), findsOneWidget);
-      // No duplicate Admin or role subtitle
-      expect(find.text('Admin'), findsNothing);
+        final headerBox = find.byType(CrmAppHeader);
+        final headerLeft = tester.getTopLeft(headerBox).dx;
+        final headerRight = tester.getTopRight(headerBox).dx;
+        final headerCenter = (headerLeft + headerRight) / 2;
 
-      // Avatar with initial 'A'
-      expect(find.byType(CircleAvatar), findsOneWidget);
-      expect(find.text('A'), findsOneWidget);
+        // 1. Administrator appears exactly once
+        expect(find.text('Administrator'), findsOneWidget);
+        // No duplicate Admin or role subtitle
+        expect(find.text('Admin'), findsNothing);
 
-      // Logout button present with tooltip
-      final logoutButton = find.byKey(const Key('crm_header_logout_button'));
-      expect(logoutButton, findsOneWidget);
-      expect(find.byTooltip('Logout'), findsOneWidget);
+        // 2. Avatar with initial 'A'
+        final avatarFinder = find.byType(CircleAvatar);
+        expect(avatarFinder, findsOneWidget);
+        expect(find.text('A'), findsOneWidget);
 
-      // Verify trailing alignment (logout is to the right of avatar, avatar is to the right of display name)
-      final nameTopRight = tester.getTopRight(find.text('Administrator'));
-      final avatarTopLeft = tester.getTopLeft(find.byType(CircleAvatar));
-      final logoutTopLeft = tester.getTopLeft(logoutButton);
+        // 3. Avatar is on the far left, BEFORE the display name
+        final avatarLeft = tester.getTopLeft(avatarFinder).dx;
+        final avatarRight = tester.getTopRight(avatarFinder).dx;
+        final nameLeft = tester.getTopLeft(find.text('Administrator')).dx;
+        final nameRight = tester.getTopRight(find.text('Administrator')).dx;
 
-      expect(avatarTopLeft.dx, greaterThan(nameTopRight.dx));
-      expect(logoutTopLeft.dx, greaterThan(avatarTopLeft.dx));
-    });
+        expect(avatarLeft, lessThan(headerLeft + 30.0)); // Far left
+        expect(
+          nameLeft,
+          greaterThan(avatarRight),
+        ); // Display name is AFTER avatar
+        expect(nameRight, lessThan(headerCenter)); // Both on left side
+
+        // 4. Logout is the only trailing/right-side action
+        final logoutButton = find.byKey(const Key('crm_header_logout_button'));
+        expect(logoutButton, findsOneWidget);
+        expect(find.byTooltip('Logout'), findsOneWidget);
+
+        final logoutRight = tester.getTopRight(logoutButton).dx;
+        expect(logoutRight, greaterThan(headerRight - 60.0)); // Far right edge
+      },
+    );
 
     testWidgets(
-      'normal User shows display name only once without duplicate role label',
+      'normal User layout: avatar [S] is on the left, followed by Standard User, with only Logout on right',
       (tester) async {
         await tester.pumpWidget(
           _buildHeaderTestApp(user: MockAuthRepository.mockUser),
         );
         await tester.pumpAndSettle();
 
+        final headerBox = find.byType(CrmAppHeader);
+        final headerLeft = tester.getTopLeft(headerBox).dx;
+        final headerRight = tester.getTopRight(headerBox).dx;
+        final headerCenter = (headerLeft + headerRight) / 2;
+
         // Display name appears exactly once
         expect(find.text('Standard User'), findsOneWidget);
-        // Avatar with initial 'S'
         expect(find.text('S'), findsOneWidget);
 
-        // No duplicate role labels
+        // No duplicate role labels or branding
         expect(find.text('User'), findsNothing);
         expect(find.text('Enterprise CRM'), findsNothing);
-        expect(
-          find.byKey(const Key('crm_header_logout_button')),
-          findsOneWidget,
-        );
+
+        // Avatar before display name on left
+        final avatarFinder = find.byType(CircleAvatar);
+        final avatarRight = tester.getTopRight(avatarFinder).dx;
+        final nameLeft = tester.getTopLeft(find.text('Standard User')).dx;
+        expect(nameLeft, greaterThan(avatarRight));
+        expect(nameLeft, lessThan(headerCenter));
+
+        // Right alignment check
+        final logoutButton = find.byKey(const Key('crm_header_logout_button'));
+        final logoutRight = tester.getTopRight(logoutButton).dx;
+        expect(logoutRight, greaterThan(headerRight - 60.0));
       },
     );
 
-    testWidgets('tapping logout triggers onLogout callback', (tester) async {
+    testWidgets('tapping admin logout triggers onLogout callback', (
+      tester,
+    ) async {
       bool loggedOut = false;
       await tester.pumpWidget(
         _buildHeaderTestApp(
@@ -111,29 +140,56 @@ void main() {
       expect(loggedOut, isTrue);
     });
 
+    testWidgets('tapping normal user logout triggers onLogout callback', (
+      tester,
+    ) async {
+      bool loggedOut = false;
+      await tester.pumpWidget(
+        _buildHeaderTestApp(
+          user: MockAuthRepository.mockUser,
+          onLogout: () {
+            loggedOut = true;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('crm_header_logout_button')));
+      await tester.pumpAndSettle();
+
+      expect(loggedOut, isTrue);
+    });
+
     testWidgets(
-      'mobile narrow viewport (< 420px) shows avatar + logout with zero overflow',
+      'mobile narrow viewport (< 420px) shows avatar [A] on left and logout on far right without overflow',
       (tester) async {
+        const mobileWidth = 360.0;
         await tester.pumpWidget(
           _buildHeaderTestApp(
             user: MockAuthRepository.mockAdmin,
-            size: const Size(360, 640),
+            width: mobileWidth,
           ),
         );
         await tester.pumpAndSettle();
 
+        final headerBox = find.byType(CrmAppHeader);
+        final headerLeft = tester.getTopLeft(headerBox).dx;
+        final headerRight = tester.getTopRight(headerBox).dx;
+
         // On narrow screen, full display name is omitted to prevent crowding
         expect(find.text('Administrator'), findsNothing);
 
-        // Avatar and Logout remain visible and accessible
-        expect(find.byType(CircleAvatar), findsOneWidget);
-        expect(find.text('A'), findsOneWidget);
-        expect(
-          find.byKey(const Key('crm_header_logout_button')),
-          findsOneWidget,
-        );
+        // Avatar remains on the far left
+        final avatarLeft = tester.getTopLeft(find.byType(CircleAvatar)).dx;
+        expect(avatarLeft, lessThan(headerLeft + 30.0));
 
-        // Verify no overflow error occurred
+        // Logout remains on the far right
+        final logoutRight = tester
+            .getTopRight(find.byKey(const Key('crm_header_logout_button')))
+            .dx;
+        expect(logoutRight, greaterThan(headerRight - 60.0));
+
+        // Verify zero overflow
         expect(tester.takeException(), isNull);
       },
     );

@@ -23,7 +23,7 @@
 Current project checkpoint:
 ```text
 branch: main
-tests: 808 / 808 PASS (734 baseline + 41 AUTH-1 + 27 AUTH-2A + 6 UI-P1 tests)
+tests: 809 / 809 PASS (734 baseline + 41 AUTH-1 + 27 AUTH-2A + 7 UI-P1.1 tests)
 analyzer: clean (0 issues)
 web build: pass (flutter build web)
 ```
@@ -44,6 +44,6 @@ web build: pass (flutter build web)
 - L8: Instructor Backend Integration — AUDIT COMPLETE / AWAITING INSTRUCTOR BACKEND CONTRACT
 - AUTH-1: Login + Mock Auth + Admin/User Shell — COMPLETE
 - AUTH-2A: Users & Access Foundation + User Directory — COMPLETE
-- UI-P1: Simplify Authenticated App Header — COMPLETE
+- UI-P1.1: Align Authenticated App Header Layout ([A] Administrator ... [Logout]) — COMPLETE
 - AUTH-2B (Upcoming): User Administration Mutations (Create user, edit user, module assignment, permissions, active/disabled toggle, admin password reset)
 
