@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../features/auth/domain/repositories/auth_repository.dart';
+import '../features/auth/domain/repositories/user_lead_link_repository.dart';
 import '../features/auth/presentation/bloc/auth_cubit.dart';
 import '../features/auth/presentation/bloc/auth_state.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
@@ -31,6 +32,7 @@ class CrmApp extends StatefulWidget {
   final LeadExportFileSaver? exportFileSaver;
   final AuthRepository? authRepository;
   final UserManagementRepository? userManagementRepository;
+  final UserLeadLinkRepository? userLeadLinkRepository;
 
   const CrmApp({
     super.key,
@@ -39,6 +41,7 @@ class CrmApp extends StatefulWidget {
     this.exportFileSaver,
     this.authRepository,
     this.userManagementRepository,
+    this.userLeadLinkRepository,
   }) : assert(
          authRepository == null || userManagementRepository != null,
          'userManagementRepository must be provided when authRepository is enabled',
@@ -115,6 +118,9 @@ class _CrmAppState extends State<CrmApp> {
                   return UserDashboardScreen(
                     user: user,
                     onLogout: () => _authCubit!.logout(),
+                    userLeadLinkRepository:
+                        widget.userLeadLinkRepository,
+                    leadRepository: widget.leadRepository,
                   );
                 }
               case AuthUnauthenticated():
@@ -166,6 +172,13 @@ class _CrmAppState extends State<CrmApp> {
     if (widget.userManagementRepository != null) {
       app = RepositoryProvider<UserManagementRepository>.value(
         value: widget.userManagementRepository!,
+        child: app,
+      );
+    }
+
+    if (widget.userLeadLinkRepository != null) {
+      app = RepositoryProvider<UserLeadLinkRepository>.value(
+        value: widget.userLeadLinkRepository!,
         child: app,
       );
     }

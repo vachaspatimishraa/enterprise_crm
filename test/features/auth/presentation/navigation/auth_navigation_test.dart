@@ -145,7 +145,8 @@ void main() {
         // Verified: opens safe UserLeadPlaceholderScreen, NOT unrestricted LeadDashboardScreen
         expect(find.byType(UserLeadPlaceholderScreen), findsOneWidget);
         expect(find.byType(LeadDashboardScreen), findsNothing);
-        expect(find.text('Lead Management access assigned.'), findsOneWidget);
+        // New screen shows YOUR ACCESS capability section instead of old placeholder text
+        expect(find.text('YOUR ACCESS'), findsOneWidget);
 
         // Tap Back
         await tester.tap(find.text('Back to Dashboard'));

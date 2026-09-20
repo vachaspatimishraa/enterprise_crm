@@ -65,13 +65,9 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.byType(UserLeadPlaceholderScreen), findsOneWidget);
-        expect(find.text('Lead Management access assigned.'), findsOneWidget);
-        expect(
-          find.text(
-            'Permission-specific workspace will be enabled in the next access-control phase.',
-          ),
-          findsOneWidget,
-        );
+        // New screen shows YOUR ACCESS capability section; old placeholder text removed
+        expect(find.text('YOUR ACCESS'), findsOneWidget);
+        expect(find.byKey(const Key('user_lead_workspace_screen')), findsOneWidget);
 
         // Tap Back to return to User Dashboard
         await tester.tap(find.text('Back to Dashboard'));

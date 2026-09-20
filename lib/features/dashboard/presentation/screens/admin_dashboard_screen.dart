@@ -30,7 +30,7 @@ class AdminDashboardScreen extends StatelessWidget {
     } else {
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => ModulePlaceholderScreen(module: module),
+          builder: (_) => ModulePlaceholderScreen(module: module, user: user),
         ),
       );
     }

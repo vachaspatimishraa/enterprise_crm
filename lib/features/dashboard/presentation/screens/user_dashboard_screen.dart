@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../auth/domain/entities/crm_module.dart';
 import '../../../auth/domain/entities/current_user.dart';
+import '../../../auth/domain/repositories/user_lead_link_repository.dart';
+import '../../../leads/domain/repositories/lead_repository.dart';
 import '../widgets/crm_app_header.dart';
 import '../widgets/crm_module_card.dart';
 import 'module_placeholder_screen.dart';
@@ -13,22 +15,32 @@ import 'user_lead_placeholder_screen.dart';
 class UserDashboardScreen extends StatelessWidget {
   final CurrentUser user;
   final VoidCallback onLogout;
+  final UserLeadLinkRepository? userLeadLinkRepository;
+  final LeadRepository? leadRepository;
 
   const UserDashboardScreen({
     super.key,
     required this.user,
     required this.onLogout,
+    this.userLeadLinkRepository,
+    this.leadRepository,
   });
 
   void _openModule(BuildContext context, CrmModule module) {
     if (module == CrmModule.leadManagement) {
       Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const UserLeadPlaceholderScreen()),
+        MaterialPageRoute(
+          builder: (_) => UserLeadPlaceholderScreen(
+            user: user,
+            linkRepository: userLeadLinkRepository,
+            leadRepository: leadRepository,
+          ),
+        ),
       );
     } else {
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => ModulePlaceholderScreen(module: module),
+          builder: (_) => ModulePlaceholderScreen(module: module, user: user),
         ),
       );
     }
@@ -123,6 +135,7 @@ class UserDashboardScreen extends StatelessWidget {
 
                         if (assignedModules.isEmpty)
                           Card(
+                            key: const Key('user_no_modules_card'),
                             elevation: 0,
                             color: colorScheme.surfaceContainerHighest
                                 .withValues(alpha: 0.5),
@@ -132,11 +145,25 @@ class UserDashboardScreen extends StatelessWidget {
                                 color: colorScheme.outlineVariant,
                               ),
                             ),
-                            child: const Padding(
-                              padding: EdgeInsets.all(24.0),
+                            child: Padding(
+                              padding: const EdgeInsets.all(24.0),
                               child: Center(
-                                child: Text(
-                                  'No modules are currently assigned to this account.',
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text(
+                                      'No modules have been assigned to your account.',
+                                      key: Key('user_no_modules_message'),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'No modules are currently assigned to this account.',
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: colorScheme.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),

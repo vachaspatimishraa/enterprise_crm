@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app/crm_app.dart';
 import 'features/auth/data/repositories/mock_auth_repository.dart';
+import 'features/auth/data/repositories/mock_user_lead_link_repository.dart';
 import 'features/leads/data/repositories/mock_lead_repository.dart';
 import 'features/user_management/data/mock/mock_account_store.dart';
 import 'features/user_management/data/repositories/mock_user_management_repository.dart';
@@ -13,12 +14,14 @@ void main() {
   final userManagementRepository = MockUserManagementRepository(
     accountStore: accountStore,
   );
+  final userLeadLinkRepository = MockUserLeadLinkRepository();
 
   runApp(
     CrmApp(
       leadRepository: leadRepository,
       authRepository: authRepository,
       userManagementRepository: userManagementRepository,
+      userLeadLinkRepository: userLeadLinkRepository,
     ),
   );
 }

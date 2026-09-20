@@ -1,4 +1,5 @@
 import '../../../../features/auth/domain/entities/crm_module.dart';
+import '../../../../features/auth/domain/policies/crm_permissions.dart';
 import '../../domain/repositories/user_management_repository.dart';
 
 /// Permission descriptor for frontend mock environments.
@@ -16,77 +17,68 @@ class MockPermissionDefinition {
 
 /// In-memory catalog of frontend mock permissions.
 ///
-/// NOTE: These permission identifiers are frontend mock fixtures,
-/// not the instructor backend contract.
+/// Delegates canonical permission IDs and module ownership to [CrmPermissions].
 abstract final class MockPermissionCatalog {
   static const List<MockPermissionDefinition> definitions = [
     // Lead Management
     MockPermissionDefinition(
-      id: 'lead.view_assigned',
+      id: CrmPermissions.leadViewAssigned,
       module: CrmModule.leadManagement,
       displayName: 'View Assigned Leads',
     ),
     MockPermissionDefinition(
-      id: 'lead.update',
+      id: CrmPermissions.leadUpdate,
       module: CrmModule.leadManagement,
       displayName: 'Update Leads',
     ),
     // Calling
     MockPermissionDefinition(
-      id: 'calling.use',
+      id: CrmPermissions.callingUse,
       module: CrmModule.calling,
       displayName: 'Make and Log Calls',
     ),
     // HR / Payroll
     MockPermissionDefinition(
-      id: 'hr.view',
+      id: CrmPermissions.hrView,
       module: CrmModule.hrPayroll,
       displayName: 'View HR Records',
     ),
     MockPermissionDefinition(
-      id: 'payroll.view',
+      id: CrmPermissions.payrollView,
       module: CrmModule.hrPayroll,
       displayName: 'View Payroll',
     ),
     // Inventory
     MockPermissionDefinition(
-      id: 'inventory.view',
+      id: CrmPermissions.inventoryView,
       module: CrmModule.inventory,
       displayName: 'View Inventory',
     ),
     // Purchase
     MockPermissionDefinition(
-      id: 'purchase.view',
+      id: CrmPermissions.purchaseView,
       module: CrmModule.purchase,
       displayName: 'View Purchases',
     ),
     // Vendor Management
     MockPermissionDefinition(
-      id: 'vendor.view',
+      id: CrmPermissions.vendorView,
       module: CrmModule.vendorManagement,
       displayName: 'View Vendors',
     ),
   ];
 
-  static final Map<String, MockPermissionDefinition> _byPermissionId = {
-    for (final def in definitions) def.id: def,
-  };
-
   /// Returns whether [permissionId] is a recognized permission identifier.
   static bool isValidPermission(String permissionId) =>
-      _byPermissionId.containsKey(permissionId);
+      CrmPermissions.isKnown(permissionId);
 
-  /// Returns the module owning [permissionId], or `null` if unrecognized.
+  /// Returns the canonical module owning [permissionId], or `null` if unrecognized.
   static CrmModule? getModuleForPermission(String permissionId) =>
-      _byPermissionId[permissionId]?.module;
+      CrmPermissions.moduleFor(permissionId);
 
   /// Returns all available permissions for a specific module.
-  static Set<String> getPermissionsForModule(CrmModule module) {
-    return definitions
-        .where((def) => def.module == module)
-        .map((def) => def.id)
-        .toSet();
-  }
+  static Set<String> getPermissionsForModule(CrmModule module) =>
+      CrmPermissions.permissionsFor(module);
 
   /// Returns all available permissions for a given set of modules.
   static Set<String> getPermissionsForModules(Set<CrmModule> modules) {
@@ -101,9 +93,10 @@ abstract final class MockPermissionCatalog {
     Set<String> permissions,
     Set<CrmModule> modules,
   ) {
-    return permissions
-        .where((p) => modules.contains(_byPermissionId[p]?.module))
-        .toSet();
+    return permissions.where((p) {
+      final module = CrmPermissions.moduleFor(p);
+      return module != null && modules.contains(module);
+    }).toSet();
   }
 
   /// Validates permissions for user creation.
@@ -115,11 +108,11 @@ abstract final class MockPermissionCatalog {
     Set<CrmModule> modules,
   ) {
     for (final p in permissions) {
-      final def = _byPermissionId[p];
-      if (def == null) {
+      final module = CrmPermissions.moduleFor(p);
+      if (module == null) {
         throw UserManagementException('Unknown permission: "$p"');
       }
-      if (!modules.contains(def.module)) {
+      if (!modules.contains(module)) {
         throw UserManagementException(
           'Permission "$p" does not belong to any selected module.',
         );
@@ -136,7 +129,7 @@ abstract final class MockPermissionCatalog {
     Set<CrmModule> modules,
   ) {
     for (final p in permissions) {
-      if (!_byPermissionId.containsKey(p)) {
+      if (!CrmPermissions.isKnown(p)) {
         throw UserManagementException('Unknown permission: "$p"');
       }
     }

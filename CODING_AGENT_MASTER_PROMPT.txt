@@ -1,0 +1,91 @@
+You are operating in TOKEN-EFFICIENT PROJECT MEMORY MODE for the Enterprise CRM Flutter project.
+
+PROJECT ROOT:
+D:\projects\enterprise_crm
+
+AGENT-NEUTRAL OPERATION:
+This instruction set is intentionally independent of any specific coding assistant or platform.
+It must work with Codex, Antigravity, ChatGPT Work, IDE agents, or another future coding agent.
+Do not rely on agent-specific memory, artifact folders, task managers, or proprietary commands unless the current environment explicitly provides them.
+
+MANDATORY STARTUP:
+1. Read `AI_RULES.md`.
+2. Read `AI_BRAIN.md`.
+3. Read `SESSION_MEMORY.md` only if it contains an active task.
+4. Do NOT recursively inspect the repository at startup.
+5. Determine the minimum source files required for the task.
+6. Treat source code as ground truth when memory and implementation disagree.
+
+MEMORY HIERARCHY:
+- `AI_RULES.md` = non-negotiable project rules.
+- `AI_BRAIN.md` = durable compressed project memory.
+- `SESSION_MEMORY.md` = short-lived active-task memory.
+- Source code = final authority.
+
+PROJECT-SPECIFIC RULES:
+- Flutter Android + responsive Web.
+- BLoC/Cubit.
+- UI -> Cubit/BLoC -> Repository -> Service/Data Source -> instructor backend.
+- Mock repository/data source is used until instructor backend details are supplied.
+- Do not invent backend URLs, endpoints, JSON, auth, IDs, or server behavior.
+- Preserve frozen Lead Management behavior unless a verified regression requires a minimal fix.
+- `.gitignore` is unrelated and must remain unstaged/untouched unless explicitly instructed.
+- Use one coding agent at a time unless the user explicitly approves parallel work.
+
+READ SOURCE ONLY WHEN:
+- the file must be modified
+- exact implementation/API/schema is needed
+- debugging requires it
+- memory is incomplete/stale
+
+FILE DISCOVERY:
+1. Search by filename, class, symbol, Cubit, route, or method.
+2. Read only the most relevant files.
+3. Read direct dependencies only when necessary.
+
+DO NOT:
+- scan every project directory
+- repeatedly reopen already-understood files
+- read build/.dart_tool/platform generated files unless required
+- load large lockfiles without need
+- invent backend behavior
+- add new state-management frameworks
+- stage unrelated files
+- create extra worktrees/parallel branches unless explicitly approved
+
+WHEN EDITING:
+1. Identify exact target files.
+2. Read them.
+3. Read only direct dependencies if needed.
+4. Make minimal changes.
+5. Format.
+6. Analyze.
+7. Run relevant tests, then full suite when appropriate.
+8. Run `git diff --check`.
+9. Review `git status`.
+10. Keep `.gitignore` unstaged.
+11. Commit meaningful checkpoints when the task is accepted.
+12. Update memory.
+
+AFTER EACH MEANINGFUL TASK:
+Update `AI_BRAIN.md` with durable knowledge only.
+Update `SESSION_MEMORY.md` during longer active tasks.
+Keep `AI_BRAIN.md` concise, preferably below ~4,000 tokens.
+
+IF MEMORY DISAGREES WITH SOURCE:
+1. Trust source code.
+2. Fix implementation if needed.
+3. Correct memory.
+
+PORTABILITY RULE:
+Never store instructions such as:
+- "use Antigravity"
+- "switch to Codex"
+- agent-specific artifact directories
+- agent-specific task-manager commands
+- proprietary tool names
+
+in durable project memory unless the information is essential to the current environment.
+Project memory should describe the project, not the assistant platform.
+
+Goal: never read files unnecessarily and keep the project handoff-safe across coding agents.
