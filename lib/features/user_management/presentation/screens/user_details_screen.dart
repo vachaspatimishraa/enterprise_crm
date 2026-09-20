@@ -1,23 +1,195 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../auth/domain/entities/current_user.dart';
-import '../../domain/entities/managed_user.dart';
 import '../../../dashboard/presentation/mappers/crm_module_presentation.dart';
+import '../../domain/entities/managed_user.dart';
+import '../../domain/entities/user_account_status.dart';
+import '../../domain/repositories/user_management_repository.dart';
+import '../widgets/reset_password_dialog.dart';
+import 'edit_user_screen.dart';
 
-/// Screen displaying the read-only details, module entitlements, and permissions of a managed user.
-class UserDetailsScreen extends StatelessWidget {
+/// Screen displaying the details, module entitlements, permissions, and administrative
+/// actions (Edit, Enable/Disable, Reset Password) for a managed user.
+class UserDetailsScreen extends StatefulWidget {
   final CurrentUser currentUser;
   final ManagedUser user;
+  final UserManagementRepository? repository;
 
   const UserDetailsScreen({
     super.key,
     required this.currentUser,
     required this.user,
+    this.repository,
   });
 
   @override
+  State<UserDetailsScreen> createState() => _UserDetailsScreenState();
+}
+
+class _UserDetailsScreenState extends State<UserDetailsScreen> {
+  late ManagedUser _user;
+  bool _isActionInProgress = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _user = widget.user;
+  }
+
+  UserManagementRepository _resolveRepository() {
+    return widget.repository ?? context.read<UserManagementRepository>();
+  }
+
+  Future<void> _handleEditUser() async {
+    final repo = _resolveRepository();
+    final messenger = ScaffoldMessenger.of(context);
+    final updatedUser = await Navigator.of(context).push<ManagedUser>(
+      MaterialPageRoute(
+        builder: (_) => EditUserScreen(
+          currentUser: widget.currentUser,
+          user: _user,
+          repository: repo,
+        ),
+      ),
+    );
+
+    if (updatedUser != null && mounted) {
+      setState(() {
+        _user = updatedUser;
+      });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('User details updated for @${_user.userId}.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleToggleStatus() async {
+    if (_isActionInProgress) return;
+
+    final repo = _resolveRepository();
+    final messenger = ScaffoldMessenger.of(context);
+
+    if (_user.isActive) {
+      // Require explicit confirmation before disabling
+      final confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogCtx) => AlertDialog(
+          key: const Key('disable_user_confirm_dialog'),
+          title: const Text('Disable User Account?'),
+          content: Text(
+            'Are you sure you want to disable @${_user.userId}? They will no longer be able to log in to the CRM.',
+          ),
+          actions: [
+            TextButton(
+              key: const Key('disable_user_cancel_button'),
+              onPressed: () => Navigator.of(dialogCtx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              key: const Key('disable_user_confirm_button'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+                foregroundColor: Theme.of(context).colorScheme.onError,
+              ),
+              onPressed: () => Navigator.of(dialogCtx).pop(true),
+              child: const Text('Disable User'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true || !mounted) return;
+
+      setState(() => _isActionInProgress = true);
+      try {
+        final updated = await repo.setUserStatus(
+          id: _user.id,
+          status: UserAccountStatus.disabled,
+        );
+        if (mounted) {
+          setState(() {
+            _user = updated;
+            _isActionInProgress = false;
+          });
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('Account @${_user.userId} has been disabled.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _isActionInProgress = false);
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('Failed to update status: $e'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } else {
+      // Re-enabling account
+      setState(() => _isActionInProgress = true);
+      try {
+        final updated = await repo.setUserStatus(
+          id: _user.id,
+          status: UserAccountStatus.active,
+        );
+        if (mounted) {
+          setState(() {
+            _user = updated;
+            _isActionInProgress = false;
+          });
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('Account @${_user.userId} has been enabled.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _isActionInProgress = false);
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('Failed to enable account: $e'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _handleResetPassword() async {
+    final repo = _resolveRepository();
+    final messenger = ScaffoldMessenger.of(context);
+    final reset = await ResetPasswordDialog.show(
+      context,
+      targetUser: _user,
+      repository: repo,
+    );
+
+    if (reset == true && mounted) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Password reset successfully for @${_user.userId}.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (!currentUser.isAdmin) {
+    if (!widget.currentUser.isAdmin) {
       return Scaffold(
         appBar: AppBar(title: const Text('Access Denied')),
         body: Center(
@@ -60,7 +232,7 @@ class UserDetailsScreen extends StatelessWidget {
     final width = MediaQuery.of(context).size.width;
 
     return Scaffold(
-      appBar: AppBar(title: Text(user.displayName), elevation: 0),
+      appBar: AppBar(title: Text(_user.displayName), elevation: 0),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: EdgeInsets.symmetric(
@@ -91,14 +263,14 @@ class UserDetailsScreen extends StatelessWidget {
                             children: [
                               CircleAvatar(
                                 radius: 26,
-                                backgroundColor: user.isAdmin
+                                backgroundColor: _user.isAdmin
                                     ? colorScheme.primaryContainer
                                     : colorScheme.secondaryContainer,
                                 child: Icon(
-                                  user.isAdmin
+                                  _user.isAdmin
                                       ? Icons.admin_panel_settings
                                       : Icons.person,
-                                  color: user.isAdmin
+                                  color: _user.isAdmin
                                       ? colorScheme.onPrimaryContainer
                                       : colorScheme.onSecondaryContainer,
                                 ),
@@ -109,7 +281,7 @@ class UserDetailsScreen extends StatelessWidget {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      user.displayName,
+                                      _user.displayName,
                                       style: theme.textTheme.titleLarge
                                           ?.copyWith(
                                             fontWeight: FontWeight.bold,
@@ -117,7 +289,7 @@ class UserDetailsScreen extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      '@${user.userId}',
+                                      '@${_user.userId}',
                                       style: theme.textTheme.bodyMedium
                                           ?.copyWith(
                                             color: colorScheme.onSurfaceVariant,
@@ -143,15 +315,15 @@ class UserDetailsScreen extends StatelessWidget {
                                   vertical: 4,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: user.isAdmin
+                                  color: _user.isAdmin
                                       ? colorScheme.primaryContainer
                                       : colorScheme.surfaceContainerHighest,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
-                                  user.isAdmin ? 'Admin' : 'Standard User',
+                                  _user.isAdmin ? 'Admin' : 'Standard User',
                                   style: theme.textTheme.labelMedium?.copyWith(
-                                    color: user.isAdmin
+                                    color: _user.isAdmin
                                         ? colorScheme.onPrimaryContainer
                                         : colorScheme.onSurfaceVariant,
                                     fontWeight: FontWeight.bold,
@@ -165,20 +337,20 @@ class UserDetailsScreen extends StatelessWidget {
                                   vertical: 4,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: user.isActive
+                                  color: _user.isActive
                                       ? Colors.green.withValues(alpha: 0.15)
                                       : Colors.grey.withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
-                                    color: user.isActive
+                                    color: _user.isActive
                                         ? Colors.green.withValues(alpha: 0.5)
                                         : Colors.grey.withValues(alpha: 0.5),
                                   ),
                                 ),
                                 child: Text(
-                                  user.isActive ? 'Active' : 'Disabled',
+                                  _user.isActive ? 'Active' : 'Disabled',
                                   style: theme.textTheme.labelMedium?.copyWith(
-                                    color: user.isActive
+                                    color: _user.isActive
                                         ? (theme.brightness == Brightness.dark
                                               ? Colors.greenAccent
                                               : Colors.green.shade800)
@@ -191,7 +363,7 @@ class UserDetailsScreen extends StatelessWidget {
                               ),
                               // System Identifier
                               Text(
-                                'ID: ${user.id}',
+                                'ID: ${_user.id}',
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: colorScheme.onSurfaceVariant,
                                 ),
@@ -223,7 +395,7 @@ class UserDetailsScreen extends StatelessWidget {
                     color: colorScheme.surfaceContainerLowest,
                     child: Padding(
                       padding: const EdgeInsets.all(20.0),
-                      child: user.modules.isEmpty
+                      child: _user.modules.isEmpty
                           ? Text(
                               'No business modules assigned.',
                               style: theme.textTheme.bodyMedium?.copyWith(
@@ -233,7 +405,7 @@ class UserDetailsScreen extends StatelessWidget {
                           : Wrap(
                               spacing: 8,
                               runSpacing: 8,
-                              children: user.modules.map((module) {
+                              children: _user.modules.map((module) {
                                 return Chip(
                                   avatar: Icon(module.icon, size: 18),
                                   label: Text(module.displayName),
@@ -266,7 +438,7 @@ class UserDetailsScreen extends StatelessWidget {
                     color: colorScheme.surfaceContainerLowest,
                     child: Padding(
                       padding: const EdgeInsets.all(20.0),
-                      child: user.isAdmin
+                      child: _user.isAdmin
                           ? Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -285,7 +457,7 @@ class UserDetailsScreen extends StatelessWidget {
                                 ),
                               ],
                             )
-                          : (user.permissions.isEmpty
+                          : (_user.permissions.isEmpty
                                 ? Text(
                                     'No explicit permissions assigned.',
                                     style: theme.textTheme.bodyMedium?.copyWith(
@@ -295,7 +467,7 @@ class UserDetailsScreen extends StatelessWidget {
                                 : Wrap(
                                     spacing: 8,
                                     runSpacing: 8,
-                                    children: user.permissions.map((perm) {
+                                    children: _user.permissions.map((perm) {
                                       return Chip(
                                         avatar: const Icon(
                                           Icons.check_circle_outline,
@@ -312,36 +484,128 @@ class UserDetailsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
 
-                  // Deferral Notice Card
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerLow,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: colorScheme.outlineVariant.withValues(
-                          alpha: 0.6,
-                        ),
-                      ),
+                  // Actions Section
+                  Text(
+                    'ADMINISTRATIVE ACTIONS',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.primary,
+                      letterSpacing: 0.5,
                     ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          color: colorScheme.primary,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'User editing and access changes will be added in the next administration phase.',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onSurface,
+                  ),
+                  const SizedBox(height: 12),
+                  Card(
+                    key: const Key('user_details_actions_card'),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(color: colorScheme.outlineVariant),
+                    ),
+                    color: colorScheme.surfaceContainerLowest,
+                    child: Padding(
+                      padding: const EdgeInsets.all(20.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (_user.isAdmin) ...[
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: colorScheme.surfaceContainerLow,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: colorScheme.outlineVariant,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.shield_outlined,
+                                    color: colorScheme.primary,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'Master Administrator accounts cannot be disabled or have modules/permissions modified.',
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: colorScheme.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
+                            const SizedBox(height: 16),
+                          ],
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
+                            children: [
+                              // Edit User (Normal users only)
+                              if (!_user.isAdmin)
+                                OutlinedButton.icon(
+                                  key: const Key('user_details_edit_button'),
+                                  onPressed: _isActionInProgress
+                                      ? null
+                                      : () => _handleEditUser(),
+                                  icon: const Icon(Icons.edit_outlined),
+                                  label: const Text('Edit User'),
+                                ),
+
+                              // Enable / Disable User (Normal users only)
+                              if (!_user.isAdmin)
+                                ElevatedButton.icon(
+                                  key: const Key(
+                                    'user_details_status_toggle_button',
+                                  ),
+                                  style: _user.isActive
+                                      ? ElevatedButton.styleFrom(
+                                          backgroundColor:
+                                              colorScheme.errorContainer,
+                                          foregroundColor:
+                                              colorScheme.onErrorContainer,
+                                        )
+                                      : ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.green
+                                              .withValues(alpha: 0.15),
+                                          foregroundColor:
+                                              theme.brightness ==
+                                                  Brightness.dark
+                                              ? Colors.greenAccent
+                                              : Colors.green.shade800,
+                                        ),
+                                  onPressed: _isActionInProgress
+                                      ? null
+                                      : () => _handleToggleStatus(),
+                                  icon: Icon(
+                                    _user.isActive
+                                        ? Icons.person_off_outlined
+                                        : Icons.check_circle_outline,
+                                  ),
+                                  label: Text(
+                                    _user.isActive
+                                        ? 'Disable User'
+                                        : 'Enable User',
+                                  ),
+                                ),
+
+                              // Reset Password (Admin and Normal users)
+                              OutlinedButton.icon(
+                                key: const Key(
+                                  'user_details_reset_password_button',
+                                ),
+                                onPressed: _isActionInProgress
+                                    ? null
+                                    : () => _handleResetPassword(),
+                                icon: const Icon(Icons.lock_reset_outlined),
+                                label: const Text('Reset Password'),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -349,7 +613,7 @@ class UserDetailsScreen extends StatelessWidget {
                   // Back Button
                   OutlinedButton.icon(
                     key: const Key('user_details_back_button'),
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: () => Navigator.of(context).pop(_user),
                     icon: const Icon(Icons.arrow_back),
                     label: const Text('Back to Users'),
                   ),

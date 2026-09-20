@@ -6,6 +6,7 @@ import 'package:enterprise_crm/features/user_management/domain/entities/user_acc
 import 'package:enterprise_crm/features/user_management/domain/inputs/create_managed_user_input.dart';
 import 'package:enterprise_crm/features/user_management/domain/inputs/update_managed_user_input.dart';
 import 'package:enterprise_crm/features/user_management/domain/repositories/user_management_repository.dart';
+import 'package:enterprise_crm/features/user_management/presentation/screens/create_user_screen.dart';
 import 'package:enterprise_crm/features/user_management/presentation/screens/user_details_screen.dart';
 import 'package:enterprise_crm/features/user_management/presentation/screens/users_and_access_screen.dart';
 import 'package:flutter/material.dart';
@@ -298,6 +299,74 @@ void main() {
 
       expect(find.text('USER DIRECTORY'), findsOneWidget);
       expect(find.text('Administrator'), findsWidgets);
+    });
+
+    testWidgets('Desktop header renders "+ Create User" button for Admin', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _buildUsersAndAccessTestApp(user: MockAuthTestFixtures.admin),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('create_user_button')), findsOneWidget);
+      expect(find.text('+ Create User'), findsOneWidget);
+    });
+
+    testWidgets('Mobile header renders "+ Create" button for Admin', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _buildUsersAndAccessTestApp(
+          user: MockAuthTestFixtures.admin,
+          size: const Size(390, 844),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('create_user_button')), findsOneWidget);
+      expect(find.text('+ Create'), findsOneWidget);
+    });
+
+    testWidgets('Tapping "+ Create User" opens CreateUserScreen', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _buildUsersAndAccessTestApp(user: MockAuthTestFixtures.admin),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('create_user_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CreateUserScreen), findsOneWidget);
+      expect(find.byKey(const Key('create_user_id_field')), findsOneWidget);
+    });
+
+    testWidgets('Create User button is absent for normal User', (tester) async {
+      await tester.pumpWidget(
+        _buildUsersAndAccessTestApp(user: MockAuthTestFixtures.standardUser),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('create_user_button')), findsNothing);
+      expect(find.text('+ Create User'), findsNothing);
+      expect(find.text('+ Create'), findsNothing);
     });
   });
 }

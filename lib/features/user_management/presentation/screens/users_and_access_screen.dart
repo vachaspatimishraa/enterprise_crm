@@ -7,6 +7,7 @@ import '../../domain/entities/user_account_status.dart';
 import '../../domain/repositories/user_management_repository.dart';
 import '../bloc/user_directory_cubit.dart';
 import '../bloc/user_directory_state.dart';
+import 'create_user_screen.dart';
 import 'user_details_screen.dart';
 
 /// Admin-only Users & Access management workspace screen.
@@ -67,15 +68,16 @@ class UsersAndAccessScreen extends StatelessWidget {
       create: (context) => UserDirectoryCubit(
         repository ?? context.read<UserManagementRepository>(),
       )..loadUsers(),
-      child: _UsersAndAccessView(currentUser: user),
+      child: _UsersAndAccessView(currentUser: user, repository: repository),
     );
   }
 }
 
 class _UsersAndAccessView extends StatefulWidget {
   final CurrentUser currentUser;
+  final UserManagementRepository? repository;
 
-  const _UsersAndAccessView({required this.currentUser});
+  const _UsersAndAccessView({required this.currentUser, this.repository});
 
   @override
   State<_UsersAndAccessView> createState() => _UsersAndAccessViewState();
@@ -90,15 +92,35 @@ class _UsersAndAccessViewState extends State<_UsersAndAccessView> {
     super.dispose();
   }
 
-  void _openUserDetails(BuildContext context, ManagedUser managedUser) {
-    Navigator.of(context).push(
+  Future<void> _openUserDetails(ManagedUser managedUser) async {
+    final repo = widget.repository ?? context.read<UserManagementRepository>();
+    final cubit = context.read<UserDirectoryCubit>();
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => UserDetailsScreen(
           currentUser: widget.currentUser,
           user: managedUser,
+          repository: repo,
         ),
       ),
     );
+    if (mounted) {
+      cubit.loadUsers();
+    }
+  }
+
+  Future<void> _openCreateUser() async {
+    final repo = widget.repository ?? context.read<UserManagementRepository>();
+    final cubit = context.read<UserDirectoryCubit>();
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) =>
+            CreateUserScreen(currentUser: widget.currentUser, repository: repo),
+      ),
+    );
+    if (created == true && mounted) {
+      cubit.loadUsers();
+    }
   }
 
   @override
@@ -122,20 +144,71 @@ class _UsersAndAccessViewState extends State<_UsersAndAccessView> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Page Header
-                  Text(
-                    'USER DIRECTORY',
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
+                  if (width >= 600)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'USER DIRECTORY',
+                                style: theme.textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Manage system accounts, module entitlements, and access policies.',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (widget.currentUser.isAdmin)
+                          ElevatedButton.icon(
+                            key: const Key('create_user_button'),
+                            onPressed: _openCreateUser,
+                            icon: const Icon(Icons.person_add_outlined),
+                            label: const Text('+ Create User'),
+                          ),
+                      ],
+                    )
+                  else
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'USER DIRECTORY',
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Manage system accounts, module entitlements, and access policies.',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (widget.currentUser.isAdmin)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: ElevatedButton.icon(
+                              key: const Key('create_user_button'),
+                              onPressed: _openCreateUser,
+                              icon: const Icon(Icons.person_add_outlined),
+                              label: const Text('+ Create'),
+                            ),
+                          ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Manage system accounts, module entitlements, and access policies.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
                   const SizedBox(height: 24),
 
                   // Search and Filter Controls Card
@@ -362,8 +435,7 @@ class _UsersAndAccessViewState extends State<_UsersAndAccessView> {
 
                           return _UserDirectoryList(
                             users: filteredUsers,
-                            onSelectUser: (user) =>
-                                _openUserDetails(context, user),
+                            onSelectUser: _openUserDetails,
                           );
                       }
                     },
