@@ -43,3 +43,17 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# AI / Agent context and specification files
+AI_BRAIN.md
+AI_RULES.md
+CODING_AGENT_MASTER_PROMPT.txt
+CRM_Backend_Schema.md
+CRM_LEAD_MANAGEMENT_PHASES.md
+CRM_PRD.md
+CRM_PROJECT_PHASES.md
+CRM_TRD.md
+CRM_UI_UX.md
+CRM_UPDATED_PROJECT_FLOW_AND_STRUCTURE.md
+SESSION_MEMORY.md
+
