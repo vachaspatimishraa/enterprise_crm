@@ -23,6 +23,7 @@ class LeadDashboardScreen extends StatelessWidget {
   final VoidCallback? onExportLeads;
   final LeadImportFilePicker? filePicker;
   final LeadExportFileSaver? fileSaver;
+  final VoidCallback? onLogout;
 
   const LeadDashboardScreen({
     super.key,
@@ -35,6 +36,7 @@ class LeadDashboardScreen extends StatelessWidget {
     this.onExportLeads,
     this.filePicker,
     this.fileSaver,
+    this.onLogout,
   });
 
   @override
@@ -51,6 +53,7 @@ class LeadDashboardScreen extends StatelessWidget {
           repository: repository,
           filePicker: filePicker,
           fileSaver: fileSaver,
+          onLogout: onLogout,
         ),
       );
     }
@@ -67,6 +70,7 @@ class LeadDashboardScreen extends StatelessWidget {
           repository: repository,
           filePicker: filePicker,
           fileSaver: fileSaver,
+          onLogout: onLogout,
         ),
       );
     }
@@ -81,6 +85,7 @@ class LeadDashboardScreen extends StatelessWidget {
       repository: repository,
       filePicker: filePicker,
       fileSaver: fileSaver,
+      onLogout: onLogout,
     );
   }
 }
@@ -94,6 +99,7 @@ class _LeadDashboardView extends StatelessWidget {
   final LeadRepository? repository;
   final LeadImportFilePicker? filePicker;
   final LeadExportFileSaver? fileSaver;
+  final VoidCallback? onLogout;
 
   const _LeadDashboardView({
     this.onNavigateToLeads,
@@ -104,6 +110,7 @@ class _LeadDashboardView extends StatelessWidget {
     this.repository,
     this.filePicker,
     this.fileSaver,
+    this.onLogout,
   });
 
   void _showComingSoon(BuildContext context, String actionName) {
@@ -244,6 +251,13 @@ class _LeadDashboardView extends StatelessWidget {
               context.read<LeadDashboardCubit>().loadDashboard();
             },
           ),
+          if (onLogout != null)
+            IconButton(
+              key: const Key('shell_logout_button'),
+              icon: const Icon(Icons.logout),
+              tooltip: 'Logout',
+              onPressed: onLogout,
+            ),
         ],
       ),
       body: BlocBuilder<LeadDashboardCubit, LeadDashboardState>(

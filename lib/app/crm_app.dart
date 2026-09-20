@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../features/auth/domain/repositories/auth_repository.dart';
+import '../features/auth/presentation/bloc/auth_cubit.dart';
+import '../features/auth/presentation/bloc/auth_state.dart';
+import '../features/auth/presentation/screens/login_screen.dart';
+import '../features/dashboard/presentation/screens/admin_dashboard_screen.dart';
+import '../features/dashboard/presentation/screens/user_dashboard_screen.dart';
 import '../features/leads/domain/entities/lead.dart';
 import '../features/leads/domain/entities/lead_query.dart';
 import '../features/leads/domain/repositories/lead_repository.dart';
@@ -18,48 +24,143 @@ import '../features/leads/presentation/services/lead_import_file_picker.dart';
 import '../features/leads/presentation/widgets/lead_export_dialog.dart';
 
 /// Top-level application widget for the Enterprise CRM.
-class CrmApp extends StatelessWidget {
+class CrmApp extends StatefulWidget {
   final LeadRepository leadRepository;
   final LeadImportFilePicker? filePicker;
   final LeadExportFileSaver? exportFileSaver;
+  final AuthRepository? authRepository;
 
   const CrmApp({
     super.key,
     required this.leadRepository,
     this.filePicker,
     this.exportFileSaver,
+    this.authRepository,
   });
 
   @override
+  State<CrmApp> createState() => _CrmAppState();
+}
+
+class _CrmAppState extends State<CrmApp> {
+  AuthCubit? _authCubit;
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.authRepository != null) {
+      _authCubit = AuthCubit(widget.authRepository!);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant CrmApp oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.authRepository != oldWidget.authRepository) {
+      _authCubit?.close();
+      _authCubit = widget.authRepository != null
+          ? AuthCubit(widget.authRepository!)
+          : null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _authCubit?.close();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return RepositoryProvider<LeadRepository>.value(
-      value: leadRepository,
-      child: RepositoryProvider<LeadExportFileSaver>.value(
-        value: exportFileSaver ?? const DefaultLeadExportFileSaver(),
-        child: MaterialApp(
-          title: 'Enterprise CRM',
-          debugShowCheckedModeBanner: false,
-          theme: ThemeData(
-            useMaterial3: true,
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: Colors.deepPurple,
-              brightness: Brightness.light,
-            ),
-          ),
-          darkTheme: ThemeData(
-            useMaterial3: true,
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: Colors.deepPurple,
-              brightness: Brightness.dark,
-            ),
-          ),
-          themeMode: ThemeMode.system,
-          home: CrmHomeScreen(
-            repository: leadRepository,
-            filePicker: filePicker,
-            exportFileSaver: exportFileSaver,
-          ),
+    Widget content;
+
+    if (_authCubit != null) {
+      content = BlocProvider<AuthCubit>.value(
+        value: _authCubit!,
+        child: BlocConsumer<AuthCubit, AuthState>(
+          listener: (context, state) {
+            if (state is AuthUnauthenticated) {
+              _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+            }
+          },
+          builder: (context, state) {
+            switch (state) {
+              case AuthAuthenticated(:final user):
+                if (user.isAdmin) {
+                  return AdminDashboardScreen(
+                    user: user,
+                    onLogout: () => _authCubit!.logout(),
+                    onOpenLeadManagement: () {
+                      _navigatorKey.currentState?.push(
+                        MaterialPageRoute(
+                          builder: (_) => CrmHomeScreen(
+                            repository: widget.leadRepository,
+                            filePicker: widget.filePicker,
+                            exportFileSaver: widget.exportFileSaver,
+                            onLogout: () => _authCubit!.logout(),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                } else {
+                  return UserDashboardScreen(
+                    user: user,
+                    onLogout: () => _authCubit!.logout(),
+                  );
+                }
+              case AuthUnauthenticated():
+              case AuthAuthenticating():
+              case AuthFailure():
+                return const LoginScreen();
+            }
+          },
         ),
+      );
+    } else {
+      // Legacy fallback for baseline tests without authentication configured
+      content = CrmHomeScreen(
+        repository: widget.leadRepository,
+        filePicker: widget.filePicker,
+        exportFileSaver: widget.exportFileSaver,
+      );
+    }
+
+    Widget app = MaterialApp(
+      navigatorKey: _navigatorKey,
+      title: 'Enterprise CRM',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.deepPurple,
+          brightness: Brightness.light,
+        ),
+      ),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.deepPurple,
+          brightness: Brightness.dark,
+        ),
+      ),
+      themeMode: ThemeMode.system,
+      home: content,
+    );
+
+    if (widget.authRepository != null) {
+      app = RepositoryProvider<AuthRepository>.value(
+        value: widget.authRepository!,
+        child: app,
+      );
+    }
+
+    return RepositoryProvider<LeadRepository>.value(
+      value: widget.leadRepository,
+      child: RepositoryProvider<LeadExportFileSaver>.value(
+        value: widget.exportFileSaver ?? const DefaultLeadExportFileSaver(),
+        child: app,
       ),
     );
   }
@@ -70,12 +171,14 @@ class CrmHomeScreen extends StatefulWidget {
   final LeadRepository repository;
   final LeadImportFilePicker? filePicker;
   final LeadExportFileSaver? exportFileSaver;
+  final VoidCallback? onLogout;
 
   const CrmHomeScreen({
     super.key,
     required this.repository,
     this.filePicker,
     this.exportFileSaver,
+    this.onLogout,
   });
 
   @override
@@ -276,6 +379,7 @@ class _CrmHomeScreenState extends State<CrmHomeScreen> {
       onImportLeads: () => _openImportWorkflow(context),
       onDistributeLeads: () => _openDistributeLeads(context),
       onExportLeads: _openExportLeads,
+      onLogout: widget.onLogout,
     );
   }
 }
