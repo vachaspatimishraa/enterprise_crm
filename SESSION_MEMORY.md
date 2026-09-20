@@ -20,10 +20,20 @@
 - Retired and replaced `UsersAndAccessPlaceholderScreen`.
 - Backward compatibility: Legacy tests without `authRepository` continue to function untouched.
 
+**AUTH-2B.1 — Shared Mock Account Store + User Administration Mutation Foundation (COMPLETE)**.
+- Unified data layer: `MockAccountStore` created as the single in-memory source of truth for both `MockAuthRepository` and `MockUserManagementRepository`.
+- Credential isolation: Passwords stored privately inside `MockAccountStore`; `ManagedUser` strictly contains 0 credential/secret fields.
+- Dynamic session mapping: `CurrentUser` derived dynamically on login from latest managed store state.
+- Distinct lookups: `getUserById(id)` queries internal record ID (`usr_...`); `findUserByUserId(userId)` queries normalized login identifier.
+- Mutation foundation: `createUser`, `updateUser`, `setUserStatus` (enable/disable), and `resetPassword` fully implemented on repository contract.
+- Module & permission integrity: Strict permission validation on create (rejects unknown or orphan permissions); automatic pruning of removed-module permissions on update; `MockPermissionCatalog` introduced.
+- Master Administrator safety: Master Admin cannot be disabled, downgraded, or have modules/permissions altered.
+- Defensive immutability: `getUsers()` returns unmodifiable list; `ManagedUser.modules` and `permissions` are unmodifiable sets.
+
 Current project checkpoint:
 ```text
 branch: main
-tests: 809 / 809 PASS (734 baseline + 41 AUTH-1 + 27 AUTH-2A + 7 UI-P1.1 tests)
+tests: 848 / 848 PASS (734 baseline + 41 AUTH-1 + 27 AUTH-2A + 7 UI-P1.1 + 39 AUTH-2B.1 tests)
 analyzer: clean (0 issues)
 web build: pass (flutter build web)
 ```
@@ -33,7 +43,7 @@ web build: pass (flutter build web)
 - **Mock Admin Account:** `admin` / `admin123` (AccountType: `admin`, access to all 8 modules + Administration / Users & Access).
 - **Mock Standard User Account:** `user` / `user123` (AccountType: `user`, access to `leadManagement` and `calling`).
 - **Real backend auth:** Pending instructor backend contract.
-- **Fine-grained permissions:** Foundation established; full enforcement & mutation deferred to AUTH-2B.
+- **Fine-grained permissions:** Local mock catalog defined; mutations enforce module-subset rules and automatic pruning on update.
 - **Password reset:** Admin-only requirement frozen. No self-service reset or forgot password in system.
 
 ## Remaining Milestones
@@ -45,5 +55,6 @@ web build: pass (flutter build web)
 - AUTH-1: Login + Mock Auth + Admin/User Shell — COMPLETE
 - AUTH-2A: Users & Access Foundation + User Directory — COMPLETE
 - UI-P1.1: Align Authenticated App Header Layout ([A] Administrator ... [Logout]) — COMPLETE
-- AUTH-2B (Upcoming): User Administration Mutations (Create user, edit user, module assignment, permissions, active/disabled toggle, admin password reset)
+- AUTH-2B.1: Shared Mock Account Store + User Administration Mutation Foundation — COMPLETE
+- AUTH-2B.2 (Upcoming): User Administration UI (Create User screen/modal, Edit User screen/modal, Enable/Disable action, Admin Password Reset dialog)
 

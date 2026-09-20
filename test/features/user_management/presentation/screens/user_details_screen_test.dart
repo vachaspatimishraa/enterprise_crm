@@ -1,4 +1,3 @@
-import 'package:enterprise_crm/features/auth/data/repositories/mock_auth_repository.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/account_type.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/crm_module.dart';
 import 'package:enterprise_crm/features/user_management/data/repositories/mock_user_management_repository.dart';
@@ -7,6 +6,8 @@ import 'package:enterprise_crm/features/user_management/domain/entities/user_acc
 import 'package:enterprise_crm/features/user_management/presentation/screens/user_details_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../../../helpers/mock_auth_test_fixtures.dart';
 
 Widget _buildUserDetailsTestApp({
   required ManagedUser user,
@@ -17,7 +18,7 @@ Widget _buildUserDetailsTestApp({
     darkTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark),
     themeMode: themeMode,
     home: UserDetailsScreen(
-      currentUser: MockAuthRepository.mockAdmin,
+      currentUser: MockAuthTestFixtures.admin,
       user: user,
     ),
   );
@@ -119,13 +120,13 @@ void main() {
     testWidgets(
       'renders fallback notices when user has no modules or permissions',
       (tester) async {
-        const bareUser = ManagedUser(
+        final bareUser = ManagedUser(
           id: 'bare_user',
           userId: 'bare',
           displayName: 'Bare User',
           accountType: AccountType.user,
-          modules: {},
-          permissions: {},
+          modules: const {},
+          permissions: const {},
           status: UserAccountStatus.active,
         );
 

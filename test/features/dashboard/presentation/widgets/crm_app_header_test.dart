@@ -1,8 +1,9 @@
-import 'package:enterprise_crm/features/auth/data/repositories/mock_auth_repository.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/widgets/crm_app_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../../../helpers/mock_auth_test_fixtures.dart';
 
 Widget _buildHeaderTestApp({
   required CurrentUser user,
@@ -29,7 +30,7 @@ void main() {
       'absent application branding (no Enterprise CRM and no briefcase icon)',
       (tester) async {
         await tester.pumpWidget(
-          _buildHeaderTestApp(user: MockAuthRepository.mockAdmin),
+          _buildHeaderTestApp(user: MockAuthTestFixtures.admin),
         );
         await tester.pumpAndSettle();
 
@@ -43,7 +44,7 @@ void main() {
       'Admin layout: avatar [A] is on the far left, followed by Administrator, with only Logout on far right',
       (tester) async {
         await tester.pumpWidget(
-          _buildHeaderTestApp(user: MockAuthRepository.mockAdmin),
+          _buildHeaderTestApp(user: MockAuthTestFixtures.admin),
         );
         await tester.pumpAndSettle();
 
@@ -89,7 +90,7 @@ void main() {
       'normal User layout: avatar [S] is on the left, followed by Standard User, with only Logout on right',
       (tester) async {
         await tester.pumpWidget(
-          _buildHeaderTestApp(user: MockAuthRepository.mockUser),
+          _buildHeaderTestApp(user: MockAuthTestFixtures.standardUser),
         );
         await tester.pumpAndSettle();
 
@@ -126,7 +127,7 @@ void main() {
       bool loggedOut = false;
       await tester.pumpWidget(
         _buildHeaderTestApp(
-          user: MockAuthRepository.mockAdmin,
+          user: MockAuthTestFixtures.admin,
           onLogout: () {
             loggedOut = true;
           },
@@ -146,7 +147,7 @@ void main() {
       bool loggedOut = false;
       await tester.pumpWidget(
         _buildHeaderTestApp(
-          user: MockAuthRepository.mockUser,
+          user: MockAuthTestFixtures.standardUser,
           onLogout: () {
             loggedOut = true;
           },
@@ -166,7 +167,7 @@ void main() {
         const mobileWidth = 360.0;
         await tester.pumpWidget(
           _buildHeaderTestApp(
-            user: MockAuthRepository.mockAdmin,
+            user: MockAuthTestFixtures.admin,
             width: mobileWidth,
           ),
         );
@@ -197,7 +198,7 @@ void main() {
     testWidgets('renders cleanly in dark mode', (tester) async {
       await tester.pumpWidget(
         _buildHeaderTestApp(
-          user: MockAuthRepository.mockAdmin,
+          user: MockAuthTestFixtures.admin,
           themeMode: ThemeMode.dark,
         ),
       );

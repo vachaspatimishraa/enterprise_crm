@@ -1,9 +1,10 @@
-import 'package:enterprise_crm/features/auth/data/repositories/mock_auth_repository.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/module_placeholder_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_dashboard_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_lead_placeholder_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../../../helpers/mock_auth_test_fixtures.dart';
 
 Widget _buildUserDashboardTestApp({
   VoidCallback? onLogout,
@@ -14,7 +15,7 @@ Widget _buildUserDashboardTestApp({
     darkTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark),
     themeMode: themeMode,
     home: UserDashboardScreen(
-      user: MockAuthRepository.mockUser,
+      user: MockAuthTestFixtures.standardUser,
       onLogout: onLogout ?? () {},
     ),
   );

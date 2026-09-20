@@ -6,6 +6,9 @@ import 'package:enterprise_crm/features/user_management/presentation/bloc/user_d
 import 'package:enterprise_crm/features/user_management/presentation/bloc/user_directory_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:enterprise_crm/features/user_management/domain/inputs/create_managed_user_input.dart';
+import 'package:enterprise_crm/features/user_management/domain/inputs/update_managed_user_input.dart';
+
 class _FakeUserRepository implements UserManagementRepository {
   List<ManagedUser> users = [];
   bool shouldThrow = false;
@@ -19,6 +22,31 @@ class _FakeUserRepository implements UserManagementRepository {
 
   @override
   Future<ManagedUser?> getUserById(String id) async => null;
+
+  @override
+  Future<ManagedUser?> findUserByUserId(String userId) async => null;
+
+  @override
+  Future<ManagedUser> createUser(
+    CreateManagedUserInput input, {
+    required String temporaryPassword,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<ManagedUser> updateUser(UpdateManagedUserInput input) =>
+      throw UnimplementedError();
+
+  @override
+  Future<ManagedUser> setUserStatus({
+    required String id,
+    required UserAccountStatus status,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> resetPassword({
+    required String id,
+    required String newPassword,
+  }) => throw UnimplementedError();
 }
 
 void main() {
@@ -27,21 +55,21 @@ void main() {
     late UserDirectoryCubit cubit;
 
     final testUsers = [
-      const ManagedUser(
+      ManagedUser(
         id: '1',
         userId: 'admin',
         displayName: 'Administrator',
         accountType: AccountType.admin,
         status: UserAccountStatus.active,
       ),
-      const ManagedUser(
+      ManagedUser(
         id: '2',
         userId: 'john_doe',
         displayName: 'John Doe',
         accountType: AccountType.user,
         status: UserAccountStatus.active,
       ),
-      const ManagedUser(
+      ManagedUser(
         id: '3',
         userId: 'jane_smith',
         displayName: 'Jane Smith',

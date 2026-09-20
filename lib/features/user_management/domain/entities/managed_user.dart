@@ -14,15 +14,16 @@ class ManagedUser {
   final Set<String> permissions;
   final UserAccountStatus status;
 
-  const ManagedUser({
+  ManagedUser({
     required this.id,
     required this.userId,
     required this.displayName,
     required this.accountType,
-    this.modules = const {},
-    this.permissions = const {},
+    Set<CrmModule> modules = const {},
+    Set<String> permissions = const {},
     this.status = UserAccountStatus.active,
-  });
+  }) : modules = Set.unmodifiable(modules),
+       permissions = Set.unmodifiable(permissions);
 
   /// Whether this managed account possesses administrative privileges.
   bool get isAdmin => accountType == AccountType.admin;
@@ -32,6 +33,27 @@ class ManagedUser {
 
   /// Whether this account has been disabled by an administrator.
   bool get isDisabled => status == UserAccountStatus.disabled;
+
+  /// Creates a copy of this managed user with updated fields.
+  ManagedUser copyWith({
+    String? id,
+    String? userId,
+    String? displayName,
+    AccountType? accountType,
+    Set<CrmModule>? modules,
+    Set<String>? permissions,
+    UserAccountStatus? status,
+  }) {
+    return ManagedUser(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      displayName: displayName ?? this.displayName,
+      accountType: accountType ?? this.accountType,
+      modules: modules ?? this.modules,
+      permissions: permissions ?? this.permissions,
+      status: status ?? this.status,
+    );
+  }
 
   @override
   bool operator ==(Object other) =>

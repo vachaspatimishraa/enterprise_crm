@@ -2,15 +2,20 @@ import 'package:enterprise_crm/features/auth/data/repositories/mock_auth_reposit
 import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
 import 'package:enterprise_crm/features/auth/presentation/bloc/auth_cubit.dart';
 import 'package:enterprise_crm/features/auth/presentation/bloc/auth_state.dart';
+import 'package:enterprise_crm/features/user_management/data/mock/mock_account_store.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../../../helpers/mock_auth_test_fixtures.dart';
 
 void main() {
   group('AuthCubit', () {
+    late MockAccountStore accountStore;
     late MockAuthRepository repository;
     late AuthCubit cubit;
 
     setUp(() {
-      repository = MockAuthRepository();
+      accountStore = MockAccountStore.seeded();
+      repository = MockAuthRepository(accountStore: accountStore);
       cubit = AuthCubit(repository);
     });
 
@@ -29,13 +34,14 @@ void main() {
       'initial state is AuthAuthenticated when repository has active user',
       () {
         final repoWithUser = MockAuthRepository(
-          initialUser: MockAuthRepository.mockAdmin,
+          accountStore: accountStore,
+          initialUser: MockAuthTestFixtures.admin,
         );
         final activeCubit = AuthCubit(repoWithUser);
 
         expect(
           activeCubit.state,
-          equals(const AuthAuthenticated(MockAuthRepository.mockAdmin)),
+          equals(const AuthAuthenticated(MockAuthTestFixtures.admin)),
         );
 
         activeCubit.close();
@@ -139,6 +145,8 @@ void main() {
 
 class _SlowMockAuthRepository extends MockAuthRepository {
   int loginCallCount = 0;
+
+  _SlowMockAuthRepository() : super(accountStore: MockAccountStore.seeded());
 
   @override
   Future<CurrentUser> login({

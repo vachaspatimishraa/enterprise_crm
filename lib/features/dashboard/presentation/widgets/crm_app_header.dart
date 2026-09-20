@@ -3,9 +3,6 @@ import 'package:flutter/material.dart';
 import '../../../auth/domain/entities/current_user.dart';
 
 /// Simplified application header displayed across authenticated CRM dashboards.
-///
-/// Places user avatar and display name on the far left, and the
-/// logout action on the far right.
 class CrmAppHeader extends StatelessWidget {
   final CurrentUser user;
   final VoidCallback onLogout;

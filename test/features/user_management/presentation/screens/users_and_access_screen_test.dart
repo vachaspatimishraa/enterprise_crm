@@ -1,12 +1,17 @@
-import 'package:enterprise_crm/features/auth/data/repositories/mock_auth_repository.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
+import 'package:enterprise_crm/features/user_management/data/mock/mock_account_store.dart';
 import 'package:enterprise_crm/features/user_management/data/repositories/mock_user_management_repository.dart';
 import 'package:enterprise_crm/features/user_management/domain/entities/managed_user.dart';
+import 'package:enterprise_crm/features/user_management/domain/entities/user_account_status.dart';
+import 'package:enterprise_crm/features/user_management/domain/inputs/create_managed_user_input.dart';
+import 'package:enterprise_crm/features/user_management/domain/inputs/update_managed_user_input.dart';
 import 'package:enterprise_crm/features/user_management/domain/repositories/user_management_repository.dart';
 import 'package:enterprise_crm/features/user_management/presentation/screens/user_details_screen.dart';
 import 'package:enterprise_crm/features/user_management/presentation/screens/users_and_access_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../../../helpers/mock_auth_test_fixtures.dart';
 
 class _MockThrowingRepo implements UserManagementRepository {
   bool shouldThrow = true;
@@ -21,6 +26,31 @@ class _MockThrowingRepo implements UserManagementRepository {
 
   @override
   Future<ManagedUser?> getUserById(String id) async => null;
+
+  @override
+  Future<ManagedUser?> findUserByUserId(String userId) async => null;
+
+  @override
+  Future<ManagedUser> createUser(
+    CreateManagedUserInput input, {
+    required String temporaryPassword,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<ManagedUser> updateUser(UpdateManagedUserInput input) =>
+      throw UnimplementedError();
+
+  @override
+  Future<ManagedUser> setUserStatus({
+    required String id,
+    required UserAccountStatus status,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> resetPassword({
+    required String id,
+    required String newPassword,
+  }) => throw UnimplementedError();
 }
 
 Widget _buildUsersAndAccessTestApp({
@@ -37,7 +67,11 @@ Widget _buildUsersAndAccessTestApp({
       data: MediaQueryData(size: size),
       child: UsersAndAccessScreen(
         user: user,
-        repository: repository ?? MockUserManagementRepository(),
+        repository:
+            repository ??
+            MockUserManagementRepository(
+              accountStore: MockAccountStore.seeded(),
+            ),
       ),
     ),
   );
@@ -49,7 +83,7 @@ void main() {
       'renders directory header, search, filter chips, and desktop rows',
       (tester) async {
         await tester.pumpWidget(
-          _buildUsersAndAccessTestApp(user: MockAuthRepository.mockAdmin),
+          _buildUsersAndAccessTestApp(user: MockAuthTestFixtures.admin),
         );
         await tester.pumpAndSettle();
 
@@ -73,7 +107,7 @@ void main() {
       'search filters users case-insensitively and clear button resets',
       (tester) async {
         await tester.pumpWidget(
-          _buildUsersAndAccessTestApp(user: MockAuthRepository.mockAdmin),
+          _buildUsersAndAccessTestApp(user: MockAuthTestFixtures.admin),
         );
         await tester.pumpAndSettle();
 
@@ -106,7 +140,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        _buildUsersAndAccessTestApp(user: MockAuthRepository.mockAdmin),
+        _buildUsersAndAccessTestApp(user: MockAuthTestFixtures.admin),
       );
       await tester.pumpAndSettle();
 
@@ -135,11 +169,13 @@ void main() {
     });
 
     testWidgets('empty directory displays empty notice', (tester) async {
-      final emptyRepo = MockUserManagementRepository(initialUsers: const []);
+      final emptyRepo = MockUserManagementRepository(
+        accountStore: MockAccountStore(users: const []),
+      );
 
       await tester.pumpWidget(
         _buildUsersAndAccessTestApp(
-          user: MockAuthRepository.mockAdmin,
+          user: MockAuthTestFixtures.admin,
           repository: emptyRepo,
         ),
       );
@@ -153,7 +189,7 @@ void main() {
       'search with no matches shows reset filters button and resets',
       (tester) async {
         await tester.pumpWidget(
-          _buildUsersAndAccessTestApp(user: MockAuthRepository.mockAdmin),
+          _buildUsersAndAccessTestApp(user: MockAuthTestFixtures.admin),
         );
         await tester.pumpAndSettle();
 
@@ -188,7 +224,7 @@ void main() {
 
         await tester.pumpWidget(
           _buildUsersAndAccessTestApp(
-            user: MockAuthRepository.mockAdmin,
+            user: MockAuthTestFixtures.admin,
             repository: throwingRepo,
           ),
         );
@@ -222,7 +258,7 @@ void main() {
     ) async {
       await tester.pumpWidget(
         _buildUsersAndAccessTestApp(
-          user: MockAuthRepository.mockAdmin,
+          user: MockAuthTestFixtures.admin,
           size: const Size(375, 812), // Mobile viewport
         ),
       );
@@ -234,7 +270,7 @@ void main() {
 
     testWidgets('tapping a user opens UserDetailsScreen', (tester) async {
       await tester.pumpWidget(
-        _buildUsersAndAccessTestApp(user: MockAuthRepository.mockAdmin),
+        _buildUsersAndAccessTestApp(user: MockAuthTestFixtures.admin),
       );
       await tester.pumpAndSettle();
 
@@ -254,7 +290,7 @@ void main() {
     testWidgets('renders cleanly in dark mode without errors', (tester) async {
       await tester.pumpWidget(
         _buildUsersAndAccessTestApp(
-          user: MockAuthRepository.mockAdmin,
+          user: MockAuthTestFixtures.admin,
           themeMode: ThemeMode.dark,
         ),
       );

@@ -10,6 +10,12 @@ import 'package:enterprise_crm/features/user_management/presentation/screens/use
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:enterprise_crm/features/user_management/data/mock/mock_account_store.dart';
+import 'package:enterprise_crm/features/user_management/domain/entities/user_account_status.dart';
+import 'package:enterprise_crm/features/user_management/domain/inputs/create_managed_user_input.dart';
+import 'package:enterprise_crm/features/user_management/domain/inputs/update_managed_user_input.dart';
+import '../../../../helpers/mock_auth_test_fixtures.dart';
+
 /// Spy repository tracking calls to [getUsers].
 class _UserManagementRepoSpy implements UserManagementRepository {
   int getUsersCallCount = 0;
@@ -22,6 +28,31 @@ class _UserManagementRepoSpy implements UserManagementRepository {
 
   @override
   Future<ManagedUser?> getUserById(String id) async => null;
+
+  @override
+  Future<ManagedUser?> findUserByUserId(String userId) async => null;
+
+  @override
+  Future<ManagedUser> createUser(
+    CreateManagedUserInput input, {
+    required String temporaryPassword,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<ManagedUser> updateUser(UpdateManagedUserInput input) =>
+      throw UnimplementedError();
+
+  @override
+  Future<ManagedUser> setUserStatus({
+    required String id,
+    required UserAccountStatus status,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> resetPassword({
+    required String id,
+    required String newPassword,
+  }) => throw UnimplementedError();
 }
 
 void main() {
@@ -29,11 +60,15 @@ void main() {
     late MockLeadRepository leadRepository;
     late MockAuthRepository authRepository;
     late MockUserManagementRepository userManagementRepository;
+    late MockAccountStore accountStore;
 
     setUp(() {
       leadRepository = MockLeadRepository();
-      authRepository = MockAuthRepository();
-      userManagementRepository = MockUserManagementRepository();
+      accountStore = MockAccountStore.seeded();
+      authRepository = MockAuthRepository(accountStore: accountStore);
+      userManagementRepository = MockUserManagementRepository(
+        accountStore: accountStore,
+      );
     });
 
     testWidgets(
@@ -113,7 +148,7 @@ void main() {
       'CORRECTION 3: Route guard rejects non-Admin access BEFORE loading cubit, making ZERO getUsers() calls',
       (tester) async {
         final repoSpy = _UserManagementRepoSpy();
-        final nonAdminUser = MockAuthRepository.mockUser;
+        final nonAdminUser = MockAuthTestFixtures.standardUser;
         expect(nonAdminUser.isAdmin, isFalse);
 
         await tester.pumpWidget(
@@ -152,7 +187,7 @@ void main() {
     testWidgets(
       'CORRECTION 3: UserDetailsScreen also rejects non-Admin access',
       (tester) async {
-        final nonAdminUser = MockAuthRepository.mockUser;
+        final nonAdminUser = MockAuthTestFixtures.standardUser;
         final managedUser = MockUserManagementRepository.defaultSeeds.first;
 
         await tester.pumpWidget(

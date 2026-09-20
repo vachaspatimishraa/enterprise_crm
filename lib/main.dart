@@ -3,12 +3,16 @@ import 'package:flutter/material.dart';
 import 'app/crm_app.dart';
 import 'features/auth/data/repositories/mock_auth_repository.dart';
 import 'features/leads/data/repositories/mock_lead_repository.dart';
+import 'features/user_management/data/mock/mock_account_store.dart';
 import 'features/user_management/data/repositories/mock_user_management_repository.dart';
 
 void main() {
   final leadRepository = MockLeadRepository();
-  final authRepository = MockAuthRepository();
-  final userManagementRepository = MockUserManagementRepository();
+  final accountStore = MockAccountStore.seeded();
+  final authRepository = MockAuthRepository(accountStore: accountStore);
+  final userManagementRepository = MockUserManagementRepository(
+    accountStore: accountStore,
+  );
 
   runApp(
     CrmApp(

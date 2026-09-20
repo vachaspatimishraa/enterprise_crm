@@ -2,6 +2,7 @@ import 'package:enterprise_crm/features/auth/data/repositories/mock_auth_reposit
 import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
 import 'package:enterprise_crm/features/auth/presentation/bloc/auth_cubit.dart';
 import 'package:enterprise_crm/features/auth/presentation/screens/login_screen.dart';
+import 'package:enterprise_crm/features/user_management/data/mock/mock_account_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,11 +24,13 @@ Widget _buildLoginTestApp({
 
 void main() {
   group('LoginScreen Widget Tests', () {
+    late MockAccountStore accountStore;
     late MockAuthRepository repository;
     late AuthCubit cubit;
 
     setUp(() {
-      repository = MockAuthRepository();
+      accountStore = MockAccountStore.seeded();
+      repository = MockAuthRepository(accountStore: accountStore);
       cubit = AuthCubit(repository);
     });
 
@@ -204,6 +207,8 @@ void main() {
 }
 
 class _DelayedMockAuthRepository extends MockAuthRepository {
+  _DelayedMockAuthRepository() : super(accountStore: MockAccountStore.seeded());
+
   @override
   Future<CurrentUser> login({
     required String userId,

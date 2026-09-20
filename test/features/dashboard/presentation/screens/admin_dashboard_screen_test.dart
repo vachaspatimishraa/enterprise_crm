@@ -1,10 +1,12 @@
-import 'package:enterprise_crm/features/auth/data/repositories/mock_auth_repository.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/admin_dashboard_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/module_placeholder_screen.dart';
+import 'package:enterprise_crm/features/user_management/data/mock/mock_account_store.dart';
 import 'package:enterprise_crm/features/user_management/data/repositories/mock_user_management_repository.dart';
 import 'package:enterprise_crm/features/user_management/presentation/screens/users_and_access_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../../../helpers/mock_auth_test_fixtures.dart';
 
 Widget _buildAdminDashboardTestApp({
   VoidCallback? onLogout,
@@ -16,10 +18,12 @@ Widget _buildAdminDashboardTestApp({
     darkTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark),
     themeMode: themeMode,
     home: AdminDashboardScreen(
-      user: MockAuthRepository.mockAdmin,
+      user: MockAuthTestFixtures.admin,
       onLogout: onLogout ?? () {},
       onOpenLeadManagement: onOpenLeadManagement ?? () {},
-      userManagementRepository: MockUserManagementRepository(),
+      userManagementRepository: MockUserManagementRepository(
+        accountStore: MockAccountStore.seeded(),
+      ),
     ),
   );
 }

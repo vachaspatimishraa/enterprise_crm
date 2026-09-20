@@ -1,5 +1,6 @@
 import 'package:enterprise_crm/features/auth/domain/entities/account_type.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/crm_module.dart';
+import 'package:enterprise_crm/features/user_management/data/mock/mock_account_store.dart';
 import 'package:enterprise_crm/features/user_management/data/repositories/mock_user_management_repository.dart';
 import 'package:enterprise_crm/features/user_management/domain/entities/managed_user.dart';
 import 'package:enterprise_crm/features/user_management/domain/entities/user_account_status.dart';
@@ -7,10 +8,12 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('MockUserManagementRepository Tests', () {
+    late MockAccountStore accountStore;
     late MockUserManagementRepository repository;
 
     setUp(() {
-      repository = MockUserManagementRepository();
+      accountStore = MockAccountStore.seeded();
+      repository = MockUserManagementRepository(accountStore: accountStore);
     });
 
     test('defaultSeeds contain expected accounts and no passwords', () {
@@ -43,25 +46,25 @@ void main() {
       'getUsers sorts Admin first, then displayName alphabetically A-Z',
       () async {
         final customUsers = [
-          const ManagedUser(
+          ManagedUser(
             id: 'u3',
             userId: 'charlie',
             displayName: 'Charlie Brown',
             accountType: AccountType.user,
           ),
-          const ManagedUser(
+          ManagedUser(
             id: 'u1',
             userId: 'alice',
             displayName: 'Alice Walker',
             accountType: AccountType.user,
           ),
-          const ManagedUser(
+          ManagedUser(
             id: 'u2',
             userId: 'admin2',
             displayName: 'Super Admin',
             accountType: AccountType.admin,
           ),
-          const ManagedUser(
+          ManagedUser(
             id: 'u0',
             userId: 'admin1',
             displayName: 'Alpha Admin',
@@ -69,7 +72,9 @@ void main() {
           ),
         ];
 
-        final repo = MockUserManagementRepository(initialUsers: customUsers);
+        final repo = MockUserManagementRepository(
+          accountStore: MockAccountStore(users: customUsers),
+        );
         final users = await repo.getUsers();
 
         expect(users.length, 4);
@@ -82,16 +87,29 @@ void main() {
       },
     );
 
-    test('getUserById finds user by internal id or userId', () async {
+    test('getUserById finds user strictly by internal id', () async {
       final byId = await repository.getUserById('usr_admin');
       expect(byId, isNotNull);
       expect(byId?.userId, 'admin');
 
+      // Internal ID lookup does NOT match login userId
       final byUserId = await repository.getUserById('admin');
+      expect(byUserId, isNull);
+
+      final notFound = await repository.getUserById('non_existent_id');
+      expect(notFound, isNull);
+    });
+
+    test('findUserByUserId finds user strictly by login userId', () async {
+      final byUserId = await repository.findUserByUserId('admin');
       expect(byUserId, isNotNull);
       expect(byUserId?.id, 'usr_admin');
 
-      final notFound = await repository.getUserById('non_existent_id');
+      // Login userId lookup does NOT match internal record id
+      final byId = await repository.findUserByUserId('usr_admin');
+      expect(byId, isNull);
+
+      final notFound = await repository.findUserByUserId('non_existent_user');
       expect(notFound, isNull);
     });
   });
