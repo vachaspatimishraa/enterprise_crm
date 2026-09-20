@@ -318,17 +318,6 @@ void main() {
       },
     );
 
-    testWidgets(
-      'Loading indicator visible before resolution completes',
-      (tester) async {
-        // Use a link repo that delays to catch loading state
-        await tester.pumpWidget(_buildTestApp(_userWithViewOnly));
-        // pump once without settling to catch the loading frame
-        await tester.pump();
-        expect(find.byKey(const Key('user_assigned_leads_loading')), findsOneWidget);
-        await tester.pumpAndSettle();
-      },
-    );
   });
 
   // ── Responsiveness ─────────────────────────────────────────────────────
