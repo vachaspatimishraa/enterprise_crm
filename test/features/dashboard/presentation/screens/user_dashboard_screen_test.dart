@@ -28,9 +28,9 @@ void main() {
       await tester.pumpWidget(_buildUserDashboardTestApp());
       await tester.pumpAndSettle();
 
-      // Header
-      expect(find.text('Enterprise CRM'), findsOneWidget);
-      expect(find.text('Standard User'), findsWidgets);
+      // Header: CRM branding removed, Standard User appears only once
+      expect(find.text('Enterprise CRM'), findsNothing);
+      expect(find.text('Standard User'), findsOneWidget);
       expect(find.byKey(const Key('crm_header_logout_button')), findsOneWidget);
 
       // Section title

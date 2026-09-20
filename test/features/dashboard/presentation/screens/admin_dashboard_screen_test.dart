@@ -32,9 +32,9 @@ void main() {
       await tester.pumpWidget(_buildAdminDashboardTestApp());
       await tester.pumpAndSettle();
 
-      // Header
-      expect(find.text('Enterprise CRM'), findsOneWidget);
-      expect(find.text('Administrator'), findsWidgets);
+      // Header: CRM branding removed, Administrator appears only once
+      expect(find.text('Enterprise CRM'), findsNothing);
+      expect(find.text('Administrator'), findsOneWidget);
       expect(find.byKey(const Key('crm_header_logout_button')), findsOneWidget);
 
       // Section title
