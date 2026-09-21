@@ -3,6 +3,7 @@ import 'package:enterprise_crm/features/auth/domain/entities/account_type.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/crm_module.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
 import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dart';
+import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_call_activity_repository.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_lead_details_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_lead_workspace_screen.dart';
 import 'package:enterprise_crm/features/leads/data/datasources/mock_lead_data_source.dart';
@@ -20,8 +21,10 @@ void main() {
   late Lead otherLead;
   late MockLeadRepository sharedLeadRepo;
   late MockUserLeadLinkRepository linkRepo;
+  late MockLeadCallActivityRepository callActivityRepo;
 
   setUp(() {
+    callActivityRepo = MockLeadCallActivityRepository();
     userLead = Lead(
       id: 'lead-e2e-1',
       name: 'E2E Test Lead',
@@ -81,6 +84,7 @@ void main() {
               user: repUser,
               linkRepository: linkRepo,
               leadRepository: sharedLeadRepo,
+              callActivityRepository: callActivityRepo,
             ),
           ),
         );
@@ -155,6 +159,7 @@ void main() {
               user: readOnlyUser,
               linkRepository: linkRepo,
               leadRepository: sharedLeadRepo,
+              callActivityRepository: callActivityRepo,
             ),
           ),
         );

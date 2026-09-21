@@ -1,6 +1,8 @@
 import 'package:enterprise_crm/features/auth/data/repositories/mock_user_lead_link_repository.dart';
 import 'package:enterprise_crm/features/auth/domain/repositories/user_lead_link_repository.dart';
-import 'package:enterprise_crm/features/dashboard/presentation/screens/module_placeholder_screen.dart';
+import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_call_activity_repository.dart';
+import 'package:enterprise_crm/features/calling/domain/repositories/lead_call_activity_repository.dart';
+import 'package:enterprise_crm/features/calling/presentation/screens/user_calling_workspace_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_dashboard_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_lead_placeholder_screen.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
@@ -15,6 +17,7 @@ Widget _buildUserDashboardTestApp({
   ThemeMode themeMode = ThemeMode.light,
   UserLeadLinkRepository? linkRepository,
   LeadRepository? leadRepository,
+  LeadCallActivityRepository? callActivityRepository,
 }) {
   return MaterialApp(
     theme: ThemeData(useMaterial3: true, brightness: Brightness.light),
@@ -25,6 +28,8 @@ Widget _buildUserDashboardTestApp({
       onLogout: onLogout ?? () {},
       userLeadLinkRepository: linkRepository ?? MockUserLeadLinkRepository(),
       leadRepository: leadRepository ?? MockLeadRepository(),
+      callActivityRepository:
+          callActivityRepository ?? MockLeadCallActivityRepository(),
     ),
   );
 }
@@ -88,7 +93,7 @@ void main() {
       },
     );
 
-    testWidgets('tapping Calling opens ModulePlaceholderScreen', (
+    testWidgets('tapping Calling opens UserCallingWorkspaceScreen', (
       tester,
     ) async {
       await tester.pumpWidget(_buildUserDashboardTestApp());
@@ -97,10 +102,13 @@ void main() {
       await tester.tap(find.byKey(const Key('module_card_calling')));
       await tester.pumpAndSettle();
 
-      expect(find.byType(ModulePlaceholderScreen), findsOneWidget);
-      expect(find.text('Coming in a later module phase.'), findsOneWidget);
+      expect(find.byType(UserCallingWorkspaceScreen), findsOneWidget);
+      expect(find.text('Calling'), findsOneWidget);
+      expect(find.text('CALLING'), findsOneWidget);
 
-      await tester.tap(find.text('Back to Dashboard'));
+      await tester.tap(
+        find.byKey(const Key('user_calling_workspace_back_button')),
+      );
       await tester.pumpAndSettle();
 
       expect(find.byType(UserDashboardScreen), findsOneWidget);

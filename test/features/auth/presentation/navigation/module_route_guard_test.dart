@@ -5,6 +5,7 @@ import 'package:enterprise_crm/features/auth/domain/entities/crm_module.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
 import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dart';
 import 'package:enterprise_crm/features/auth/presentation/screens/access_restricted_screen.dart';
+import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_call_activity_repository.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/module_placeholder_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_dashboard_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_lead_workspace_screen.dart';
@@ -50,6 +51,7 @@ void main() {
               onLogout: () {},
               userLeadLinkRepository: MockUserLeadLinkRepository(),
               leadRepository: MockLeadRepository(),
+              callActivityRepository: MockLeadCallActivityRepository(),
             ),
           ),
         );
@@ -108,6 +110,7 @@ void main() {
               onLogout: () {},
               userLeadLinkRepository: MockUserLeadLinkRepository(),
               leadRepository: MockLeadRepository(),
+              callActivityRepository: MockLeadCallActivityRepository(),
             ),
           ),
         );
@@ -128,6 +131,7 @@ void main() {
               user: updatedUser,
               linkRepository: MockUserLeadLinkRepository(),
               leadRepository: MockLeadRepository(),
+              callActivityRepository: MockLeadCallActivityRepository(),
             ),
           ),
         );

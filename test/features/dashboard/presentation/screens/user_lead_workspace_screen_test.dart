@@ -5,6 +5,8 @@ import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
 import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dart';
 import 'package:enterprise_crm/features/auth/domain/repositories/user_lead_link_repository.dart';
 import 'package:enterprise_crm/features/auth/presentation/screens/access_restricted_screen.dart';
+import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_call_activity_repository.dart';
+import 'package:enterprise_crm/features/calling/domain/repositories/lead_call_activity_repository.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_lead_workspace_screen.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
 import 'package:enterprise_crm/features/leads/domain/repositories/lead_repository.dart';
@@ -27,10 +29,14 @@ final _staleLinkRepo = MockUserLeadLinkRepository(
 /// Default seeded lead repo containing agent-1 assignee + their leads.
 final _leadRepo = MockLeadRepository();
 
+/// Default call activity repo.
+final _callActivityRepo = MockLeadCallActivityRepository();
+
 Widget _buildTestApp(
   CurrentUser user, {
   UserLeadLinkRepository? linkRepo,
   LeadRepository? leadRepo,
+  LeadCallActivityRepository? callActivityRepo,
   ThemeMode themeMode = ThemeMode.light,
 }) {
   return MaterialApp(
@@ -41,6 +47,7 @@ Widget _buildTestApp(
       user: user,
       linkRepository: linkRepo ?? _linkedRepo,
       leadRepository: leadRepo ?? _leadRepo,
+      callActivityRepository: callActivityRepo ?? _callActivityRepo,
     ),
   );
 }
@@ -212,6 +219,7 @@ void main() {
                         user: _userWithViewOnly,
                         linkRepository: _linkedRepo,
                         leadRepository: _leadRepo,
+                        callActivityRepository: _callActivityRepo,
                       ),
                     ),
                   ),

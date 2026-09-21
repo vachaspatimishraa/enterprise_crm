@@ -22,6 +22,7 @@ import '../features/leads/presentation/screens/lead_details_screen.dart';
 import '../features/leads/presentation/screens/lead_import_workflow_screen.dart';
 import '../features/leads/data/services/lead_export_file_saver.dart';
 import '../features/leads/presentation/screens/lead_list_screen.dart';
+import '../features/calling/domain/repositories/lead_call_activity_repository.dart';
 import '../features/leads/presentation/services/lead_import_file_picker.dart';
 import '../features/leads/presentation/widgets/lead_export_dialog.dart';
 
@@ -33,6 +34,7 @@ class CrmApp extends StatefulWidget {
   final AuthRepository? authRepository;
   final UserManagementRepository? userManagementRepository;
   final UserLeadLinkRepository? userLeadLinkRepository;
+  final LeadCallActivityRepository? leadCallActivityRepository;
 
   const CrmApp({
     super.key,
@@ -42,6 +44,7 @@ class CrmApp extends StatefulWidget {
     this.authRepository,
     this.userManagementRepository,
     this.userLeadLinkRepository,
+    this.leadCallActivityRepository,
   }) : assert(
          authRepository == null || userManagementRepository != null,
          'userManagementRepository must be provided when authRepository is enabled',
@@ -49,6 +52,10 @@ class CrmApp extends StatefulWidget {
        assert(
          authRepository == null || userLeadLinkRepository != null,
          'userLeadLinkRepository must be provided when authRepository is enabled',
+       ),
+       assert(
+         authRepository == null || leadCallActivityRepository != null,
+         'leadCallActivityRepository must be provided when authRepository is enabled',
        );
 
   @override
@@ -124,6 +131,7 @@ class _CrmAppState extends State<CrmApp> {
                     onLogout: () => _authCubit!.logout(),
                     userLeadLinkRepository: widget.userLeadLinkRepository!,
                     leadRepository: widget.leadRepository,
+                    callActivityRepository: widget.leadCallActivityRepository!,
                   );
                 }
               case AuthUnauthenticated():

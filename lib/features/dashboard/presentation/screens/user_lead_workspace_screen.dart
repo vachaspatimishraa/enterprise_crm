@@ -8,6 +8,7 @@ import '../../../auth/domain/policies/crm_permissions.dart';
 import '../../../auth/domain/repositories/user_lead_link_repository.dart';
 import '../../../auth/presentation/mappers/crm_permission_presentation.dart';
 import '../../../auth/presentation/screens/access_restricted_screen.dart';
+import '../../../calling/domain/repositories/lead_call_activity_repository.dart';
 import '../../../leads/domain/entities/lead.dart';
 import '../../../leads/domain/repositories/lead_repository.dart';
 import '../bloc/user_assigned_leads_cubit.dart';
@@ -26,12 +27,14 @@ class UserLeadWorkspaceScreen extends StatelessWidget {
   final CurrentUser user;
   final UserLeadLinkRepository linkRepository;
   final LeadRepository leadRepository;
+  final LeadCallActivityRepository callActivityRepository;
 
   const UserLeadWorkspaceScreen({
     super.key,
     required this.user,
     required this.linkRepository,
     required this.leadRepository,
+    required this.callActivityRepository,
   });
 
   @override
@@ -51,6 +54,7 @@ class UserLeadWorkspaceScreen extends StatelessWidget {
         user: user,
         linkRepository: linkRepository,
         leadRepository: leadRepository,
+        callActivityRepository: callActivityRepository,
       ),
     );
   }
@@ -60,11 +64,13 @@ class _UserLeadWorkspaceView extends StatelessWidget {
   final CurrentUser user;
   final UserLeadLinkRepository linkRepository;
   final LeadRepository leadRepository;
+  final LeadCallActivityRepository callActivityRepository;
 
   const _UserLeadWorkspaceView({
     required this.user,
     required this.linkRepository,
     required this.leadRepository,
+    required this.callActivityRepository,
   });
 
   @override
@@ -116,6 +122,7 @@ class _UserLeadWorkspaceView extends StatelessWidget {
                     user: user,
                     linkRepository: linkRepository,
                     leadRepository: leadRepository,
+                    callActivityRepository: callActivityRepository,
                   ),
                 ],
 
@@ -331,11 +338,13 @@ class _AssignedLeadsBody extends StatelessWidget {
   final CurrentUser user;
   final UserLeadLinkRepository linkRepository;
   final LeadRepository leadRepository;
+  final LeadCallActivityRepository callActivityRepository;
 
   const _AssignedLeadsBody({
     required this.user,
     required this.linkRepository,
     required this.leadRepository,
+    required this.callActivityRepository,
   });
 
   @override
@@ -375,6 +384,7 @@ class _AssignedLeadsBody extends StatelessWidget {
           user: user,
           linkRepository: linkRepository,
           leadRepository: leadRepository,
+          callActivityRepository: callActivityRepository,
         ),
         UserAssignedLeadsFailure(:final message) => _FailurePanel(
           key: const Key('user_assigned_leads_failure'),
@@ -492,12 +502,14 @@ class _LeadList extends StatelessWidget {
   final CurrentUser user;
   final UserLeadLinkRepository linkRepository;
   final LeadRepository leadRepository;
+  final LeadCallActivityRepository callActivityRepository;
 
   const _LeadList({
     required this.leads,
     required this.user,
     required this.linkRepository,
     required this.leadRepository,
+    required this.callActivityRepository,
   });
 
   @override
@@ -516,6 +528,7 @@ class _LeadList extends StatelessWidget {
                     leadId: lead.id,
                     linkRepository: linkRepository,
                     leadRepository: leadRepository,
+                    callActivityRepository: callActivityRepository,
                   ),
                 ),
               );

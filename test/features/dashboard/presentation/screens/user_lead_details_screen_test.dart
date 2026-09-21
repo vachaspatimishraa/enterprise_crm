@@ -19,6 +19,7 @@ import 'package:enterprise_crm/features/leads/domain/entities/lead_query.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_source.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_status.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_summary.dart';
+import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_call_activity_repository.dart';
 import 'package:enterprise_crm/features/leads/domain/repositories/lead_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -60,6 +61,7 @@ void main() {
 
   late MockLeadRepository leadRepo;
   late MockUserLeadLinkRepository linkRepo;
+  late MockLeadCallActivityRepository callActivityRepo;
 
   setUp(() {
     leadRepo = MockLeadRepository(
@@ -68,6 +70,7 @@ void main() {
       ),
     );
     linkRepo = MockUserLeadLinkRepository(links: {'usr_standard': 'agent-1'});
+    callActivityRepo = MockLeadCallActivityRepository();
   });
 
   const userWithBothPerms = CurrentUser(
@@ -116,6 +119,7 @@ void main() {
         leadId: leadId,
         linkRepository: linkRepo,
         leadRepository: leadRepo,
+        callActivityRepository: callActivityRepo,
       ),
     );
   }
@@ -237,6 +241,7 @@ void main() {
             leadId: 'lead-user-1',
             linkRepository: linkRepo,
             leadRepository: failingRepo,
+            callActivityRepository: callActivityRepo,
           ),
         ),
       );
@@ -264,6 +269,7 @@ void main() {
                           leadId: 'lead-user-1',
                           linkRepository: linkRepo,
                           leadRepository: leadRepo,
+                          callActivityRepository: callActivityRepo,
                         ),
                       ),
                     );

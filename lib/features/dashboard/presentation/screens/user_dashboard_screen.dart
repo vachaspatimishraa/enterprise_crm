@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../auth/domain/entities/crm_module.dart';
 import '../../../auth/domain/entities/current_user.dart';
 import '../../../auth/domain/repositories/user_lead_link_repository.dart';
+import '../../../calling/domain/repositories/lead_call_activity_repository.dart';
+import '../../../calling/presentation/screens/user_calling_workspace_screen.dart';
 import '../../../leads/domain/repositories/lead_repository.dart';
 import '../widgets/crm_app_header.dart';
 import '../widgets/crm_module_card.dart';
@@ -17,6 +19,7 @@ class UserDashboardScreen extends StatelessWidget {
   final VoidCallback onLogout;
   final UserLeadLinkRepository userLeadLinkRepository;
   final LeadRepository leadRepository;
+  final LeadCallActivityRepository callActivityRepository;
 
   const UserDashboardScreen({
     super.key,
@@ -24,6 +27,7 @@ class UserDashboardScreen extends StatelessWidget {
     required this.onLogout,
     required this.userLeadLinkRepository,
     required this.leadRepository,
+    required this.callActivityRepository,
   });
 
   void _openModule(BuildContext context, CrmModule module) {
@@ -34,6 +38,18 @@ class UserDashboardScreen extends StatelessWidget {
             user: user,
             linkRepository: userLeadLinkRepository,
             leadRepository: leadRepository,
+            callActivityRepository: callActivityRepository,
+          ),
+        ),
+      );
+    } else if (module == CrmModule.calling) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => UserCallingWorkspaceScreen(
+            user: user,
+            leadRepository: leadRepository,
+            linkRepository: userLeadLinkRepository,
+            callActivityRepository: callActivityRepository,
           ),
         ),
       );

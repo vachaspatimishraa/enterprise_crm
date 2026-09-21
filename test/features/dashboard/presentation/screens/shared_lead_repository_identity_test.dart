@@ -1,6 +1,7 @@
 import 'package:enterprise_crm/app/crm_app.dart';
 import 'package:enterprise_crm/features/auth/data/repositories/mock_auth_repository.dart';
 import 'package:enterprise_crm/features/auth/data/repositories/mock_user_lead_link_repository.dart';
+import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_call_activity_repository.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_dashboard_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_lead_workspace_screen.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
@@ -24,6 +25,7 @@ void main() {
         // 1. Instantiate ONE application-scoped LeadRepository and ONE UserLeadLinkRepository
         final sharedLeadRepository = MockLeadRepository();
         final sharedLinkRepository = MockUserLeadLinkRepository();
+        final sharedCallActivityRepository = MockLeadCallActivityRepository();
         final accountStore = MockAccountStore.seeded();
         final authRepository = MockAuthRepository(accountStore: accountStore);
         final userManagementRepository = MockUserManagementRepository(
@@ -51,6 +53,7 @@ void main() {
             authRepository: authRepository,
             userManagementRepository: userManagementRepository,
             userLeadLinkRepository: sharedLinkRepository,
+            leadCallActivityRepository: sharedCallActivityRepository,
           ),
         );
         await tester.pumpAndSettle();

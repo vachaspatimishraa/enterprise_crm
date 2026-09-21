@@ -3,6 +3,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../auth/domain/entities/current_user.dart';
 import '../../../auth/domain/repositories/user_lead_link_repository.dart';
 import '../../../auth/presentation/screens/access_restricted_screen.dart';
+import '../../../calling/domain/entities/lead_call_activity.dart';
+import '../../../calling/domain/policies/user_calling_policy.dart';
+import '../../../calling/domain/repositories/lead_call_activity_repository.dart';
+import '../../../calling/presentation/bloc/lead_call_history_cubit.dart';
+import '../../../calling/presentation/screens/record_call_outcome_screen.dart';
+import '../../../calling/presentation/widgets/lead_call_history_section.dart';
 import '../../../leads/domain/entities/lead.dart';
 import '../../../leads/domain/repositories/lead_repository.dart';
 import '../../../leads/presentation/utils/lead_display_formatters.dart';
@@ -10,17 +16,18 @@ import '../bloc/user_lead_details_cubit.dart';
 import '../bloc/user_lead_details_state.dart';
 import 'user_edit_lead_screen.dart';
 
-/// User-safe read-only Lead Details screen.
+/// User-safe read-only Lead Details screen with calling outcome recording and history.
 ///
-/// Driven entirely by [UserLeadDetailsCubit]. Renders [AccessRestrictedScreen]
-/// if module, view permission, identity link, or assignee ownership checks fail.
-/// Displays an [Edit Lead] action button only if `state.canEdit` is true.
+/// Driven entirely by [UserLeadDetailsCubit] and conditionally by [LeadCallHistoryCubit].
+/// Renders [AccessRestrictedScreen] if module, view permission, identity link, or assignee ownership checks fail.
 class UserLeadDetailsScreen extends StatelessWidget {
   final CurrentUser user;
   final String leadId;
   final UserLeadLinkRepository linkRepository;
   final LeadRepository leadRepository;
+  final LeadCallActivityRepository callActivityRepository;
   final UserLeadDetailsCubit? cubit;
+  final LeadCallHistoryCubit? historyCubit;
 
   const UserLeadDetailsScreen({
     super.key,
@@ -28,20 +35,46 @@ class UserLeadDetailsScreen extends StatelessWidget {
     required this.leadId,
     required this.linkRepository,
     required this.leadRepository,
+    required this.callActivityRepository,
     this.cubit,
+    this.historyCubit,
   });
 
   @override
   Widget build(BuildContext context) {
+    final hasCallingAccess = UserCallingPolicy.canUseCalling(user);
+
+    Widget view = _UserLeadDetailsView(
+      user: user,
+      linkRepository: linkRepository,
+      leadRepository: leadRepository,
+      callActivityRepository: callActivityRepository,
+      hasCallingAccess: hasCallingAccess,
+    );
+
+    // Provide LeadCallHistoryCubit ONLY if user has Calling access
+    if (hasCallingAccess) {
+      if (historyCubit != null) {
+        view = BlocProvider<LeadCallHistoryCubit>.value(
+          value: historyCubit!,
+          child: view,
+        );
+      } else {
+        view = BlocProvider<LeadCallHistoryCubit>(
+          create: (_) => LeadCallHistoryCubit(
+            user: user,
+            leadId: leadId,
+            linkRepository: linkRepository,
+            leadRepository: leadRepository,
+            callActivityRepository: callActivityRepository,
+          )..loadHistory(),
+          child: view,
+        );
+      }
+    }
+
     if (cubit != null) {
-      return BlocProvider.value(
-        value: cubit!,
-        child: _UserLeadDetailsView(
-          user: user,
-          linkRepository: linkRepository,
-          leadRepository: leadRepository,
-        ),
-      );
+      return BlocProvider.value(value: cubit!, child: view);
     }
 
     return BlocProvider(
@@ -51,11 +84,7 @@ class UserLeadDetailsScreen extends StatelessWidget {
         leadRepository: leadRepository,
         leadId: leadId,
       )..loadLead(),
-      child: _UserLeadDetailsView(
-        user: user,
-        linkRepository: linkRepository,
-        leadRepository: leadRepository,
-      ),
+      child: view,
     );
   }
 }
@@ -64,11 +93,15 @@ class _UserLeadDetailsView extends StatelessWidget {
   final CurrentUser user;
   final UserLeadLinkRepository linkRepository;
   final LeadRepository leadRepository;
+  final LeadCallActivityRepository callActivityRepository;
+  final bool hasCallingAccess;
 
   const _UserLeadDetailsView({
     required this.user,
     required this.linkRepository,
     required this.leadRepository,
+    required this.callActivityRepository,
+    required this.hasCallingAccess,
   });
 
   @override
@@ -111,13 +144,20 @@ class _UserLeadDetailsView extends StatelessWidget {
               ),
             ),
           ),
-          UserLeadDetailsLoaded(:final lead, :final canEdit) =>
+          UserLeadDetailsLoaded(
+            :final lead,
+            :final linkedAssigneeId,
+            :final canEdit,
+          ) =>
             _UserLeadDetailsContent(
               user: user,
               lead: lead,
+              linkedAssigneeId: linkedAssigneeId,
               canEdit: canEdit,
               linkRepository: linkRepository,
               leadRepository: leadRepository,
+              callActivityRepository: callActivityRepository,
+              hasCallingAccess: hasCallingAccess,
             ),
         };
       },
@@ -128,16 +168,22 @@ class _UserLeadDetailsView extends StatelessWidget {
 class _UserLeadDetailsContent extends StatelessWidget {
   final CurrentUser user;
   final Lead lead;
+  final String linkedAssigneeId;
   final bool canEdit;
   final UserLeadLinkRepository linkRepository;
   final LeadRepository leadRepository;
+  final LeadCallActivityRepository callActivityRepository;
+  final bool hasCallingAccess;
 
   const _UserLeadDetailsContent({
     required this.user,
     required this.lead,
+    required this.linkedAssigneeId,
     required this.canEdit,
     required this.linkRepository,
     required this.leadRepository,
+    required this.callActivityRepository,
+    required this.hasCallingAccess,
   });
 
   @override
@@ -147,6 +193,12 @@ class _UserLeadDetailsContent extends StatelessWidget {
     final displayName = (lead.name?.trim().isNotEmpty ?? false)
         ? lead.name!
         : 'Unnamed Lead';
+
+    final canRecordCallOutcome = UserCallingPolicy.canRecordActivityForLead(
+      user: user,
+      lead: lead,
+      linkedAssigneeId: linkedAssigneeId,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -159,10 +211,10 @@ class _UserLeadDetailsContent extends StatelessWidget {
         actions: [
           if (canEdit)
             Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: FilledButton.icon(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: OutlinedButton.icon(
                 key: const Key('user_lead_edit_button'),
-                icon: const Icon(Icons.edit_outlined, size: 18),
+                icon: const Icon(Icons.edit_outlined, size: 16),
                 label: const Text('Edit Lead'),
                 onPressed: () async {
                   final updatedLead = await Navigator.of(context).push<Lead>(
@@ -252,30 +304,30 @@ class _UserLeadDetailsContent extends StatelessWidget {
                             ),
                             if (lead.status != null)
                               Container(
-                                key: const Key('user_lead_details_status'),
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
+                                  horizontal: 10,
+                                  vertical: 4,
                                 ),
                                 decoration: BoxDecoration(
                                   color: colorScheme.primaryContainer,
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Text(
-                                  lead.status!.value,
-                                  style: theme.textTheme.labelMedium?.copyWith(
+                                  formatLeadStatus(lead.status),
+                                  key: const Key('user_lead_details_status'),
+                                  style: theme.textTheme.labelSmall?.copyWith(
                                     color: colorScheme.onPrimaryContainer,
-                                    fontWeight: FontWeight.bold,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ),
                           ],
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 20),
                         const Divider(height: 1),
                         const SizedBox(height: 20),
 
-                        // Contact section
+                        // Contact Information
                         Text(
                           'Contact Information',
                           style: theme.textTheme.labelLarge?.copyWith(
@@ -287,23 +339,23 @@ class _UserLeadDetailsContent extends StatelessWidget {
                         _DetailRow(
                           icon: Icons.phone_outlined,
                           label: 'Phone',
-                          value: lead.phone ?? 'Not provided',
+                          value: formatLeadPhone(lead.phone),
                           valueKey: const Key('user_lead_details_phone'),
                         ),
                         const SizedBox(height: 8),
                         _DetailRow(
                           icon: Icons.email_outlined,
                           label: 'Email',
-                          value: lead.email ?? 'Not provided',
+                          value: formatLeadEmail(lead.email),
                           valueKey: const Key('user_lead_details_email'),
                         ),
                         const SizedBox(height: 20),
                         const Divider(height: 1),
                         const SizedBox(height: 20),
 
-                        // Assignment & Source section
+                        // Assignment & Source Information
                         Text(
-                          'Assignment & Origin',
+                          'Assignment & Source',
                           style: theme.textTheme.labelLarge?.copyWith(
                             fontWeight: FontWeight.bold,
                             color: colorScheme.primary,
@@ -349,6 +401,52 @@ class _UserLeadDetailsContent extends StatelessWidget {
                           value: formatLeadDate(lead.updatedAt),
                           valueKey: const Key('user_lead_details_updated'),
                         ),
+
+                        // Call History Section (only if user has Calling module + calling.use)
+                        if (hasCallingAccess) ...[
+                          const SizedBox(height: 28),
+                          const Divider(height: 1),
+                          const SizedBox(height: 24),
+                          if (canRecordCallOutcome) ...[
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: FilledButton.icon(
+                                key: const Key(
+                                  'user_lead_record_call_outcome_button',
+                                ),
+                                icon: const Icon(
+                                  Icons.phone_in_talk_outlined,
+                                  size: 18,
+                                ),
+                                label: const Text('Record Call Outcome'),
+                                onPressed: () async {
+                                  final activity = await Navigator.of(context)
+                                      .push<LeadCallActivity>(
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              RecordCallOutcomeScreen(
+                                                user: user,
+                                                leadId: lead.id,
+                                                initialLead: lead,
+                                                linkRepository: linkRepository,
+                                                leadRepository: leadRepository,
+                                                callActivityRepository:
+                                                    callActivityRepository,
+                                              ),
+                                        ),
+                                      );
+                                  if (activity != null && context.mounted) {
+                                    context
+                                        .read<LeadCallHistoryCubit?>()
+                                        ?.loadHistory();
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                          ],
+                          const LeadCallHistorySection(),
+                        ],
                       ],
                     ),
                   ),
@@ -381,10 +479,9 @@ class _DetailRow extends StatelessWidget {
     final colorScheme = theme.colorScheme;
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(icon, size: 18, color: colorScheme.onSurfaceVariant),
-        const SizedBox(width: 12),
+        const SizedBox(width: 10),
         SizedBox(
           width: 110,
           child: Text(
