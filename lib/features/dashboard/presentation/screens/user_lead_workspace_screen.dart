@@ -12,6 +12,7 @@ import '../../../leads/domain/entities/lead.dart';
 import '../../../leads/domain/repositories/lead_repository.dart';
 import '../bloc/user_assigned_leads_cubit.dart';
 import '../bloc/user_assigned_leads_state.dart';
+import 'user_lead_details_screen.dart';
 
 /// Permission-aware Lead Management workspace for standard users.
 ///
@@ -46,14 +47,25 @@ class UserLeadWorkspaceScreen extends StatelessWidget {
         linkRepository: linkRepository,
         leadRepository: leadRepository,
       )..load(),
-      child: _UserLeadWorkspaceView(user: user),
+      child: _UserLeadWorkspaceView(
+        user: user,
+        linkRepository: linkRepository,
+        leadRepository: leadRepository,
+      ),
     );
   }
 }
 
 class _UserLeadWorkspaceView extends StatelessWidget {
   final CurrentUser user;
-  const _UserLeadWorkspaceView({required this.user});
+  final UserLeadLinkRepository linkRepository;
+  final LeadRepository leadRepository;
+
+  const _UserLeadWorkspaceView({
+    required this.user,
+    required this.linkRepository,
+    required this.leadRepository,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -100,7 +112,11 @@ class _UserLeadWorkspaceView extends StatelessWidget {
                     theme: theme,
                   ),
                   const SizedBox(height: 12),
-                  const _AssignedLeadsBody(),
+                  _AssignedLeadsBody(
+                    user: user,
+                    linkRepository: linkRepository,
+                    leadRepository: leadRepository,
+                  ),
                 ],
 
                 const SizedBox(height: 24),
@@ -312,7 +328,15 @@ class _CapabilityCard extends StatelessWidget {
 // ── Assigned leads Cubit consumer ─────────────────────────────────────────
 
 class _AssignedLeadsBody extends StatelessWidget {
-  const _AssignedLeadsBody();
+  final CurrentUser user;
+  final UserLeadLinkRepository linkRepository;
+  final LeadRepository leadRepository;
+
+  const _AssignedLeadsBody({
+    required this.user,
+    required this.linkRepository,
+    required this.leadRepository,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -346,7 +370,12 @@ class _AssignedLeadsBody extends StatelessWidget {
           message: 'No leads are currently assigned to you.',
           hint: 'Check back later or contact your administrator.',
         ),
-        UserAssignedLeadsLoaded(:final leads) => _LeadList(leads: leads),
+        UserAssignedLeadsLoaded(:final leads) => _LeadList(
+          leads: leads,
+          user: user,
+          linkRepository: linkRepository,
+          leadRepository: leadRepository,
+        ),
         UserAssignedLeadsFailure(:final message) => _FailurePanel(
           key: const Key('user_assigned_leads_failure'),
           message: message,
@@ -460,7 +489,16 @@ class _FailurePanel extends StatelessWidget {
 
 class _LeadList extends StatelessWidget {
   final List<Lead> leads;
-  const _LeadList({required this.leads});
+  final CurrentUser user;
+  final UserLeadLinkRepository linkRepository;
+  final LeadRepository leadRepository;
+
+  const _LeadList({
+    required this.leads,
+    required this.user,
+    required this.linkRepository,
+    required this.leadRepository,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -468,7 +506,24 @@ class _LeadList extends StatelessWidget {
       key: const Key('user_assigned_leads_list'),
       children: [
         for (final lead in leads) ...[
-          _LeadCard(lead: lead),
+          _LeadCard(
+            lead: lead,
+            onTap: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => UserLeadDetailsScreen(
+                    user: user,
+                    leadId: lead.id,
+                    linkRepository: linkRepository,
+                    leadRepository: leadRepository,
+                  ),
+                ),
+              );
+              if (context.mounted) {
+                context.read<UserAssignedLeadsCubit>().load();
+              }
+            },
+          ),
           const SizedBox(height: 8),
         ],
       ],
@@ -478,7 +533,9 @@ class _LeadList extends StatelessWidget {
 
 class _LeadCard extends StatelessWidget {
   final Lead lead;
-  const _LeadCard({required this.lead});
+  final VoidCallback? onTap;
+
+  const _LeadCard({required this.lead, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -492,55 +549,59 @@ class _LeadCard extends StatelessWidget {
       key: Key('lead_card_${lead.id}'),
       elevation: 0,
       color: colorScheme.surfaceContainerLow,
+      clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: colorScheme.outlineVariant),
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    displayName,
-                    style: theme.textTheme.bodyLarge?.copyWith(
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (lead.phone != null || lead.email != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        lead.phone ?? lead.email ?? '',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (lead.status != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    lead.status!.value,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onPrimaryContainer,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  if (lead.phone != null || lead.email != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      lead.phone ?? lead.email ?? '',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (lead.status != null)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
                 ),
-                decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  lead.status!.value,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: colorScheme.onPrimaryContainer,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
