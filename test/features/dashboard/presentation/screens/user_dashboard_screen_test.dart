@@ -1,7 +1,9 @@
 import 'package:enterprise_crm/features/auth/data/repositories/mock_user_lead_link_repository.dart';
 import 'package:enterprise_crm/features/auth/domain/repositories/user_lead_link_repository.dart';
 import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_call_activity_repository.dart';
+import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_follow_up_repository.dart';
 import 'package:enterprise_crm/features/calling/domain/repositories/lead_call_activity_repository.dart';
+import 'package:enterprise_crm/features/calling/domain/repositories/lead_follow_up_repository.dart';
 import 'package:enterprise_crm/features/calling/presentation/screens/user_calling_workspace_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_dashboard_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_lead_placeholder_screen.dart';
@@ -18,6 +20,7 @@ Widget _buildUserDashboardTestApp({
   UserLeadLinkRepository? linkRepository,
   LeadRepository? leadRepository,
   LeadCallActivityRepository? callActivityRepository,
+  LeadFollowUpRepository? leadFollowUpRepository,
 }) {
   return MaterialApp(
     theme: ThemeData(useMaterial3: true, brightness: Brightness.light),
@@ -30,6 +33,8 @@ Widget _buildUserDashboardTestApp({
       leadRepository: leadRepository ?? MockLeadRepository(),
       callActivityRepository:
           callActivityRepository ?? MockLeadCallActivityRepository(),
+      leadFollowUpRepository:
+          leadFollowUpRepository ?? MockLeadFollowUpRepository(),
     ),
   );
 }

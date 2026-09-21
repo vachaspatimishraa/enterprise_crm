@@ -7,9 +7,12 @@ import '../../../auth/domain/repositories/user_lead_link_repository.dart';
 import '../../../leads/domain/entities/lead.dart';
 import '../../../leads/domain/repositories/lead_repository.dart';
 import '../../data/repositories/mock_lead_call_activity_repository.dart';
+import '../../data/services/mock_calling_workflow_service.dart';
 import '../../domain/entities/call_outcome.dart';
 import '../../domain/policies/user_calling_policy.dart';
 import '../../domain/repositories/lead_call_activity_repository.dart';
+import '../../domain/repositories/lead_follow_up_repository.dart';
+import '../../domain/services/calling_workflow_service.dart';
 import 'record_call_activity_state.dart';
 
 /// Cubit managing authorization, validation, and mutation for recording a call activity.
@@ -22,7 +25,7 @@ class RecordCallActivityCubit extends Cubit<RecordCallActivityState> {
   final Lead? _initialLead;
   final UserLeadLinkRepository _linkRepository;
   final LeadRepository _leadRepository;
-  final LeadCallActivityRepository _callActivityRepository;
+  final CallingWorkflowService _workflowService;
   final NowProvider _now;
 
   RecordCallActivityCubit({
@@ -31,14 +34,24 @@ class RecordCallActivityCubit extends Cubit<RecordCallActivityState> {
     Lead? initialLead,
     required UserLeadLinkRepository linkRepository,
     required LeadRepository leadRepository,
-    required LeadCallActivityRepository callActivityRepository,
+    CallingWorkflowService? workflowService,
+    LeadCallActivityRepository? callActivityRepository,
+    LeadFollowUpRepository? followUpRepository,
     NowProvider? now,
   }) : _user = user,
        _leadId = leadId,
        _initialLead = initialLead,
        _linkRepository = linkRepository,
        _leadRepository = leadRepository,
-       _callActivityRepository = callActivityRepository,
+       _workflowService = workflowService ??
+           (callActivityRepository != null && followUpRepository != null
+               ? MockCallingWorkflowService(
+                   callActivityRepository: callActivityRepository,
+                   followUpRepository: followUpRepository,
+                 )
+               : (throw ArgumentError(
+                   'Either workflowService or both callActivityRepository and followUpRepository must be provided.',
+                 ))),
        _now = now ?? DateTime.now,
        super(const RecordCallActivityInitial());
 
@@ -240,15 +253,18 @@ class RecordCallActivityCubit extends Cubit<RecordCallActivityState> {
         return;
       }
 
-      // 5. Record activity: performedByUserId is strictly derived from authenticated user
-      final activity = await _callActivityRepository.recordActivity(
+      // 5. Record activity and schedule follow-up via workflow service
+      final workflowResult = await _workflowService.recordOutcome(
         leadId: freshLead.id,
         performedByUserId: _user.id,
         outcome: outcome,
         rescheduleAt: rescheduleAt,
       );
 
-      emit(RecordCallActivitySuccess(activity));
+      emit(RecordCallActivitySuccess(
+        workflowResult.activity,
+        followUp: workflowResult.followUp,
+      ));
     } catch (_) {
       emit(
         RecordCallActivityFailure(

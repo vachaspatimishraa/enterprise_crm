@@ -87,4 +87,12 @@ class MockLeadCallActivityRepository implements LeadCallActivityRepository {
     _activities.add(activity);
     return activity;
   }
+
+  /// Internal mock-only compensation mechanism to undo uncommitted call activity
+  /// if downstream follow-up creation fails in [MockCallingWorkflowService].
+  ///
+  /// This is not part of the domain [LeadCallActivityRepository] interface.
+  void rollbackActivityForMockAtomicity(String activityId) {
+    _activities.removeWhere((a) => a.id == activityId);
+  }
 }

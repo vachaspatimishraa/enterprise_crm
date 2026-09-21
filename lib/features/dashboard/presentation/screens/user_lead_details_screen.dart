@@ -6,9 +6,12 @@ import '../../../auth/presentation/screens/access_restricted_screen.dart';
 import '../../../calling/domain/entities/lead_call_activity.dart';
 import '../../../calling/domain/policies/user_calling_policy.dart';
 import '../../../calling/domain/repositories/lead_call_activity_repository.dart';
+import '../../../calling/domain/repositories/lead_follow_up_repository.dart';
 import '../../../calling/presentation/bloc/lead_call_history_cubit.dart';
+import '../../../calling/presentation/bloc/lead_follow_up_history_cubit.dart';
 import '../../../calling/presentation/screens/record_call_outcome_screen.dart';
 import '../../../calling/presentation/widgets/lead_call_history_section.dart';
+import '../../../calling/presentation/widgets/lead_follow_up_history_section.dart';
 import '../../../leads/domain/entities/lead.dart';
 import '../../../leads/domain/repositories/lead_repository.dart';
 import '../../../leads/presentation/utils/lead_display_formatters.dart';
@@ -18,7 +21,7 @@ import 'user_edit_lead_screen.dart';
 
 /// User-safe read-only Lead Details screen with calling outcome recording and history.
 ///
-/// Driven entirely by [UserLeadDetailsCubit] and conditionally by [LeadCallHistoryCubit].
+/// Driven entirely by [UserLeadDetailsCubit] and conditionally by [LeadCallHistoryCubit] and [LeadFollowUpHistoryCubit].
 /// Renders [AccessRestrictedScreen] if module, view permission, identity link, or assignee ownership checks fail.
 class UserLeadDetailsScreen extends StatelessWidget {
   final CurrentUser user;
@@ -26,8 +29,10 @@ class UserLeadDetailsScreen extends StatelessWidget {
   final UserLeadLinkRepository linkRepository;
   final LeadRepository leadRepository;
   final LeadCallActivityRepository callActivityRepository;
+  final LeadFollowUpRepository? leadFollowUpRepository;
   final UserLeadDetailsCubit? cubit;
   final LeadCallHistoryCubit? historyCubit;
+  final LeadFollowUpHistoryCubit? followUpHistoryCubit;
 
   const UserLeadDetailsScreen({
     super.key,
@@ -36,8 +41,10 @@ class UserLeadDetailsScreen extends StatelessWidget {
     required this.linkRepository,
     required this.leadRepository,
     required this.callActivityRepository,
+    this.leadFollowUpRepository,
     this.cubit,
     this.historyCubit,
+    this.followUpHistoryCubit,
   });
 
   @override
@@ -49,6 +56,7 @@ class UserLeadDetailsScreen extends StatelessWidget {
       linkRepository: linkRepository,
       leadRepository: leadRepository,
       callActivityRepository: callActivityRepository,
+      leadFollowUpRepository: leadFollowUpRepository,
       hasCallingAccess: hasCallingAccess,
     );
 
@@ -70,6 +78,26 @@ class UserLeadDetailsScreen extends StatelessWidget {
           )..loadHistory(),
           child: view,
         );
+      }
+
+      if (leadFollowUpRepository != null) {
+        if (followUpHistoryCubit != null) {
+          view = BlocProvider<LeadFollowUpHistoryCubit>.value(
+            value: followUpHistoryCubit!,
+            child: view,
+          );
+        } else {
+          view = BlocProvider<LeadFollowUpHistoryCubit>(
+            create: (_) => LeadFollowUpHistoryCubit(
+              user: user,
+              leadId: leadId,
+              linkRepository: linkRepository,
+              leadRepository: leadRepository,
+              followUpRepository: leadFollowUpRepository!,
+            )..loadHistory(),
+            child: view,
+          );
+        }
       }
     }
 
@@ -94,6 +122,7 @@ class _UserLeadDetailsView extends StatelessWidget {
   final UserLeadLinkRepository linkRepository;
   final LeadRepository leadRepository;
   final LeadCallActivityRepository callActivityRepository;
+  final LeadFollowUpRepository? leadFollowUpRepository;
   final bool hasCallingAccess;
 
   const _UserLeadDetailsView({
@@ -101,6 +130,7 @@ class _UserLeadDetailsView extends StatelessWidget {
     required this.linkRepository,
     required this.leadRepository,
     required this.callActivityRepository,
+    this.leadFollowUpRepository,
     required this.hasCallingAccess,
   });
 
@@ -157,6 +187,7 @@ class _UserLeadDetailsView extends StatelessWidget {
               linkRepository: linkRepository,
               leadRepository: leadRepository,
               callActivityRepository: callActivityRepository,
+              leadFollowUpRepository: leadFollowUpRepository,
               hasCallingAccess: hasCallingAccess,
             ),
         };
@@ -173,6 +204,7 @@ class _UserLeadDetailsContent extends StatelessWidget {
   final UserLeadLinkRepository linkRepository;
   final LeadRepository leadRepository;
   final LeadCallActivityRepository callActivityRepository;
+  final LeadFollowUpRepository? leadFollowUpRepository;
   final bool hasCallingAccess;
 
   const _UserLeadDetailsContent({
@@ -183,6 +215,7 @@ class _UserLeadDetailsContent extends StatelessWidget {
     required this.linkRepository,
     required this.leadRepository,
     required this.callActivityRepository,
+    this.leadFollowUpRepository,
     required this.hasCallingAccess,
   });
 
@@ -432,12 +465,17 @@ class _UserLeadDetailsContent extends StatelessWidget {
                                                 leadRepository: leadRepository,
                                                 callActivityRepository:
                                                     callActivityRepository,
+                                                followUpRepository:
+                                                    leadFollowUpRepository,
                                               ),
                                         ),
                                       );
                                   if (activity != null && context.mounted) {
                                     context
                                         .read<LeadCallHistoryCubit?>()
+                                        ?.loadHistory();
+                                    context
+                                        .read<LeadFollowUpHistoryCubit?>()
                                         ?.loadHistory();
                                   }
                                 },
@@ -446,6 +484,10 @@ class _UserLeadDetailsContent extends StatelessWidget {
                             const SizedBox(height: 20),
                           ],
                           const LeadCallHistorySection(),
+                          if (leadFollowUpRepository != null) ...[
+                            const SizedBox(height: 24),
+                            const LeadFollowUpHistorySection(),
+                          ],
                         ],
                       ],
                     ),

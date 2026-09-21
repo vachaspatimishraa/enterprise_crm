@@ -23,6 +23,7 @@ import '../features/leads/presentation/screens/lead_import_workflow_screen.dart'
 import '../features/leads/data/services/lead_export_file_saver.dart';
 import '../features/leads/presentation/screens/lead_list_screen.dart';
 import '../features/calling/domain/repositories/lead_call_activity_repository.dart';
+import '../features/calling/domain/repositories/lead_follow_up_repository.dart';
 import '../features/leads/presentation/services/lead_import_file_picker.dart';
 import '../features/leads/presentation/widgets/lead_export_dialog.dart';
 
@@ -35,6 +36,7 @@ class CrmApp extends StatefulWidget {
   final UserManagementRepository? userManagementRepository;
   final UserLeadLinkRepository? userLeadLinkRepository;
   final LeadCallActivityRepository? leadCallActivityRepository;
+  final LeadFollowUpRepository? leadFollowUpRepository;
 
   const CrmApp({
     super.key,
@@ -45,6 +47,7 @@ class CrmApp extends StatefulWidget {
     this.userManagementRepository,
     this.userLeadLinkRepository,
     this.leadCallActivityRepository,
+    this.leadFollowUpRepository,
   }) : assert(
          authRepository == null || userManagementRepository != null,
          'userManagementRepository must be provided when authRepository is enabled',
@@ -56,6 +59,12 @@ class CrmApp extends StatefulWidget {
        assert(
          authRepository == null || leadCallActivityRepository != null,
          'leadCallActivityRepository must be provided when authRepository is enabled',
+       ),
+       assert(
+         authRepository == null ||
+             leadCallActivityRepository == null ||
+             leadFollowUpRepository != null,
+         'leadFollowUpRepository must be provided when Calling is enabled with auth',
        );
 
   @override
@@ -132,6 +141,7 @@ class _CrmAppState extends State<CrmApp> {
                     userLeadLinkRepository: widget.userLeadLinkRepository!,
                     leadRepository: widget.leadRepository,
                     callActivityRepository: widget.leadCallActivityRepository!,
+                    leadFollowUpRepository: widget.leadFollowUpRepository!,
                   );
                 }
               case AuthUnauthenticated():
@@ -190,6 +200,13 @@ class _CrmAppState extends State<CrmApp> {
     if (widget.userLeadLinkRepository != null) {
       app = RepositoryProvider<UserLeadLinkRepository>.value(
         value: widget.userLeadLinkRepository!,
+        child: app,
+      );
+    }
+
+    if (widget.leadFollowUpRepository != null) {
+      app = RepositoryProvider<LeadFollowUpRepository>.value(
+        value: widget.leadFollowUpRepository!,
         child: app,
       );
     }

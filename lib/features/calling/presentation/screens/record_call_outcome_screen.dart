@@ -8,6 +8,8 @@ import '../../../leads/domain/repositories/lead_repository.dart';
 import '../../data/repositories/mock_lead_call_activity_repository.dart';
 import '../../domain/entities/call_outcome.dart';
 import '../../domain/repositories/lead_call_activity_repository.dart';
+import '../../domain/repositories/lead_follow_up_repository.dart';
+import '../../domain/services/calling_workflow_service.dart';
 import '../bloc/record_call_activity_cubit.dart';
 import '../bloc/record_call_activity_state.dart';
 import '../utils/calling_display_formatters.dart';
@@ -20,6 +22,8 @@ class RecordCallOutcomeScreen extends StatelessWidget {
   final UserLeadLinkRepository linkRepository;
   final LeadRepository leadRepository;
   final LeadCallActivityRepository callActivityRepository;
+  final LeadFollowUpRepository? followUpRepository;
+  final CallingWorkflowService? workflowService;
   final RecordCallActivityCubit? cubit;
   final NowProvider? now;
 
@@ -31,6 +35,8 @@ class RecordCallOutcomeScreen extends StatelessWidget {
     required this.linkRepository,
     required this.leadRepository,
     required this.callActivityRepository,
+    this.followUpRepository,
+    this.workflowService,
     this.cubit,
     this.now,
   });
@@ -52,6 +58,8 @@ class RecordCallOutcomeScreen extends StatelessWidget {
         linkRepository: linkRepository,
         leadRepository: leadRepository,
         callActivityRepository: callActivityRepository,
+        followUpRepository: followUpRepository,
+        workflowService: workflowService,
         now: now,
       )..load(),
       child: _RecordCallOutcomeView(now: now),

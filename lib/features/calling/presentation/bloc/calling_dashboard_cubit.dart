@@ -9,13 +9,17 @@ import '../../../leads/domain/entities/lead.dart';
 import '../../../leads/domain/entities/lead_query.dart';
 import '../../../leads/domain/repositories/lead_repository.dart';
 import '../../data/repositories/mock_lead_call_activity_repository.dart';
+import '../../data/services/follow_up_migration_adapter.dart';
+import '../../domain/entities/follow_up_status.dart';
 import '../../domain/entities/follow_up_timing.dart';
+import '../../domain/entities/lead_call_activity.dart';
 import '../../domain/policies/user_calling_policy.dart';
 import '../../domain/repositories/lead_call_activity_repository.dart';
+import '../../domain/repositories/lead_follow_up_repository.dart';
 import '../models/follow_up_queue_item.dart';
 import 'calling_dashboard_state.dart';
 
-/// Cubit managing the operational Calling Dashboard and read-only Follow-Up Queue.
+/// Cubit managing the operational Calling Dashboard and actionable Follow-Up Queue.
 ///
 /// Pipeline (strictly ordered — early failures guarantee 0 downstream queries):
 ///   1. Calling module + calling.use (defensive Cubit check)
@@ -24,26 +28,33 @@ import 'calling_dashboard_state.dart';
 ///   4. Validate LeadAssignee exists in Lead domain
 ///   5. Paginated retrieval of ALL currently assigned Leads (scoped by assignedUserId)
 ///      with Lead.id deduplication
-///   6. Query scheduled activities for authorized lead IDs (rescheduleAt != null)
-///   7. Classify timing (Overdue, Due Today, Upcoming) via injected [NowProvider]
-///   8. Calculate full-queue summary metrics, apply filter & search, and emit [CallingDashboardLoaded]
+///   6. Historical bootstrap migration scoped strictly to authorized lead IDs
+///   7. Query pending follow-ups for authorized lead IDs (status == pending)
+///   8. Classify timing (Overdue, Due Today, Upcoming) via injected [NowProvider] using followUp.scheduledAt
+///   9. Calculate full-queue summary metrics, apply filter & search, and emit [CallingDashboardLoaded]
 class CallingDashboardCubit extends Cubit<CallingDashboardState> {
   final CurrentUser _user;
   final LeadRepository _leadRepository;
   final UserLeadLinkRepository _linkRepository;
-  final LeadCallActivityRepository _callActivityRepository;
+  final LeadFollowUpRepository _followUpRepository;
+  final LeadCallActivityRepository? _callActivityRepository;
+  final FollowUpMigrationAdapter? _migrationAdapter;
   final NowProvider _now;
 
   CallingDashboardCubit({
     required CurrentUser user,
     required LeadRepository leadRepository,
     required UserLeadLinkRepository linkRepository,
-    required LeadCallActivityRepository callActivityRepository,
+    required LeadFollowUpRepository followUpRepository,
+    LeadCallActivityRepository? callActivityRepository,
+    FollowUpMigrationAdapter? migrationAdapter,
     NowProvider? now,
   }) : _user = user,
        _leadRepository = leadRepository,
        _linkRepository = linkRepository,
+       _followUpRepository = followUpRepository,
        _callActivityRepository = callActivityRepository,
+       _migrationAdapter = migrationAdapter,
        _now = now ?? DateTime.now,
        super(const CallingDashboardInitial());
 
@@ -104,45 +115,73 @@ class CallingDashboardCubit extends Cubit<CallingDashboardState> {
         page++;
       }
 
-      // If user currently owns zero leads, skip activity query
+      // If user currently owns zero leads, skip follow-up query
       if (leadsById.isEmpty) {
         emit(const CallingDashboardEmpty());
         return;
       }
 
-      // 6. Query scheduled activities for authorized lead IDs
-      final activities = await _callActivityRepository
-          .getScheduledActivitiesForLeadIds(leadsById.keys.toSet());
+      final authorizedLeadIds = leadsById.keys.toSet();
 
-      if (activities.isEmpty) {
+      // 6. Run historical bootstrap migration strictly scoped to authorized lead IDs
+      if (_callActivityRepository != null) {
+        final adapter = _migrationAdapter ??
+            FollowUpMigrationAdapter(
+              callActivityRepository: _callActivityRepository,
+              followUpRepository: _followUpRepository,
+            );
+        await adapter.ensureMigratedForLeadIds(authorizedLeadIds);
+      }
+
+      // 7. Query pending follow-ups for authorized lead IDs
+      final followUps =
+          await _followUpRepository.getFollowUpsForLeadIds(authorizedLeadIds);
+      final pendingFollowUps =
+          followUps.where((f) => f.status == FollowUpStatus.pending).toList();
+
+      if (pendingFollowUps.isEmpty) {
         emit(const CallingDashboardEmpty());
         return;
       }
 
-      // 7. Combine Lead + Activity into queue items with timing classification
+      // Optional: Query activities to provide source call activity details
+      final activitiesById = <String, LeadCallActivity>{};
+      if (_callActivityRepository != null) {
+        final activities = await _callActivityRepository
+            .getScheduledActivitiesForLeadIds(authorizedLeadIds);
+        for (final act in activities) {
+          activitiesById[act.id] = act;
+        }
+      }
+
+      // 8. Combine Lead + FollowUp into queue items with timing classification
       final now = _now();
       final allItems = <FollowUpQueueItem>[];
 
-      for (final activity in activities) {
-        final lead = leadsById[activity.leadId];
-        if (lead != null && activity.rescheduleAt != null) {
-          final timing = classifyFollowUpTiming(activity.rescheduleAt!, now);
+      for (final followUp in pendingFollowUps) {
+        final lead = leadsById[followUp.leadId];
+        if (lead != null) {
+          final timing = classifyFollowUpTiming(followUp.scheduledAt, now);
+          final activity = activitiesById[followUp.sourceCallActivityId];
           allItems.add(
-            FollowUpQueueItem(lead: lead, activity: activity, timing: timing),
+            FollowUpQueueItem(
+              lead: lead,
+              followUp: followUp,
+              activity: activity,
+              timing: timing,
+            ),
           );
         }
       }
 
-      // Sort chronological ascending (earliest rescheduleAt first, tie-break ID ascending)
+      // Sort chronological ascending (earliest scheduledAt first, tie-break ID ascending)
       allItems.sort((a, b) {
-        final cmp = a.activity.rescheduleAt!.compareTo(
-          b.activity.rescheduleAt!,
-        );
+        final cmp = a.followUp.scheduledAt.compareTo(b.followUp.scheduledAt);
         if (cmp != 0) return cmp;
-        return a.activity.id.compareTo(b.activity.id);
+        return a.followUp.id.compareTo(b.followUp.id);
       });
 
-      // 8. Derive summary counts from the complete authorized queue
+      // 9. Derive summary counts from the complete authorized queue
       final overdueCount = allItems
           .where((i) => i.timing == FollowUpTiming.overdue)
           .length;

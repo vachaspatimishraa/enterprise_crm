@@ -4,6 +4,7 @@ import '../../../auth/domain/entities/crm_module.dart';
 import '../../../auth/domain/entities/current_user.dart';
 import '../../../auth/domain/repositories/user_lead_link_repository.dart';
 import '../../../calling/domain/repositories/lead_call_activity_repository.dart';
+import '../../../calling/domain/repositories/lead_follow_up_repository.dart';
 import '../../../calling/presentation/screens/user_calling_workspace_screen.dart';
 import '../../../leads/domain/repositories/lead_repository.dart';
 import '../widgets/crm_app_header.dart';
@@ -20,6 +21,7 @@ class UserDashboardScreen extends StatelessWidget {
   final UserLeadLinkRepository userLeadLinkRepository;
   final LeadRepository leadRepository;
   final LeadCallActivityRepository callActivityRepository;
+  final LeadFollowUpRepository leadFollowUpRepository;
 
   const UserDashboardScreen({
     super.key,
@@ -28,6 +30,7 @@ class UserDashboardScreen extends StatelessWidget {
     required this.userLeadLinkRepository,
     required this.leadRepository,
     required this.callActivityRepository,
+    required this.leadFollowUpRepository,
   });
 
   void _openModule(BuildContext context, CrmModule module) {
@@ -39,6 +42,7 @@ class UserDashboardScreen extends StatelessWidget {
             linkRepository: userLeadLinkRepository,
             leadRepository: leadRepository,
             callActivityRepository: callActivityRepository,
+            leadFollowUpRepository: leadFollowUpRepository,
           ),
         ),
       );
@@ -50,6 +54,7 @@ class UserDashboardScreen extends StatelessWidget {
             leadRepository: leadRepository,
             linkRepository: userLeadLinkRepository,
             callActivityRepository: callActivityRepository,
+            leadFollowUpRepository: leadFollowUpRepository,
           ),
         ),
       );

@@ -11,20 +11,24 @@ import '../../data/repositories/mock_lead_call_activity_repository.dart';
 import '../../domain/entities/follow_up_timing.dart';
 import '../../domain/policies/user_calling_policy.dart';
 import '../../domain/repositories/lead_call_activity_repository.dart';
+import '../../domain/repositories/lead_follow_up_repository.dart';
 import '../bloc/calling_dashboard_cubit.dart';
 import '../bloc/calling_dashboard_state.dart';
+import '../bloc/follow_up_action_cubit.dart';
+import '../bloc/follow_up_action_state.dart';
 import '../models/follow_up_queue_item.dart';
 import '../utils/calling_display_formatters.dart';
 
 /// Workspace and dashboard screen for standard CRM users navigating into the Calling module.
 ///
 /// Enforces Calling module + `calling.use` as a pre-Cubit production guard. When authorized,
-/// initializes and provides [CallingDashboardCubit] managing the read-only Follow-Up Queue.
+/// initializes and provides [CallingDashboardCubit] and [FollowUpActionCubit].
 class UserCallingWorkspaceScreen extends StatelessWidget {
   final CurrentUser user;
   final LeadRepository leadRepository;
   final UserLeadLinkRepository linkRepository;
   final LeadCallActivityRepository callActivityRepository;
+  final LeadFollowUpRepository leadFollowUpRepository;
   final NowProvider? now;
 
   const UserCallingWorkspaceScreen({
@@ -33,6 +37,7 @@ class UserCallingWorkspaceScreen extends StatelessWidget {
     required this.leadRepository,
     required this.linkRepository,
     required this.callActivityRepository,
+    required this.leadFollowUpRepository,
     this.now,
   });
 
@@ -43,19 +48,35 @@ class UserCallingWorkspaceScreen extends StatelessWidget {
       return const AccessRestrictedScreen();
     }
 
-    return BlocProvider(
-      create: (_) => CallingDashboardCubit(
-        user: user,
-        leadRepository: leadRepository,
-        linkRepository: linkRepository,
-        callActivityRepository: callActivityRepository,
-        now: now,
-      )..load(),
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider(
+          create: (_) => CallingDashboardCubit(
+            user: user,
+            leadRepository: leadRepository,
+            linkRepository: linkRepository,
+            followUpRepository: leadFollowUpRepository,
+            callActivityRepository: callActivityRepository,
+            now: now,
+          )..load(),
+        ),
+        BlocProvider(
+          create: (_) => FollowUpActionCubit(
+            user: user,
+            linkRepository: linkRepository,
+            leadRepository: leadRepository,
+            followUpRepository: leadFollowUpRepository,
+            now: now,
+          ),
+        ),
+      ],
       child: _CallingDashboardView(
         user: user,
         leadRepository: leadRepository,
         linkRepository: linkRepository,
         callActivityRepository: callActivityRepository,
+        leadFollowUpRepository: leadFollowUpRepository,
+        now: now,
       ),
     );
   }
@@ -66,12 +87,16 @@ class _CallingDashboardView extends StatefulWidget {
   final LeadRepository leadRepository;
   final UserLeadLinkRepository linkRepository;
   final LeadCallActivityRepository callActivityRepository;
+  final LeadFollowUpRepository leadFollowUpRepository;
+  final NowProvider? now;
 
   const _CallingDashboardView({
     required this.user,
     required this.leadRepository,
     required this.linkRepository,
     required this.callActivityRepository,
+    required this.leadFollowUpRepository,
+    this.now,
   });
 
   @override
@@ -96,11 +121,193 @@ class _CallingDashboardViewState extends State<_CallingDashboardView> {
           leadRepository: widget.leadRepository,
           linkRepository: widget.linkRepository,
           callActivityRepository: widget.callActivityRepository,
+          leadFollowUpRepository: widget.leadFollowUpRepository,
         ),
       ),
     );
     if (context.mounted) {
       context.read<CallingDashboardCubit>().refresh();
+    }
+  }
+
+  void _onCompleteFollowUp(BuildContext context, FollowUpQueueItem item) {
+    context.read<FollowUpActionCubit>().completeFollowUp(
+      followUpId: item.followUp.id,
+      leadId: item.lead.id,
+    );
+  }
+
+  void _onCancelFollowUp(BuildContext context, FollowUpQueueItem item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Cancel Follow-Up'),
+          content: const Text('Cancel this scheduled follow-up?'),
+          actions: [
+            TextButton(
+              key: const Key('calling_cancel_dialog_dismiss'),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Keep Follow-Up'),
+            ),
+            FilledButton(
+              key: const Key('calling_cancel_dialog_confirm'),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Confirm Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true && context.mounted) {
+      context.read<FollowUpActionCubit>().cancelFollowUp(
+        followUpId: item.followUp.id,
+        leadId: item.lead.id,
+      );
+    }
+  }
+
+  void _onRescheduleFollowUp(
+    BuildContext context,
+    FollowUpQueueItem item,
+  ) async {
+    final now = widget.now != null ? widget.now!() : DateTime.now();
+
+    DateTime? selectedDate;
+    TimeOfDay? selectedTime;
+    String? validationError;
+
+    final newDateTime = await showDialog<DateTime>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Reschedule Follow-Up'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Lead: ${item.lead.name ?? 'Lead'}',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          key: const Key('calling_reschedule_pick_date_button'),
+                          icon: const Icon(Icons.calendar_today, size: 16),
+                          label: Text(
+                            selectedDate == null
+                                ? 'Pick Date'
+                                : '${selectedDate!.year}-${selectedDate!.month.toString().padLeft(2, '0')}-${selectedDate!.day.toString().padLeft(2, '0')}',
+                          ),
+                          onPressed: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: selectedDate ??
+                                  now.add(const Duration(days: 1)),
+                              firstDate: now,
+                              lastDate: now.add(const Duration(days: 365)),
+                            );
+                            if (picked != null) {
+                              setDialogState(() {
+                                selectedDate = picked;
+                                validationError = null;
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          key: const Key('calling_reschedule_pick_time_button'),
+                          icon: const Icon(Icons.access_time, size: 16),
+                          label: Text(
+                            selectedTime == null
+                                ? 'Pick Time'
+                                : selectedTime!.format(context),
+                          ),
+                          onPressed: () async {
+                            final picked = await showTimePicker(
+                              context: context,
+                              initialTime: selectedTime ??
+                                  const TimeOfDay(hour: 10, minute: 0),
+                            );
+                            if (picked != null) {
+                              setDialogState(() {
+                                selectedTime = picked;
+                                validationError = null;
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (validationError != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      validationError!,
+                      key: const Key('calling_reschedule_validation_error'),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  key: const Key('calling_reschedule_dialog_dismiss'),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  key: const Key('calling_reschedule_dialog_confirm'),
+                  onPressed: () {
+                    if (selectedDate == null || selectedTime == null) {
+                      setDialogState(() {
+                        validationError = 'Both date and time are required.';
+                      });
+                      return;
+                    }
+                    final combined = DateTime(
+                      selectedDate!.year,
+                      selectedDate!.month,
+                      selectedDate!.day,
+                      selectedTime!.hour,
+                      selectedTime!.minute,
+                    );
+                    if (!combined.isAfter(now)) {
+                      setDialogState(() {
+                        validationError =
+                            'Reschedule date and time must be in the future.';
+                      });
+                      return;
+                    }
+                    Navigator.of(dialogContext).pop(combined);
+                  },
+                  child: const Text('Confirm Reschedule'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (newDateTime != null && context.mounted) {
+      context.read<FollowUpActionCubit>().rescheduleFollowUp(
+        followUpId: item.followUp.id,
+        leadId: item.lead.id,
+        scheduledAt: newDateTime,
+      );
     }
   }
 
@@ -139,8 +346,25 @@ class _CallingDashboardViewState extends State<_CallingDashboardView> {
           ),
         ],
       ),
-      body: BlocBuilder<CallingDashboardCubit, CallingDashboardState>(
-        builder: (context, state) {
+      body: BlocListener<FollowUpActionCubit, FollowUpActionState>(
+        listener: (context, actionState) {
+          if (actionState is FollowUpActionSuccess) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Follow-up updated successfully.')),
+            );
+            context.read<CallingDashboardCubit>().refresh();
+          } else if (actionState is FollowUpActionFailure) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(actionState.message)),
+            );
+          } else if (actionState is FollowUpActionAccessDenied) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(actionState.reason)),
+            );
+          }
+        },
+        child: BlocBuilder<CallingDashboardCubit, CallingDashboardState>(
+          builder: (context, state) {
           if (state is CallingDashboardLoading ||
               state is CallingDashboardInitial) {
             return const Center(child: CircularProgressIndicator());
@@ -320,8 +544,9 @@ class _CallingDashboardViewState extends State<_CallingDashboardView> {
           );
         },
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildHeaderCard(BuildContext context, {required bool isWide}) {
     final theme = Theme.of(context);
@@ -676,7 +901,7 @@ class _CallingDashboardViewState extends State<_CallingDashboardView> {
     };
 
     return Card(
-      key: Key('calling_queue_item_card_${item.activity.id}'),
+      key: Key('calling_queue_item_card_${item.followUp.id}'),
       elevation: 0,
       color: colorScheme.surfaceContainerLow,
       shape: RoundedRectangleBorder(
@@ -689,6 +914,9 @@ class _CallingDashboardViewState extends State<_CallingDashboardView> {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
+            key: item.activity != null
+                ? Key('calling_queue_item_card_${item.activity!.id}')
+                : null,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Wrap(
@@ -720,9 +948,17 @@ class _CallingDashboardViewState extends State<_CallingDashboardView> {
                   ),
                   OutlinedButton.icon(
                     key: Key(
-                      'calling_queue_item_view_lead_button_${item.activity.id}',
+                      'calling_queue_item_view_lead_button_${item.followUp.id}',
                     ),
-                    icon: const Icon(Icons.visibility, size: 16),
+                    icon: item.activity != null
+                        ? Icon(
+                            Icons.visibility,
+                            key: Key(
+                              'calling_queue_item_view_lead_button_${item.activity!.id}',
+                            ),
+                            size: 16,
+                          )
+                        : const Icon(Icons.visibility, size: 16),
                     label: const Text('View Lead'),
                     onPressed: () => _openLeadDetails(context, item.lead.id),
                   ),
@@ -733,23 +969,24 @@ class _CallingDashboardViewState extends State<_CallingDashboardView> {
                 spacing: 8,
                 runSpacing: 6,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: colorScheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      formatCallOutcome(item.activity.outcome),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: colorScheme.onSecondaryContainer,
-                        fontWeight: FontWeight.w600,
+                  if (item.activity != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colorScheme.secondaryContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        formatCallOutcome(item.activity!.outcome),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSecondaryContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -772,32 +1009,62 @@ class _CallingDashboardViewState extends State<_CallingDashboardView> {
               const SizedBox(height: 12),
               const Divider(height: 1),
               const SizedBox(height: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Row(
                 children: [
-                  Row(
-                    children: [
-                      Icon(Icons.event, size: 14, color: colorScheme.primary),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          formatActivityDateTime(item.activity.rescheduleAt),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: colorScheme.primary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Recorded ${formatActivityDateTime(item.activity.createdAt)}',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant.withValues(
-                        alpha: 0.7,
+                  Icon(Icons.event, size: 14, color: colorScheme.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      formatActivityDateTime(item.followUp.scheduledAt),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.primary,
                       ),
                     ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Recorded ${formatActivityDateTime(item.activity?.createdAt ?? item.followUp.createdAt)}',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant.withValues(
+                    alpha: 0.7,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              // Action buttons
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton.tonalIcon(
+                    key: Key(
+                      'calling_queue_item_complete_button_${item.followUp.id}',
+                    ),
+                    icon: const Icon(Icons.check_circle_outline, size: 16),
+                    label: const Text('Complete'),
+                    onPressed: () => _onCompleteFollowUp(context, item),
+                  ),
+                  OutlinedButton.icon(
+                    key: Key(
+                      'calling_queue_item_reschedule_button_${item.followUp.id}',
+                    ),
+                    icon: const Icon(Icons.edit_calendar_outlined, size: 16),
+                    label: const Text('Reschedule'),
+                    onPressed: () => _onRescheduleFollowUp(context, item),
+                  ),
+                  OutlinedButton.icon(
+                    key: Key(
+                      'calling_queue_item_cancel_button_${item.followUp.id}',
+                    ),
+                    icon: const Icon(Icons.cancel_outlined, size: 16),
+                    label: const Text('Cancel'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: colorScheme.error,
+                    ),
+                    onPressed: () => _onCancelFollowUp(context, item),
                   ),
                 ],
               ),

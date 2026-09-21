@@ -2,6 +2,7 @@ import 'package:enterprise_crm/app/crm_app.dart';
 import 'package:enterprise_crm/features/auth/data/repositories/mock_auth_repository.dart';
 import 'package:enterprise_crm/features/auth/data/repositories/mock_user_lead_link_repository.dart';
 import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_call_activity_repository.dart';
+import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_follow_up_repository.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/admin_dashboard_screen.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
 import 'package:enterprise_crm/features/user_management/data/repositories/mock_user_management_repository.dart';
@@ -68,6 +69,7 @@ void main() {
     late MockUserManagementRepository userManagementRepository;
     late MockUserLeadLinkRepository userLeadLinkRepository;
     late MockLeadCallActivityRepository leadCallActivityRepository;
+    late MockLeadFollowUpRepository leadFollowUpRepository;
     late MockAccountStore accountStore;
 
     setUp(() {
@@ -79,6 +81,7 @@ void main() {
       );
       userLeadLinkRepository = MockUserLeadLinkRepository();
       leadCallActivityRepository = MockLeadCallActivityRepository();
+      leadFollowUpRepository = MockLeadFollowUpRepository();
     });
 
     testWidgets(
@@ -91,6 +94,7 @@ void main() {
             userManagementRepository: userManagementRepository,
             userLeadLinkRepository: userLeadLinkRepository,
             leadCallActivityRepository: leadCallActivityRepository,
+            leadFollowUpRepository: leadFollowUpRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -234,6 +238,7 @@ void main() {
             userManagementRepository: null,
             userLeadLinkRepository: userLeadLinkRepository,
             leadCallActivityRepository: leadCallActivityRepository,
+            leadFollowUpRepository: leadFollowUpRepository,
           ),
           throwsAssertionError,
         );
@@ -250,6 +255,7 @@ void main() {
             userManagementRepository: userManagementRepository,
             userLeadLinkRepository: null,
             leadCallActivityRepository: leadCallActivityRepository,
+            leadFollowUpRepository: leadFollowUpRepository,
           ),
           throwsAssertionError,
         );
@@ -266,6 +272,24 @@ void main() {
             userManagementRepository: userManagementRepository,
             userLeadLinkRepository: userLeadLinkRepository,
             leadCallActivityRepository: null,
+            leadFollowUpRepository: leadFollowUpRepository,
+          ),
+          throwsAssertionError,
+        );
+      },
+    );
+
+    testWidgets(
+      'CALL-1C.1: CrmApp asserts leadFollowUpRepository != null when Calling is enabled with auth',
+      (tester) async {
+        expect(
+          () => CrmApp(
+            leadRepository: leadRepository,
+            authRepository: authRepository,
+            userManagementRepository: userManagementRepository,
+            userLeadLinkRepository: userLeadLinkRepository,
+            leadCallActivityRepository: leadCallActivityRepository,
+            leadFollowUpRepository: null,
           ),
           throwsAssertionError,
         );
@@ -287,6 +311,7 @@ void main() {
             userManagementRepository: userManagementRepository,
             userLeadLinkRepository: userLeadLinkRepository,
             leadCallActivityRepository: leadCallActivityRepository,
+            leadFollowUpRepository: leadFollowUpRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -419,6 +444,7 @@ void main() {
             userManagementRepository: userManagementRepository,
             userLeadLinkRepository: userLeadLinkRepository,
             leadCallActivityRepository: leadCallActivityRepository,
+            leadFollowUpRepository: leadFollowUpRepository,
           ),
         );
         await tester.pumpAndSettle();

@@ -9,6 +9,7 @@ import '../../../auth/domain/repositories/user_lead_link_repository.dart';
 import '../../../auth/presentation/mappers/crm_permission_presentation.dart';
 import '../../../auth/presentation/screens/access_restricted_screen.dart';
 import '../../../calling/domain/repositories/lead_call_activity_repository.dart';
+import '../../../calling/domain/repositories/lead_follow_up_repository.dart';
 import '../../../leads/domain/entities/lead.dart';
 import '../../../leads/domain/repositories/lead_repository.dart';
 import '../bloc/user_assigned_leads_cubit.dart';
@@ -28,6 +29,7 @@ class UserLeadWorkspaceScreen extends StatelessWidget {
   final UserLeadLinkRepository linkRepository;
   final LeadRepository leadRepository;
   final LeadCallActivityRepository callActivityRepository;
+  final LeadFollowUpRepository? leadFollowUpRepository;
 
   const UserLeadWorkspaceScreen({
     super.key,
@@ -35,6 +37,7 @@ class UserLeadWorkspaceScreen extends StatelessWidget {
     required this.linkRepository,
     required this.leadRepository,
     required this.callActivityRepository,
+    this.leadFollowUpRepository,
   });
 
   @override
@@ -55,6 +58,7 @@ class UserLeadWorkspaceScreen extends StatelessWidget {
         linkRepository: linkRepository,
         leadRepository: leadRepository,
         callActivityRepository: callActivityRepository,
+        leadFollowUpRepository: leadFollowUpRepository,
       ),
     );
   }
@@ -65,12 +69,14 @@ class _UserLeadWorkspaceView extends StatelessWidget {
   final UserLeadLinkRepository linkRepository;
   final LeadRepository leadRepository;
   final LeadCallActivityRepository callActivityRepository;
+  final LeadFollowUpRepository? leadFollowUpRepository;
 
   const _UserLeadWorkspaceView({
     required this.user,
     required this.linkRepository,
     required this.leadRepository,
     required this.callActivityRepository,
+    this.leadFollowUpRepository,
   });
 
   @override
@@ -123,6 +129,7 @@ class _UserLeadWorkspaceView extends StatelessWidget {
                     linkRepository: linkRepository,
                     leadRepository: leadRepository,
                     callActivityRepository: callActivityRepository,
+                    leadFollowUpRepository: leadFollowUpRepository,
                   ),
                 ],
 
@@ -339,12 +346,14 @@ class _AssignedLeadsBody extends StatelessWidget {
   final UserLeadLinkRepository linkRepository;
   final LeadRepository leadRepository;
   final LeadCallActivityRepository callActivityRepository;
+  final LeadFollowUpRepository? leadFollowUpRepository;
 
   const _AssignedLeadsBody({
     required this.user,
     required this.linkRepository,
     required this.leadRepository,
     required this.callActivityRepository,
+    this.leadFollowUpRepository,
   });
 
   @override
@@ -385,6 +394,7 @@ class _AssignedLeadsBody extends StatelessWidget {
           linkRepository: linkRepository,
           leadRepository: leadRepository,
           callActivityRepository: callActivityRepository,
+          leadFollowUpRepository: leadFollowUpRepository,
         ),
         UserAssignedLeadsFailure(:final message) => _FailurePanel(
           key: const Key('user_assigned_leads_failure'),
@@ -503,6 +513,7 @@ class _LeadList extends StatelessWidget {
   final UserLeadLinkRepository linkRepository;
   final LeadRepository leadRepository;
   final LeadCallActivityRepository callActivityRepository;
+  final LeadFollowUpRepository? leadFollowUpRepository;
 
   const _LeadList({
     required this.leads,
@@ -510,6 +521,7 @@ class _LeadList extends StatelessWidget {
     required this.linkRepository,
     required this.leadRepository,
     required this.callActivityRepository,
+    this.leadFollowUpRepository,
   });
 
   @override
@@ -529,6 +541,7 @@ class _LeadList extends StatelessWidget {
                     linkRepository: linkRepository,
                     leadRepository: leadRepository,
                     callActivityRepository: callActivityRepository,
+                    leadFollowUpRepository: leadFollowUpRepository,
                   ),
                 ),
               );

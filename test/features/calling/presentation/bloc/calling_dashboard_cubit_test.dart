@@ -4,6 +4,7 @@ import 'package:enterprise_crm/features/auth/domain/entities/crm_module.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
 import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dart';
 import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_call_activity_repository.dart';
+import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_follow_up_repository.dart';
 import 'package:enterprise_crm/features/calling/domain/entities/call_outcome.dart';
 import 'package:enterprise_crm/features/calling/domain/entities/follow_up_timing.dart';
 import 'package:enterprise_crm/features/calling/domain/entities/lead_call_activity.dart';
@@ -110,6 +111,7 @@ void main() {
   late SpyLeadRepository leadRepo;
   late MockUserLeadLinkRepository linkRepo;
   late SpyCallActivityRepository callRepo;
+  late MockLeadFollowUpRepository followUpRepo;
 
   setUp(() {
     leadRepo = SpyLeadRepository(
@@ -117,6 +119,7 @@ void main() {
     );
     linkRepo = MockUserLeadLinkRepository(links: {'usr-agent-1': 'agent-1'});
     callRepo = SpyCallActivityRepository(now: () => fixedNow);
+    followUpRepo = MockLeadFollowUpRepository(now: () => fixedNow);
   });
 
   group('CallingDashboardCubit - Security Gates & Zero-Call Guarantees', () {
@@ -128,6 +131,7 @@ void main() {
           leadRepository: leadRepo,
           linkRepository: linkRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
           now: () => fixedNow,
         );
 
@@ -148,6 +152,7 @@ void main() {
           leadRepository: leadRepo,
           linkRepository: linkRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
           now: () => fixedNow,
         );
 
@@ -169,6 +174,7 @@ void main() {
           leadRepository: leadRepo,
           linkRepository: emptyLinkRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
           now: () => fixedNow,
         );
 
@@ -192,6 +198,7 @@ void main() {
           leadRepository: leadRepo,
           linkRepository: invalidLinkRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
           now: () => fixedNow,
         );
 
@@ -217,6 +224,7 @@ void main() {
           leadRepository: emptyLeadsRepo,
           linkRepository: linkRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
           now: () => fixedNow,
         );
 
@@ -254,6 +262,7 @@ void main() {
           leadRepository: leadRepo,
           linkRepository: linkRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
           now: () => fixedNow,
         );
 
@@ -263,7 +272,7 @@ void main() {
         final loaded = cubit.state as CallingDashboardLoaded;
         expect(loaded.allItems.length, 1);
         expect(loaded.allItems.first.lead.id, 'lead-A');
-        expect(loaded.allItems.first.activity.outcome, CallOutcome.followUp);
+        expect(loaded.allItems.first.activity?.outcome, CallOutcome.followUp);
       },
     );
 
@@ -283,6 +292,7 @@ void main() {
           leadRepository: leadRepo,
           linkRepository: linkRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
           now: () => fixedNow,
         );
 
@@ -308,6 +318,7 @@ void main() {
           leadRepository: leadRepo,
           linkRepository: linkRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
           now: () => fixedNow,
         );
 
@@ -346,6 +357,7 @@ void main() {
           leadRepository: leadRepo,
           linkRepository: linkRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
           now: () => fixedNow,
         );
 
@@ -354,8 +366,8 @@ void main() {
         expect(cubit.state, isA<CallingDashboardLoaded>());
         final loaded = cubit.state as CallingDashboardLoaded;
         expect(loaded.allItems.length, 2);
-        expect(loaded.allItems[0].activity.outcome, CallOutcome.notConnected);
-        expect(loaded.allItems[1].activity.outcome, CallOutcome.followUp);
+        expect(loaded.allItems[0].activity?.outcome, CallOutcome.notConnected);
+        expect(loaded.allItems[1].activity?.outcome, CallOutcome.followUp);
       },
     );
   });
@@ -393,6 +405,7 @@ void main() {
           leadRepository: leadRepo,
           linkRepository: linkRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
           now: () => fixedNow,
         );
 
@@ -416,6 +429,7 @@ void main() {
           leadRepository: leadRepo,
           linkRepository: linkRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
           now: () => fixedNow,
         );
 
@@ -459,6 +473,7 @@ void main() {
           leadRepository: leadRepo,
           linkRepository: linkRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
           now: () => fixedNow,
         );
 
@@ -512,6 +527,7 @@ void main() {
         leadRepository: duplicatePagingRepo,
         linkRepository: linkRepo,
         callActivityRepository: callRepo,
+        followUpRepository: followUpRepo,
         now: () => fixedNow,
       );
 
@@ -537,6 +553,7 @@ void main() {
           leadRepository: failingRepo,
           linkRepository: linkRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
           now: () => fixedNow,
         );
 

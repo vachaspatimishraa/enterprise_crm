@@ -4,6 +4,7 @@ import 'package:enterprise_crm/features/auth/domain/entities/crm_module.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
 import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dart';
 import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_call_activity_repository.dart';
+import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_follow_up_repository.dart';
 import 'package:enterprise_crm/features/calling/domain/entities/call_outcome.dart';
 import 'package:enterprise_crm/features/calling/domain/entities/lead_call_activity.dart';
 import 'package:enterprise_crm/features/calling/presentation/screens/record_call_outcome_screen.dart';
@@ -78,6 +79,7 @@ void main() {
   late MockLeadRepository leadRepo;
   late MockUserLeadLinkRepository linkRepo;
   late _SpyCallActivityRepository spyCallRepo;
+  late MockLeadFollowUpRepository followUpRepo;
 
   setUp(() {
     leadRepo = MockLeadRepository(
@@ -91,6 +93,7 @@ void main() {
       },
     );
     spyCallRepo = _SpyCallActivityRepository();
+    followUpRepo = MockLeadFollowUpRepository();
   });
 
   Widget buildTestApp({
@@ -105,6 +108,7 @@ void main() {
         linkRepository: linkRepo,
         leadRepository: leadRepo,
         callActivityRepository: callRepo ?? spyCallRepo,
+        leadFollowUpRepository: followUpRepo,
       ),
     );
   }

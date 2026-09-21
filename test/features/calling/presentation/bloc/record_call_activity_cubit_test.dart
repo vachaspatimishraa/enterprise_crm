@@ -3,6 +3,7 @@ import 'package:enterprise_crm/features/auth/domain/entities/account_type.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/crm_module.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
 import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dart';
+import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_follow_up_repository.dart';
 import 'package:enterprise_crm/features/calling/domain/entities/call_outcome.dart';
 import 'package:enterprise_crm/features/calling/domain/entities/lead_call_activity.dart';
 import 'package:enterprise_crm/features/calling/domain/repositories/lead_call_activity_repository.dart';
@@ -59,6 +60,7 @@ void main() {
   late MockLeadRepository leadRepo;
   late MockUserLeadLinkRepository linkRepo;
   late _SpyCallActivityRepository callRepo;
+  late MockLeadFollowUpRepository followUpRepo;
 
   setUp(() {
     leadRepo = MockLeadRepository(
@@ -66,6 +68,7 @@ void main() {
     );
     linkRepo = MockUserLeadLinkRepository(links: {'usr-standard-1': 'agent-1'});
     callRepo = _SpyCallActivityRepository();
+    followUpRepo = MockLeadFollowUpRepository(now: () => nowTime);
   });
 
   group('RecordCallActivityCubit - Authorization and Security Chain', () {
@@ -89,6 +92,7 @@ void main() {
           linkRepository: linkRepo,
           leadRepository: leadRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
         );
 
         await cubit.load();
@@ -115,6 +119,7 @@ void main() {
           linkRepository: linkRepo,
           leadRepository: leadRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
         );
 
         await cubit.load();
@@ -131,6 +136,7 @@ void main() {
         linkRepository: linkRepo,
         leadRepository: leadRepo,
         callActivityRepository: callRepo,
+        followUpRepository: followUpRepo,
       );
 
       await cubit.load();
@@ -146,6 +152,7 @@ void main() {
         linkRepository: linkRepo,
         leadRepository: leadRepo,
         callActivityRepository: callRepo,
+        followUpRepository: followUpRepo,
       );
 
       await cubit.load();
@@ -167,6 +174,7 @@ void main() {
           linkRepository: linkRepo,
           leadRepository: leadRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
           now: () => nowTime,
         );
 
@@ -198,6 +206,7 @@ void main() {
           linkRepository: linkRepo,
           leadRepository: leadRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
           now: () => nowTime,
         );
 
@@ -238,6 +247,7 @@ void main() {
           linkRepository: linkRepo,
           leadRepository: switchingRepo,
           callActivityRepository: callRepo,
+          followUpRepository: followUpRepo,
           now: () => nowTime,
         );
 
@@ -266,6 +276,7 @@ void main() {
           linkRepository: linkRepo,
           leadRepository: leadRepo,
           callActivityRepository: slowCallRepo,
+          followUpRepository: followUpRepo,
           now: () => nowTime,
         );
 
@@ -293,6 +304,7 @@ void main() {
         linkRepository: linkRepo,
         leadRepository: leadRepo,
         callActivityRepository: failingCallRepo,
+        followUpRepository: followUpRepo,
         now: () => nowTime,
       );
 

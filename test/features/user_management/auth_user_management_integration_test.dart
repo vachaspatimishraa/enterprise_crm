@@ -1,6 +1,7 @@
 import 'package:enterprise_crm/features/auth/data/repositories/mock_auth_repository.dart';
 import 'package:enterprise_crm/features/auth/data/repositories/mock_user_lead_link_repository.dart';
 import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_call_activity_repository.dart';
+import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_follow_up_repository.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/account_type.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/crm_module.dart';
 import 'package:enterprise_crm/features/auth/domain/repositories/auth_repository.dart';
@@ -276,6 +277,7 @@ void main() {
             userManagementRepository: userMgmtRepo,
             userLeadLinkRepository: MockUserLeadLinkRepository(),
             leadCallActivityRepository: MockLeadCallActivityRepository(),
+            leadFollowUpRepository: MockLeadFollowUpRepository(),
           ),
         );
         await tester.pumpAndSettle();

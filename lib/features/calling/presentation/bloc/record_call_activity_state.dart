@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../../../leads/domain/entities/lead.dart';
 import '../../domain/entities/lead_call_activity.dart';
+import '../../domain/entities/lead_follow_up.dart';
 
 @immutable
 sealed class RecordCallActivityState {
@@ -40,7 +41,8 @@ final class RecordCallActivitySubmitting extends RecordCallActivityState {
 
 final class RecordCallActivitySuccess extends RecordCallActivityState {
   final LeadCallActivity activity;
-  const RecordCallActivitySuccess(this.activity);
+  final LeadFollowUp? followUp;
+  const RecordCallActivitySuccess(this.activity, {this.followUp});
 }
 
 final class RecordCallActivityFailure extends RecordCallActivityState {
