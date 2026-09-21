@@ -40,6 +40,28 @@ class MockLeadCallActivityRepository implements LeadCallActivityRepository {
   }
 
   @override
+  Future<List<LeadCallActivity>> getScheduledActivitiesForLeadIds(
+    Set<String> leadIds,
+  ) async {
+    if (leadIds.isEmpty) {
+      return const [];
+    }
+
+    final matching = _activities
+        .where((a) => leadIds.contains(a.leadId) && a.rescheduleAt != null)
+        .toList();
+
+    // Sort earliest rescheduleAt first. Tie-break by ID ascending.
+    matching.sort((a, b) {
+      final cmp = a.rescheduleAt!.compareTo(b.rescheduleAt!);
+      if (cmp != 0) return cmp;
+      return a.id.compareTo(b.id);
+    });
+
+    return List<LeadCallActivity>.unmodifiable(matching);
+  }
+
+  @override
   Future<LeadCallActivity> recordActivity({
     required String leadId,
     required String performedByUserId,

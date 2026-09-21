@@ -1,4 +1,14 @@
 import '../../domain/entities/call_outcome.dart';
+import '../../domain/entities/follow_up_timing.dart';
+
+/// Formats a [FollowUpTiming] into its human-readable presentation label.
+String formatFollowUpTiming(FollowUpTiming timing) {
+  return switch (timing) {
+    FollowUpTiming.overdue => 'Overdue',
+    FollowUpTiming.dueToday => 'Due Today',
+    FollowUpTiming.upcoming => 'Upcoming',
+  };
+}
 
 /// Formats a [CallOutcome] into its frozen human-readable presentation label.
 String formatCallOutcome(CallOutcome outcome) {

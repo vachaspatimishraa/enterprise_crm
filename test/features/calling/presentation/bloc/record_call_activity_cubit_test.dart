@@ -332,6 +332,11 @@ class _SpyCallActivityRepository implements LeadCallActivityRepository {
   @override
   Future<List<LeadCallActivity>> getActivitiesForLead(String leadId) async =>
       [];
+
+  @override
+  Future<List<LeadCallActivity>> getScheduledActivitiesForLeadIds(
+    Set<String> leadIds,
+  ) async => [];
 }
 
 class _SlowCallActivityRepository implements LeadCallActivityRepository {
@@ -358,6 +363,11 @@ class _SlowCallActivityRepository implements LeadCallActivityRepository {
   @override
   Future<List<LeadCallActivity>> getActivitiesForLead(String leadId) async =>
       [];
+
+  @override
+  Future<List<LeadCallActivity>> getScheduledActivitiesForLeadIds(
+    Set<String> leadIds,
+  ) async => [];
 }
 
 class _FailingCallActivityRepository implements LeadCallActivityRepository {
@@ -374,6 +384,11 @@ class _FailingCallActivityRepository implements LeadCallActivityRepository {
   @override
   Future<List<LeadCallActivity>> getActivitiesForLead(String leadId) async =>
       [];
+
+  @override
+  Future<List<LeadCallActivity>> getScheduledActivitiesForLeadIds(
+    Set<String> leadIds,
+  ) async => [];
 }
 
 class _ReassignOnSaveLeadRepo implements LeadRepository {

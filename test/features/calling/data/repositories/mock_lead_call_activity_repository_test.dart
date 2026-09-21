@@ -150,5 +150,123 @@ void main() {
         throwsArgumentError,
       );
     });
+
+    group('getScheduledActivitiesForLeadIds (CALL-1B)', () {
+      test(
+        'empty leadIds returns empty list with zero wildcard leakage',
+        () async {
+          final repo = MockLeadCallActivityRepository(now: () => fixedClock);
+          await repo.recordActivity(
+            leadId: 'lead-1',
+            performedByUserId: 'usr-1',
+            outcome: CallOutcome.followUp,
+            rescheduleAt: DateTime(2026, 9, 22, 10, 0),
+          );
+
+          final result = await repo.getScheduledActivitiesForLeadIds({});
+          expect(result, isEmpty);
+        },
+      );
+
+      test(
+        'only returns activities where rescheduleAt != null for matching leads',
+        () async {
+          final repo = MockLeadCallActivityRepository(now: () => fixedClock);
+
+          // Lead 1: unscheduled activity (rescheduleAt == null)
+          await repo.recordActivity(
+            leadId: 'lead-1',
+            performedByUserId: 'usr-1',
+            outcome: CallOutcome.notConnected,
+            rescheduleAt: null,
+          );
+
+          // Lead 1: scheduled activity
+          final act1 = await repo.recordActivity(
+            leadId: 'lead-1',
+            performedByUserId: 'usr-1',
+            outcome: CallOutcome.followUp,
+            rescheduleAt: DateTime(2026, 9, 22, 10, 0),
+          );
+
+          // Lead 2: scheduled activity
+          final act2 = await repo.recordActivity(
+            leadId: 'lead-2',
+            performedByUserId: 'usr-1',
+            outcome: CallOutcome.visitScheduled,
+            rescheduleAt: DateTime(2026, 9, 23, 14, 0),
+          );
+
+          // Lead 3: scheduled activity (not in queried set)
+          await repo.recordActivity(
+            leadId: 'lead-3',
+            performedByUserId: 'usr-2',
+            outcome: CallOutcome.followUp,
+            rescheduleAt: DateTime(2026, 9, 24, 11, 0),
+          );
+
+          final result = await repo.getScheduledActivitiesForLeadIds({
+            'lead-1',
+            'lead-2',
+          });
+
+          expect(result.length, 2);
+          expect(result.map((a) => a.id), containsAll([act1.id, act2.id]));
+          expect(result.any((a) => a.leadId == 'lead-3'), isFalse);
+          expect(result.any((a) => a.rescheduleAt == null), isFalse);
+        },
+      );
+
+      test(
+        'sorts chronological ascending (earliest first) with ID tie-break',
+        () async {
+          final repo = MockLeadCallActivityRepository(now: () => fixedClock);
+
+          final a3 = await repo.recordActivity(
+            leadId: 'lead-1',
+            performedByUserId: 'usr-1',
+            outcome: CallOutcome.followUp,
+            rescheduleAt: DateTime(2026, 9, 25, 10, 0),
+          );
+
+          final a1 = await repo.recordActivity(
+            leadId: 'lead-2',
+            performedByUserId: 'usr-1',
+            outcome: CallOutcome.followUp,
+            rescheduleAt: DateTime(2026, 9, 20, 12, 0),
+          );
+
+          final a2 = await repo.recordActivity(
+            leadId: 'lead-1',
+            performedByUserId: 'usr-1',
+            outcome: CallOutcome.visitScheduled,
+            rescheduleAt: DateTime(2026, 9, 21, 14, 0),
+          );
+
+          final result = await repo.getScheduledActivitiesForLeadIds({
+            'lead-1',
+            'lead-2',
+          });
+
+          expect(result.length, 3);
+          expect(result[0].id, a1.id); // 20 Sep
+          expect(result[1].id, a2.id); // 21 Sep
+          expect(result[2].id, a3.id); // 25 Sep
+        },
+      );
+
+      test('returns defensively unmodifiable list', () async {
+        final repo = MockLeadCallActivityRepository(now: () => fixedClock);
+        await repo.recordActivity(
+          leadId: 'lead-1',
+          performedByUserId: 'usr-1',
+          outcome: CallOutcome.followUp,
+          rescheduleAt: DateTime(2026, 9, 22, 10, 0),
+        );
+
+        final result = await repo.getScheduledActivitiesForLeadIds({'lead-1'});
+        expect(() => result.clear(), throwsUnsupportedError);
+      });
+    });
   });
 }

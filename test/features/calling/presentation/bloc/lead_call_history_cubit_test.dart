@@ -283,6 +283,11 @@ class _SpyCallHistoryRepository implements LeadCallActivityRepository {
   }
 
   @override
+  Future<List<LeadCallActivity>> getScheduledActivitiesForLeadIds(
+    Set<String> leadIds,
+  ) => throw UnimplementedError();
+
+  @override
   Future<LeadCallActivity> recordActivity({
     required String leadId,
     required String performedByUserId,
