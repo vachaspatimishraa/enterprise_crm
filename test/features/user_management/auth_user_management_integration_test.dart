@@ -13,6 +13,7 @@ import 'package:enterprise_crm/features/user_management/domain/inputs/update_man
 import 'package:enterprise_crm/features/user_management/domain/repositories/user_management_repository.dart';
 import 'package:enterprise_crm/app/crm_app.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_dashboard_screen.dart';
+import 'package:enterprise_crm/features/inventory/data/repositories/mock_inventory_repository.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -278,6 +279,7 @@ void main() {
             userLeadLinkRepository: MockUserLeadLinkRepository(),
             leadCallActivityRepository: MockLeadCallActivityRepository(),
             leadFollowUpRepository: MockLeadFollowUpRepository(),
+            inventoryRepository: MockInventoryRepository(),
           ),
         );
         await tester.pumpAndSettle();

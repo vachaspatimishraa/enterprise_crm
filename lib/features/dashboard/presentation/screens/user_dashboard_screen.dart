@@ -6,6 +6,8 @@ import '../../../auth/domain/repositories/user_lead_link_repository.dart';
 import '../../../calling/domain/repositories/lead_call_activity_repository.dart';
 import '../../../calling/domain/repositories/lead_follow_up_repository.dart';
 import '../../../calling/presentation/screens/user_calling_workspace_screen.dart';
+import '../../../inventory/domain/repositories/inventory_repository.dart';
+import '../../../inventory/presentation/screens/inventory_workspace_screen.dart';
 import '../../../leads/domain/repositories/lead_repository.dart';
 import '../widgets/crm_app_header.dart';
 import '../widgets/crm_module_card.dart';
@@ -22,6 +24,7 @@ class UserDashboardScreen extends StatelessWidget {
   final LeadRepository leadRepository;
   final LeadCallActivityRepository callActivityRepository;
   final LeadFollowUpRepository leadFollowUpRepository;
+  final InventoryRepository inventoryRepository;
 
   const UserDashboardScreen({
     super.key,
@@ -31,6 +34,7 @@ class UserDashboardScreen extends StatelessWidget {
     required this.leadRepository,
     required this.callActivityRepository,
     required this.leadFollowUpRepository,
+    required this.inventoryRepository,
   });
 
   void _openModule(BuildContext context, CrmModule module) {
@@ -55,6 +59,15 @@ class UserDashboardScreen extends StatelessWidget {
             linkRepository: userLeadLinkRepository,
             callActivityRepository: callActivityRepository,
             leadFollowUpRepository: leadFollowUpRepository,
+          ),
+        ),
+      );
+    } else if (module == CrmModule.inventory) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => InventoryWorkspaceScreen(
+            user: user,
+            repository: inventoryRepository,
           ),
         ),
       );

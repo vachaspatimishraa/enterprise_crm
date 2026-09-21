@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../auth/domain/entities/crm_module.dart';
 import '../../../auth/domain/entities/current_user.dart';
+import '../../../inventory/domain/repositories/inventory_repository.dart';
+import '../../../inventory/presentation/screens/inventory_workspace_screen.dart';
 import '../../../user_management/domain/repositories/user_management_repository.dart';
 import '../../../user_management/presentation/screens/users_and_access_screen.dart';
 import '../widgets/crm_app_header.dart';
@@ -14,6 +16,7 @@ class AdminDashboardScreen extends StatelessWidget {
   final CurrentUser user;
   final VoidCallback onLogout;
   final VoidCallback onOpenLeadManagement;
+  final InventoryRepository inventoryRepository;
   final UserManagementRepository? userManagementRepository;
 
   const AdminDashboardScreen({
@@ -21,12 +24,22 @@ class AdminDashboardScreen extends StatelessWidget {
     required this.user,
     required this.onLogout,
     required this.onOpenLeadManagement,
+    required this.inventoryRepository,
     this.userManagementRepository,
   });
 
   void _openModule(BuildContext context, CrmModule module) {
     if (module == CrmModule.leadManagement) {
       onOpenLeadManagement();
+    } else if (module == CrmModule.inventory) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => InventoryWorkspaceScreen(
+            user: user,
+            repository: inventoryRepository,
+          ),
+        ),
+      );
     } else {
       Navigator.of(context).push(
         MaterialPageRoute(

@@ -4,6 +4,7 @@ import 'package:enterprise_crm/features/auth/data/repositories/mock_user_lead_li
 import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_call_activity_repository.dart';
 import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_follow_up_repository.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/admin_dashboard_screen.dart';
+import 'package:enterprise_crm/features/inventory/data/repositories/mock_inventory_repository.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
 import 'package:enterprise_crm/features/user_management/data/repositories/mock_user_management_repository.dart';
 import 'package:enterprise_crm/features/user_management/domain/entities/managed_user.dart';
@@ -70,6 +71,7 @@ void main() {
     late MockUserLeadLinkRepository userLeadLinkRepository;
     late MockLeadCallActivityRepository leadCallActivityRepository;
     late MockLeadFollowUpRepository leadFollowUpRepository;
+    late MockInventoryRepository inventoryRepository;
     late MockAccountStore accountStore;
 
     setUp(() {
@@ -82,6 +84,7 @@ void main() {
       userLeadLinkRepository = MockUserLeadLinkRepository();
       leadCallActivityRepository = MockLeadCallActivityRepository();
       leadFollowUpRepository = MockLeadFollowUpRepository();
+      inventoryRepository = MockInventoryRepository();
     });
 
     testWidgets(
@@ -95,6 +98,7 @@ void main() {
             userLeadLinkRepository: userLeadLinkRepository,
             leadCallActivityRepository: leadCallActivityRepository,
             leadFollowUpRepository: leadFollowUpRepository,
+            inventoryRepository: inventoryRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -239,6 +243,7 @@ void main() {
             userLeadLinkRepository: userLeadLinkRepository,
             leadCallActivityRepository: leadCallActivityRepository,
             leadFollowUpRepository: leadFollowUpRepository,
+            inventoryRepository: inventoryRepository,
           ),
           throwsAssertionError,
         );
@@ -256,6 +261,7 @@ void main() {
             userLeadLinkRepository: null,
             leadCallActivityRepository: leadCallActivityRepository,
             leadFollowUpRepository: leadFollowUpRepository,
+            inventoryRepository: inventoryRepository,
           ),
           throwsAssertionError,
         );
@@ -273,6 +279,7 @@ void main() {
             userLeadLinkRepository: userLeadLinkRepository,
             leadCallActivityRepository: null,
             leadFollowUpRepository: leadFollowUpRepository,
+            inventoryRepository: inventoryRepository,
           ),
           throwsAssertionError,
         );
@@ -290,6 +297,25 @@ void main() {
             userLeadLinkRepository: userLeadLinkRepository,
             leadCallActivityRepository: leadCallActivityRepository,
             leadFollowUpRepository: null,
+            inventoryRepository: inventoryRepository,
+          ),
+          throwsAssertionError,
+        );
+      },
+    );
+
+    testWidgets(
+      'INVENTORY-1: CrmApp asserts inventoryRepository != null when auth is enabled',
+      (tester) async {
+        expect(
+          () => CrmApp(
+            leadRepository: leadRepository,
+            authRepository: authRepository,
+            userManagementRepository: userManagementRepository,
+            userLeadLinkRepository: userLeadLinkRepository,
+            leadCallActivityRepository: leadCallActivityRepository,
+            leadFollowUpRepository: leadFollowUpRepository,
+            inventoryRepository: null,
           ),
           throwsAssertionError,
         );
@@ -312,6 +338,7 @@ void main() {
             userLeadLinkRepository: userLeadLinkRepository,
             leadCallActivityRepository: leadCallActivityRepository,
             leadFollowUpRepository: leadFollowUpRepository,
+            inventoryRepository: inventoryRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -445,6 +472,7 @@ void main() {
             userLeadLinkRepository: userLeadLinkRepository,
             leadCallActivityRepository: leadCallActivityRepository,
             leadFollowUpRepository: leadFollowUpRepository,
+            inventoryRepository: inventoryRepository,
           ),
         );
         await tester.pumpAndSettle();
