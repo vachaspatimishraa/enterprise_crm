@@ -60,10 +60,14 @@ class _UserLeadWorkspaceView extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    final canView =
-        AccessPolicy.hasPermission(user, CrmPermissions.leadViewAssigned);
-    final canUpdate =
-        AccessPolicy.hasPermission(user, CrmPermissions.leadUpdate);
+    final canView = AccessPolicy.hasPermission(
+      user,
+      CrmPermissions.leadViewAssigned,
+    );
+    final canUpdate = AccessPolicy.hasPermission(
+      user,
+      CrmPermissions.leadUpdate,
+    );
     final hasAnyLeadPermission = canView || canUpdate;
 
     return Scaffold(
@@ -132,8 +136,11 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(Icons.assignment_ind_outlined,
-            size: 18, color: colorScheme.primary),
+        Icon(
+          Icons.assignment_ind_outlined,
+          size: 18,
+          color: colorScheme.primary,
+        ),
         const SizedBox(width: 8),
         Text(
           label,
@@ -183,8 +190,11 @@ class _CapabilityCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.verified_user_outlined,
-                    size: 18, color: colorScheme.primary),
+                Icon(
+                  Icons.verified_user_outlined,
+                  size: 18,
+                  color: colorScheme.primary,
+                ),
                 const SizedBox(width: 8),
                 Text(
                   'YOUR ACCESS',
@@ -201,22 +211,27 @@ class _CapabilityCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest
-                      .withValues(alpha: 0.5),
+                  color: colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.5,
+                  ),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.info_outline,
-                        size: 20, color: colorScheme.onSurfaceVariant),
+                    Icon(
+                      Icons.info_outline,
+                      size: 20,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         'You have access to this module, but no Lead actions have been assigned to your account.',
                         key: const Key('user_lead_no_actions_message'),
-                        style: theme.textTheme.bodyMedium
-                            ?.copyWith(color: colorScheme.onSurface),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurface,
+                        ),
                       ),
                     ),
                   ],
@@ -225,8 +240,9 @@ class _CapabilityCard extends StatelessWidget {
               const SizedBox(height: 10),
               Text(
                 'Contact an administrator to assign lead permissions.',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: colorScheme.onSurfaceVariant),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
             ] else ...[
               if (canView)
@@ -263,14 +279,18 @@ class _CapabilityCard extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.warning_amber_rounded,
-                          size: 20, color: colorScheme.error),
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        size: 20,
+                        color: colorScheme.error,
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           'Viewing leads requires the view permission. Operational lead screens are unavailable without view permission.',
                           key: const Key(
-                              'user_lead_update_without_view_warning'),
+                            'user_lead_update_without_view_warning',
+                          ),
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: colorScheme.onErrorContainer,
                             fontWeight: FontWeight.w500,
@@ -299,40 +319,39 @@ class _AssignedLeadsBody extends StatelessWidget {
     return BlocBuilder<UserAssignedLeadsCubit, UserAssignedLeadsState>(
       builder: (context, state) => switch (state) {
         UserAssignedLeadsLoading() => const Center(
-            key: Key('user_assigned_leads_loading'),
-            child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 32),
-              child: CircularProgressIndicator(),
-            ),
+          key: Key('user_assigned_leads_loading'),
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 32),
+            child: CircularProgressIndicator(),
           ),
+        ),
         UserAssignedLeadsNoLink() => _InfoPanel(
-            key: const Key('user_assigned_leads_no_link'),
-            icon: Icons.link_off,
-            message:
-                'Your account has not been linked to a lead assignee identity.',
-            hint: 'Contact an administrator to configure your lead identity.',
-          ),
+          key: const Key('user_assigned_leads_no_link'),
+          icon: Icons.link_off,
+          message:
+              'Your account has not been linked to a lead assignee identity.',
+          hint: 'Contact an administrator to configure your lead identity.',
+        ),
         UserAssignedLeadsInvalidLink() => _InfoPanel(
-            key: const Key('user_assigned_leads_invalid_link'),
-            icon: Icons.warning_amber_rounded,
-            message:
-                'Lead assignment identity is not configured correctly for this account.',
-            hint: 'Contact an administrator.',
-            isWarning: true,
-          ),
+          key: const Key('user_assigned_leads_invalid_link'),
+          icon: Icons.warning_amber_rounded,
+          message:
+              'Lead assignment identity is not configured correctly for this account.',
+          hint: 'Contact an administrator.',
+          isWarning: true,
+        ),
         UserAssignedLeadsEmpty() => _InfoPanel(
-            key: const Key('user_assigned_leads_empty'),
-            icon: Icons.inbox_outlined,
-            message: 'No leads are currently assigned to you.',
-            hint: 'Check back later or contact your administrator.',
-          ),
+          key: const Key('user_assigned_leads_empty'),
+          icon: Icons.inbox_outlined,
+          message: 'No leads are currently assigned to you.',
+          hint: 'Check back later or contact your administrator.',
+        ),
         UserAssignedLeadsLoaded(:final leads) => _LeadList(leads: leads),
         UserAssignedLeadsFailure(:final message) => _FailurePanel(
-            key: const Key('user_assigned_leads_failure'),
-            message: message,
-            onRetry: () =>
-                context.read<UserAssignedLeadsCubit>().retry(),
-          ),
+          key: const Key('user_assigned_leads_failure'),
+          message: message,
+          onRetry: () => context.read<UserAssignedLeadsCubit>().retry(),
+        ),
       },
     );
   }
@@ -358,8 +377,7 @@ class _InfoPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
-    final color =
-        isWarning ? colorScheme.error : colorScheme.onSurfaceVariant;
+    final color = isWarning ? colorScheme.error : colorScheme.onSurfaceVariant;
     final bg = isWarning
         ? colorScheme.errorContainer.withValues(alpha: 0.3)
         : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5);
@@ -384,13 +402,19 @@ class _InfoPanel extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(message,
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(fontWeight: FontWeight.w500)),
+                Text(
+                  message,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text(hint,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: colorScheme.onSurfaceVariant)),
+                Text(
+                  hint,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ],
             ),
           ),
@@ -460,8 +484,9 @@ class _LeadCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final displayName =
-        (lead.name?.trim().isNotEmpty ?? false) ? lead.name! : 'Unnamed Lead';
+    final displayName = (lead.name?.trim().isNotEmpty ?? false)
+        ? lead.name!
+        : 'Unnamed Lead';
 
     return Card(
       key: Key('lead_card_${lead.id}'),
@@ -481,15 +506,17 @@ class _LeadCard extends StatelessWidget {
                 children: [
                   Text(
                     displayName,
-                    style: theme.textTheme.bodyLarge
-                        ?.copyWith(fontWeight: FontWeight.w600),
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   if (lead.phone != null || lead.email != null) ...[
                     const SizedBox(height: 4),
                     Text(
                       lead.phone ?? lead.email ?? '',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: colorScheme.onSurfaceVariant),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ],
@@ -497,8 +524,10 @@ class _LeadCard extends StatelessWidget {
             ),
             if (lead.status != null)
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: colorScheme.primaryContainer,
                   borderRadius: BorderRadius.circular(20),
@@ -544,8 +573,9 @@ class _CapabilityItem extends StatelessWidget {
           child: Text(
             label,
             key: itemKey,
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(fontWeight: FontWeight.w600),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],

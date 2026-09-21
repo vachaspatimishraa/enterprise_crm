@@ -45,7 +45,12 @@ void main() {
 
         await tester.pumpWidget(
           MaterialApp(
-            home: UserDashboardScreen(user: zeroModuleUser, onLogout: () {}),
+            home: UserDashboardScreen(
+              user: zeroModuleUser,
+              onLogout: () {},
+              userLeadLinkRepository: MockUserLeadLinkRepository(),
+              leadRepository: MockLeadRepository(),
+            ),
           ),
         );
         await tester.pumpAndSettle();
@@ -98,7 +103,12 @@ void main() {
         // 4. Verify updated modules on dashboard
         await tester.pumpWidget(
           MaterialApp(
-            home: UserDashboardScreen(user: updatedUser, onLogout: () {}),
+            home: UserDashboardScreen(
+              user: updatedUser,
+              onLogout: () {},
+              userLeadLinkRepository: MockUserLeadLinkRepository(),
+              leadRepository: MockLeadRepository(),
+            ),
           ),
         );
         await tester.pumpAndSettle();

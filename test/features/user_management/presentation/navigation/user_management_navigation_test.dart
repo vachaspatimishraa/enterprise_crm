@@ -1,5 +1,6 @@
 import 'package:enterprise_crm/app/crm_app.dart';
 import 'package:enterprise_crm/features/auth/data/repositories/mock_auth_repository.dart';
+import 'package:enterprise_crm/features/auth/data/repositories/mock_user_lead_link_repository.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/admin_dashboard_screen.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
 import 'package:enterprise_crm/features/user_management/data/repositories/mock_user_management_repository.dart';
@@ -64,6 +65,7 @@ void main() {
     late MockLeadRepository leadRepository;
     late MockAuthRepository authRepository;
     late MockUserManagementRepository userManagementRepository;
+    late MockUserLeadLinkRepository userLeadLinkRepository;
     late MockAccountStore accountStore;
 
     setUp(() {
@@ -73,6 +75,7 @@ void main() {
       userManagementRepository = MockUserManagementRepository(
         accountStore: accountStore,
       );
+      userLeadLinkRepository = MockUserLeadLinkRepository();
     });
 
     testWidgets(
@@ -83,6 +86,7 @@ void main() {
             leadRepository: leadRepository,
             authRepository: authRepository,
             userManagementRepository: userManagementRepository,
+            userLeadLinkRepository: userLeadLinkRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -224,6 +228,22 @@ void main() {
             leadRepository: leadRepository,
             authRepository: authRepository,
             userManagementRepository: null,
+            userLeadLinkRepository: userLeadLinkRepository,
+          ),
+          throwsAssertionError,
+        );
+      },
+    );
+
+    testWidgets(
+      'AUTH-3B.1: CrmApp asserts userLeadLinkRepository != null when auth is enabled',
+      (tester) async {
+        expect(
+          () => CrmApp(
+            leadRepository: leadRepository,
+            authRepository: authRepository,
+            userManagementRepository: userManagementRepository,
+            userLeadLinkRepository: null,
           ),
           throwsAssertionError,
         );
@@ -243,6 +263,7 @@ void main() {
             leadRepository: leadRepository,
             authRepository: authRepository,
             userManagementRepository: userManagementRepository,
+            userLeadLinkRepository: userLeadLinkRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -373,6 +394,7 @@ void main() {
             leadRepository: leadRepository,
             authRepository: authRepository,
             userManagementRepository: userManagementRepository,
+            userLeadLinkRepository: userLeadLinkRepository,
           ),
         );
         await tester.pumpAndSettle();

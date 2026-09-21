@@ -40,19 +40,20 @@ class _SpyLeadRepository implements LeadRepository {
   final List<Lead> _leads;
   final List<LeadAssignee> _assignees;
 
-  _SpyLeadRepository({
-    List<Lead>? leads,
-    List<LeadAssignee>? assignees,
-  })  : _leads = leads ?? [],
-        _assignees = assignees ??
-            const [LeadAssignee(id: 'agent-1', displayName: 'Mock Agent One')];
+  _SpyLeadRepository({List<Lead>? leads, List<LeadAssignee>? assignees})
+    : _leads = leads ?? [],
+      _assignees =
+          assignees ??
+          const [LeadAssignee(id: 'agent-1', displayName: 'Mock Agent One')];
 
   @override
   Future<LeadPage> getLeads([LeadQuery query = const LeadQuery()]) async {
     getLeadsCalls++;
     final filtered = query.assignedUserId == null
         ? _leads
-        : _leads.where((l) => l.assignedUserId == query.assignedUserId).toList();
+        : _leads
+              .where((l) => l.assignedUserId == query.assignedUserId)
+              .toList();
     return LeadPage(
       items: filtered,
       currentPage: 1,
@@ -76,24 +77,29 @@ class _SpyLeadRepository implements LeadRepository {
   @override
   Future<Lead> updateLead(UpdateLeadInput input) => throw UnimplementedError();
   @override
-  Future<void> assignLead({required String leadId, required String assigneeId}) async {}
+  Future<void> assignLead({
+    required String leadId,
+    required String assigneeId,
+  }) async {}
   @override
   Future<void> assignLeads(LeadAssignmentRequest request) async {}
   @override
   Future<void> reassignLead(LeadReassignmentRequest request) async {}
   @override
-  Future<LeadImportResult> importLeads(LeadImportRequest request) => throw UnimplementedError();
+  Future<LeadImportResult> importLeads(LeadImportRequest request) =>
+      throw UnimplementedError();
   @override
-  Future<LeadExportResult> exportLeads(LeadExportRequest request) => throw UnimplementedError();
+  Future<LeadExportResult> exportLeads(LeadExportRequest request) =>
+      throw UnimplementedError();
   @override
   Future<LeadSummary> getLeadSummary() async => const LeadSummary(
-        totalLeads: 0,
-        assignedLeads: 0,
-        unassignedLeads: 0,
-        manualLeads: 0,
-        excelLeads: 0,
-        csvLeads: 0,
-      );
+    totalLeads: 0,
+    assignedLeads: 0,
+    unassignedLeads: 0,
+    manualLeads: 0,
+    excelLeads: 0,
+    csvLeads: 0,
+  );
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────
@@ -128,12 +134,12 @@ const _validLink = UserLeadLink(
 );
 
 Lead _lead(String id, String assigneeId) => Lead(
-      id: id,
-      name: 'Lead $id',
-      source: LeadSource.manual,
-      assignedUserId: assigneeId,
-      assignedUserName: 'Agent',
-    );
+  id: id,
+  name: 'Lead $id',
+  source: LeadSource.manual,
+  assignedUserId: assigneeId,
+  assignedUserName: 'Agent',
+);
 
 // ── Tests ─────────────────────────────────────────────────────────────────
 

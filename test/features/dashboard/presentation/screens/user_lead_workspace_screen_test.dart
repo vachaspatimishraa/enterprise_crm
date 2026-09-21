@@ -100,7 +100,10 @@ void main() {
         expect(find.byType(UserLeadWorkspaceScreen), findsOneWidget);
         expect(find.text('Lead Management'), findsOneWidget); // AppBar title
         expect(find.text('YOUR ACCESS'), findsOneWidget);
-        expect(find.byKey(const Key('lead_perm_view_assigned')), findsOneWidget);
+        expect(
+          find.byKey(const Key('lead_perm_view_assigned')),
+          findsOneWidget,
+        );
         expect(find.text('View assigned leads'), findsOneWidget);
         expect(find.byKey(const Key('lead_perm_update')), findsOneWidget);
         expect(find.text('Update leads'), findsOneWidget);
@@ -108,7 +111,10 @@ void main() {
           find.byKey(const Key('user_lead_update_without_view_warning')),
           findsNothing,
         );
-        expect(find.byKey(const Key('user_lead_no_actions_message')), findsNothing);
+        expect(
+          find.byKey(const Key('user_lead_no_actions_message')),
+          findsNothing,
+        );
       },
     );
 
@@ -118,7 +124,10 @@ void main() {
         await tester.pumpWidget(_buildTestApp(_userWithViewOnly));
         await tester.pumpAndSettle();
 
-        expect(find.byKey(const Key('lead_perm_view_assigned')), findsOneWidget);
+        expect(
+          find.byKey(const Key('lead_perm_view_assigned')),
+          findsOneWidget,
+        );
         expect(find.text('View assigned leads'), findsOneWidget);
         expect(find.byKey(const Key('lead_perm_update')), findsNothing);
         expect(find.text('Update leads'), findsNothing);
@@ -228,22 +237,26 @@ void main() {
   // ── AUTH-3B.1 lead list states ──────────────────────────────────────────
 
   group('UserLeadWorkspaceScreen - Assigned Lead States (AUTH-3B.1)', () {
-    testWidgets(
-      'No link configured → shows no-link info panel',
-      (tester) async {
-        await tester.pumpWidget(_buildTestApp(_userWithViewOnly, linkRepo: _noLinkRepo));
-        await tester.pumpAndSettle();
+    testWidgets('No link configured → shows no-link info panel', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildTestApp(_userWithViewOnly, linkRepo: _noLinkRepo),
+      );
+      await tester.pumpAndSettle();
 
-        expect(find.byKey(const Key('user_assigned_leads_no_link')), findsOneWidget);
-        expect(
-          find.text(
-            'Your account has not been linked to a lead assignee identity.',
-          ),
-          findsOneWidget,
-        );
-        expect(find.byKey(const Key('user_assigned_leads_list')), findsNothing);
-      },
-    );
+      expect(
+        find.byKey(const Key('user_assigned_leads_no_link')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Your account has not been linked to a lead assignee identity.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('user_assigned_leads_list')), findsNothing);
+    });
 
     testWidgets(
       'Stale link → shows invalid-link warning panel, getLeads not called',
@@ -253,7 +266,10 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(find.byKey(const Key('user_assigned_leads_invalid_link')), findsOneWidget);
+        expect(
+          find.byKey(const Key('user_assigned_leads_invalid_link')),
+          findsOneWidget,
+        );
         expect(
           find.text(
             'Lead assignment identity is not configured correctly for this account.',
@@ -286,21 +302,20 @@ void main() {
       },
     );
 
-    testWidgets(
-      'Valid link with leads → shows read-only lead list',
-      (tester) async {
-        await tester.pumpWidget(_buildTestApp(_userWithViewOnly));
-        await tester.pumpAndSettle();
+    testWidgets('Valid link with leads → shows read-only lead list', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_buildTestApp(_userWithViewOnly));
+      await tester.pumpAndSettle();
 
-        // Default seed: usr_standard → agent-1 (Aarav Sharma, Vikram Joshi)
-        expect(find.byKey(const Key('user_assigned_leads_list')), findsOneWidget);
-        expect(find.text('Aarav Sharma'), findsOneWidget);
-        expect(find.text('Vikram Joshi'), findsOneWidget);
-        // Verify the capability section is still shown above the list
-        expect(find.text('YOUR ACCESS'), findsOneWidget);
-        expect(find.text('MY ASSIGNED LEADS'), findsOneWidget);
-      },
-    );
+      // Default seed: usr_standard → agent-1 (Aarav Sharma, Vikram Joshi)
+      expect(find.byKey(const Key('user_assigned_leads_list')), findsOneWidget);
+      expect(find.text('Aarav Sharma'), findsOneWidget);
+      expect(find.text('Vikram Joshi'), findsOneWidget);
+      // Verify the capability section is still shown above the list
+      expect(find.text('YOUR ACCESS'), findsOneWidget);
+      expect(find.text('MY ASSIGNED LEADS'), findsOneWidget);
+    });
 
     testWidgets(
       'Lead list shows no edit or create buttons — strictly read-only',
@@ -317,7 +332,6 @@ void main() {
         expect(find.text('Create'), findsNothing);
       },
     );
-
   });
 
   // ── Responsiveness ─────────────────────────────────────────────────────
@@ -329,7 +343,9 @@ void main() {
       Size(768, 1024),
       Size(1200, 800),
     ]) {
-      testWidgets('Renders cleanly on ${size.width}x${size.height}', (tester) async {
+      testWidgets('Renders cleanly on ${size.width}x${size.height}', (
+        tester,
+      ) async {
         tester.view.physicalSize = size;
         tester.view.devicePixelRatio = 1.0;
         addTearDown(tester.view.resetPhysicalSize);

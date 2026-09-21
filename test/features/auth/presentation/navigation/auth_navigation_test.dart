@@ -1,5 +1,6 @@
 import 'package:enterprise_crm/app/crm_app.dart';
 import 'package:enterprise_crm/features/auth/data/repositories/mock_auth_repository.dart';
+import 'package:enterprise_crm/features/auth/data/repositories/mock_user_lead_link_repository.dart';
 import 'package:enterprise_crm/features/auth/presentation/screens/login_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/admin_dashboard_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_dashboard_screen.dart';
@@ -16,6 +17,7 @@ void main() {
     late MockLeadRepository leadRepository;
     late MockAuthRepository authRepository;
     late MockUserManagementRepository userManagementRepository;
+    late MockUserLeadLinkRepository userLeadLinkRepository;
     late MockAccountStore accountStore;
 
     setUp(() {
@@ -25,6 +27,7 @@ void main() {
       userManagementRepository = MockUserManagementRepository(
         accountStore: accountStore,
       );
+      userLeadLinkRepository = MockUserLeadLinkRepository();
     });
 
     testWidgets(
@@ -35,6 +38,7 @@ void main() {
             leadRepository: leadRepository,
             authRepository: authRepository,
             userManagementRepository: userManagementRepository,
+            userLeadLinkRepository: userLeadLinkRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -59,6 +63,7 @@ void main() {
             leadRepository: leadRepository,
             authRepository: authRepository,
             userManagementRepository: userManagementRepository,
+            userLeadLinkRepository: userLeadLinkRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -114,6 +119,7 @@ void main() {
             leadRepository: leadRepository,
             authRepository: authRepository,
             userManagementRepository: userManagementRepository,
+            userLeadLinkRepository: userLeadLinkRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -164,6 +170,7 @@ void main() {
             leadRepository: leadRepository,
             authRepository: authRepository,
             userManagementRepository: userManagementRepository,
+            userLeadLinkRepository: userLeadLinkRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -212,6 +219,7 @@ void main() {
             leadRepository: leadRepository,
             authRepository: authRepository,
             userManagementRepository: userManagementRepository,
+            userLeadLinkRepository: userLeadLinkRepository,
           ),
         );
         await tester.pumpAndSettle();

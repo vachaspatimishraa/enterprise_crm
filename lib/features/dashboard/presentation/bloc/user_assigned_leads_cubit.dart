@@ -29,10 +29,10 @@ class UserAssignedLeadsCubit extends Cubit<UserAssignedLeadsState> {
     required CurrentUser user,
     required UserLeadLinkRepository linkRepository,
     required LeadRepository leadRepository,
-  })  : _user = user,
-        _linkRepository = linkRepository,
-        _leadRepository = leadRepository,
-        super(const UserAssignedLeadsLoading());
+  }) : _user = user,
+       _linkRepository = linkRepository,
+       _leadRepository = leadRepository,
+       super(const UserAssignedLeadsLoading());
 
   /// Runs the full authorization + resolution pipeline and emits the
   /// appropriate terminal state.
@@ -45,13 +45,19 @@ class UserAssignedLeadsCubit extends Cubit<UserAssignedLeadsState> {
     // 1. Module access guard — no repository calls if module is not assigned.
     if (!AccessPolicy.canAccessModule(_user, CrmModule.leadManagement)) {
       // This path is normally blocked at the widget level; Cubit is defensive.
-      emit(const UserAssignedLeadsFailure('Lead Management module not assigned.'));
+      emit(
+        const UserAssignedLeadsFailure('Lead Management module not assigned.'),
+      );
       return;
     }
 
     // 2. Permission guard — link + lead repos must not be touched without view.
     if (!AccessPolicy.hasPermission(_user, CrmPermissions.leadViewAssigned)) {
-      emit(const UserAssignedLeadsFailure('lead.view_assigned permission not granted.'));
+      emit(
+        const UserAssignedLeadsFailure(
+          'lead.view_assigned permission not granted.',
+        ),
+      );
       return;
     }
 
@@ -65,9 +71,7 @@ class UserAssignedLeadsCubit extends Cubit<UserAssignedLeadsState> {
 
       // 4. Validate that the mapped assignee exists in the Lead domain.
       final assignees = await _leadRepository.getAssignableUsers();
-      final assigneeExists = assignees.any(
-        (a) => a.id == link.leadAssigneeId,
-      );
+      final assigneeExists = assignees.any((a) => a.id == link.leadAssigneeId);
       if (!assigneeExists) {
         emit(UserAssignedLeadsInvalidLink(link.leadAssigneeId));
         return;
@@ -89,7 +93,9 @@ class UserAssignedLeadsCubit extends Cubit<UserAssignedLeadsState> {
         );
       }
     } catch (e) {
-      emit(UserAssignedLeadsFailure(e.toString().replaceAll('Exception: ', '')));
+      emit(
+        UserAssignedLeadsFailure(e.toString().replaceAll('Exception: ', '')),
+      );
     }
   }
 

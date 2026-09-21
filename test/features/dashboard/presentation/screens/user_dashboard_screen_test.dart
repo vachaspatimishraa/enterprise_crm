@@ -1,6 +1,10 @@
+import 'package:enterprise_crm/features/auth/data/repositories/mock_user_lead_link_repository.dart';
+import 'package:enterprise_crm/features/auth/domain/repositories/user_lead_link_repository.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/module_placeholder_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_dashboard_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_lead_placeholder_screen.dart';
+import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
+import 'package:enterprise_crm/features/leads/domain/repositories/lead_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -9,6 +13,8 @@ import '../../../../helpers/mock_auth_test_fixtures.dart';
 Widget _buildUserDashboardTestApp({
   VoidCallback? onLogout,
   ThemeMode themeMode = ThemeMode.light,
+  UserLeadLinkRepository? linkRepository,
+  LeadRepository? leadRepository,
 }) {
   return MaterialApp(
     theme: ThemeData(useMaterial3: true, brightness: Brightness.light),
@@ -17,6 +23,8 @@ Widget _buildUserDashboardTestApp({
     home: UserDashboardScreen(
       user: MockAuthTestFixtures.standardUser,
       onLogout: onLogout ?? () {},
+      userLeadLinkRepository: linkRepository ?? MockUserLeadLinkRepository(),
+      leadRepository: leadRepository ?? MockLeadRepository(),
     ),
   );
 }
@@ -67,7 +75,10 @@ void main() {
         expect(find.byType(UserLeadPlaceholderScreen), findsOneWidget);
         // New screen shows YOUR ACCESS capability section; old placeholder text removed
         expect(find.text('YOUR ACCESS'), findsOneWidget);
-        expect(find.byKey(const Key('user_lead_workspace_screen')), findsOneWidget);
+        expect(
+          find.byKey(const Key('user_lead_workspace_screen')),
+          findsOneWidget,
+        );
 
         // Tap Back to return to User Dashboard
         await tester.tap(find.text('Back to Dashboard'));

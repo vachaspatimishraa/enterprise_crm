@@ -45,6 +45,10 @@ class CrmApp extends StatefulWidget {
   }) : assert(
          authRepository == null || userManagementRepository != null,
          'userManagementRepository must be provided when authRepository is enabled',
+       ),
+       assert(
+         authRepository == null || userLeadLinkRepository != null,
+         'userLeadLinkRepository must be provided when authRepository is enabled',
        );
 
   @override
@@ -118,8 +122,7 @@ class _CrmAppState extends State<CrmApp> {
                   return UserDashboardScreen(
                     user: user,
                     onLogout: () => _authCubit!.logout(),
-                    userLeadLinkRepository:
-                        widget.userLeadLinkRepository,
+                    userLeadLinkRepository: widget.userLeadLinkRepository!,
                     leadRepository: widget.leadRepository,
                   );
                 }

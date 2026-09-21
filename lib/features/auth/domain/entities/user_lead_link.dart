@@ -11,10 +11,7 @@ class UserLeadLink {
   final String crmUserId;
   final String leadAssigneeId;
 
-  const UserLeadLink({
-    required this.crmUserId,
-    required this.leadAssigneeId,
-  });
+  const UserLeadLink({required this.crmUserId, required this.leadAssigneeId});
 
   @override
   bool operator ==(Object other) =>

@@ -11,7 +11,8 @@ class MockUserLeadLinkRepository implements UserLeadLinkRepository {
   final Map<String, String> _links;
 
   MockUserLeadLinkRepository({Map<String, String>? links})
-      : _links = links ?? const {'usr_standard': 'agent-1'};
+    : _links =
+          links ?? const {'usr_standard': 'agent-1', 'user': 'agent-1'};
 
   @override
   Future<UserLeadLink?> getLinkForUser(String crmUserId) {

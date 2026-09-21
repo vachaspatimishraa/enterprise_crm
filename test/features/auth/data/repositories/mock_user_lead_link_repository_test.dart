@@ -12,6 +12,14 @@ void main() {
       expect(link.leadAssigneeId, 'agent-1');
     });
 
+    test('seeded: user login id resolves to agent-1', () async {
+      final repo = MockUserLeadLinkRepository();
+      final link = await repo.getLinkForUser('user');
+      expect(link, isNotNull);
+      expect(link!.crmUserId, 'user');
+      expect(link.leadAssigneeId, 'agent-1');
+    });
+
     test('seeded: unknown user returns null', () async {
       final repo = MockUserLeadLinkRepository();
       expect(await repo.getLinkForUser('usr_admin'), isNull);
@@ -22,8 +30,13 @@ void main() {
       final repo = MockUserLeadLinkRepository(
         links: {'custom_user': 'agent-99'},
       );
-      expect(await repo.getLinkForUser('custom_user'),
-          const UserLeadLink(crmUserId: 'custom_user', leadAssigneeId: 'agent-99'));
+      expect(
+        await repo.getLinkForUser('custom_user'),
+        const UserLeadLink(
+          crmUserId: 'custom_user',
+          leadAssigneeId: 'agent-99',
+        ),
+      );
       expect(await repo.getLinkForUser('usr_standard'), isNull);
     });
 

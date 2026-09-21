@@ -46,8 +46,7 @@ final class UserAssignedLeadsEmpty extends UserAssignedLeadsState {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is UserAssignedLeadsEmpty &&
-          leadAssigneeId == other.leadAssigneeId;
+      other is UserAssignedLeadsEmpty && leadAssigneeId == other.leadAssigneeId;
 
   @override
   int get hashCode => leadAssigneeId.hashCode;

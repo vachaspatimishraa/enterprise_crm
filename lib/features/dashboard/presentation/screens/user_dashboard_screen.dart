@@ -15,15 +15,15 @@ import 'user_lead_placeholder_screen.dart';
 class UserDashboardScreen extends StatelessWidget {
   final CurrentUser user;
   final VoidCallback onLogout;
-  final UserLeadLinkRepository? userLeadLinkRepository;
-  final LeadRepository? leadRepository;
+  final UserLeadLinkRepository userLeadLinkRepository;
+  final LeadRepository leadRepository;
 
   const UserDashboardScreen({
     super.key,
     required this.user,
     required this.onLogout,
-    this.userLeadLinkRepository,
-    this.leadRepository,
+    required this.userLeadLinkRepository,
+    required this.leadRepository,
   });
 
   void _openModule(BuildContext context, CrmModule module) {
