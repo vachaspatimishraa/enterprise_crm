@@ -273,3 +273,82 @@ INVENTORY-2 adds the first Inventory write workflow while strictly preserving th
 - Pricing
 - Tax / GST / HSN
 - Backend integration
+
+---
+
+## 10. INVENTORY-3 — STOCK MOVEMENT BUSINESS FREEZE
+**Status: FROZEN**
+
+### 10.1 Overview & Scope
+INVENTORY-3 introduces the first operational stock-changing workflows:
+- One-time Opening Stock (Admin only, 0-movement items only, quantity > 0)
+- Manual Stock Adjustment (Admin only, initialized items only, Increase/Decrease UI with positive magnitude mapped to signed quantityDelta, required non-blank free-text reason)
+- Strict non-negative resulting stock enforcement
+- Movement-ledger-based quantity updates (`SUM(StockMovement.quantityDelta)`)
+- Actor (`performedByUserId` from `CurrentUser.id`) and timestamp audit data for new movements
+- Immediate quantity refresh on Inventory Details and Workspace
+- Stock Movement History UI is deferred to INVENTORY-4
+- Standard Users remain strictly read-only with pre-Cubit mutation route security
+
+### 10.2 Decision Matrix (Approved & Frozen)
+
+| Decision | Status | Frozen Rule |
+|---|---|---|
+| Current stock source of truth | **FROZEN** | `SUM(StockMovement.quantityDelta)` — derived dynamically, never stored on `InventoryItem`. |
+| Direct quantity editing | **FROZEN** | Strictly prohibited. No `setQuantity` or inline quantity field on item master. |
+| Location model | **FROZEN** | Single aggregate inventory location. No warehouse, room, or bin models. |
+| Opening stock supported | **FROZEN** | Supported. Admin can record an initial opening stock movement for items. |
+| Opening stock allowed once | **FROZEN** | Allowed ONCE per item. Prohibited if item already has any movements in ledger. (Eligibility uses movement history, NOT quantity == 0). |
+| Opening stock zero allowed | **FROZEN** | Rejected (quantity must be finite and > 0). New items already default to 0.0 with 0 movements. |
+| Negative opening stock | **FROZEN** | Strictly rejected (quantity must be finite and > 0). |
+| Manual adjustment supported | **FROZEN** | Supported. Admin only. Available only on initialized items (1+ existing movements). |
+| Positive adjustment | **FROZEN** | Supported (increases physical stock on hand). |
+| Negative adjustment | **FROZEN** | Supported (decreases physical stock on hand). |
+| Negative final stock policy | **FROZEN** | Strictly prohibited. `currentQuantity + quantityDelta >= 0` required. Rejected without clamping or partial application. |
+| Zero adjustment | **FROZEN** | Rejected (delta must be finite and != 0). Zero delta is a no-op. |
+| Decimal quantity | **FROZEN** | Supported using standard `double`. No external decimal dependencies. |
+| Adjustment direction UI | **FROZEN** | Direction selector (Increase / Decrease) + positive quantity in UI; mapped to signed delta in domain input. |
+| Reason required | **FROZEN** | Required trimmed non-blank free-text string for manual adjustments. Not required for opening stock (`reason = null`). |
+| Reason type | **FROZEN** | Free text. No predefined reason enums in this phase. |
+| Actor recorded (`performedByUserId`) | **FROZEN** | Required on new movements; populated automatically from authenticated `CurrentUser.id`. Legacy seed movements have null actor. |
+| Timestamp recorded (`createdAt`) | **FROZEN** | Injected via deterministic `DateTime Function()`. Legacy seed movements preserved. |
+| History UI in INVENTORY-3 | **FROZEN** | Deferred to INVENTORY-4. INVENTORY-3 does not implement movement history UI. |
+| Stock mutations Admin-only | **FROZEN** | Admin only. Standard Users remain strictly read-only. Pre-Cubit guards on direct routes. |
+| New Inventory permissions | **FROZEN** | None. Do NOT invent `inventory.adjust` or `inventory.create`. Managed via centralized `InventoryStockManagementPolicy`. |
+| Warehouse dimension | **DEFERRED** | Preserved deferred. Single aggregate stock only. |
+| Purchase & Dispatch integration | **DEFERRED** | Preserved deferred. No purchase receipt or dispatch movement types. |
+| Pricing / Cost / Tax / Currency | **DEFERRED** | Preserved deferred. Movements track unit quantities only. |
+| Delete / Archive items | **DEFERRED** | Preserved deferred. Items cannot be deleted or archived. |
+
+### 10.3 Invariants & Operational Rules
+
+#### 1. Opening Stock Rules
+- Admin only.
+- Separate post-creation operation (not part of Create Item screen).
+- Eligibility check: Item has ZERO existing `StockMovement` records (`hasStockMovements == false`).
+- Must NOT use `quantityOnHand == 0` as eligibility test (e.g. an item adjusted to 0 has movements, so opening stock is unavailable).
+- Finite quantity > 0 required.
+- Appends exactly one `StockMovementType.openingStock` movement with `performedByUserId = currentUser.id`, `reason = null`.
+
+#### 2. Manual Stock Adjustment Rules
+- Admin only.
+- Available ONLY on items that already have stock movement history (1+ existing movements).
+- UI presents Direction (Increase / Decrease) and positive numeric magnitude.
+- Mapped to signed `quantityDelta` in domain input (+magnitude for Increase, -magnitude for Decrease).
+- Finite, non-zero magnitude required.
+- Free-text reason mandatory: trimmed, non-blank.
+- Appends exactly one `StockMovementType.adjustment` movement with `performedByUserId = currentUser.id`, `reason = trimmed reason`.
+
+#### 3. Strict Non-Negative Stock & Concurrency Invariant
+- Repository invariant: `currentQuantity + quantityDelta >= 0`.
+- The repository mutation operation must atomically:
+  1. Re-derive current quantity from movement ledger.
+  2. Validate requested operation against current balance.
+  3. Append exactly one movement record.
+  4. Re-derive updated summary and return mutation result.
+- Client-side validation is non-authoritative; repository independently enforces balance at the write boundary.
+
+#### 4. Legacy Seed Compatibility
+- Existing seed movements created before actor/reason auditing remain valid with `performedByUserId = null` and `reason = null`.
+- Seed items with opening movements are treated as initialized (`hasStockMovements == true`), so `[Set Opening Stock]` is unavailable and `[Adjust Stock]` is available.
+- New operational movements require `performedByUserId` and follow the frozen rules.
