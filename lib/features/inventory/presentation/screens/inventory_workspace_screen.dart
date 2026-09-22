@@ -8,11 +8,13 @@ import '../../../auth/domain/policies/crm_permissions.dart';
 import '../../../auth/presentation/screens/access_restricted_screen.dart';
 import '../../domain/entities/inventory_item_summary.dart';
 import '../../domain/entities/inventory_sort.dart';
+import '../../domain/policies/inventory_item_administration_policy.dart';
 import '../../domain/repositories/inventory_repository.dart';
 import '../bloc/inventory_cubit.dart';
 import '../bloc/inventory_state.dart';
 import '../utils/inventory_display_formatters.dart';
 import '../widgets/inventory_pagination_controls.dart';
+import 'create_inventory_item_screen.dart';
 import 'inventory_item_details_screen.dart';
 
 /// Workspace and item list screen for the Inventory module.
@@ -67,7 +69,23 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
     super.dispose();
   }
 
+  void _openCreateItem(BuildContext context) async {
+    final cubit = context.read<InventoryCubit>();
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => CreateInventoryItemScreen(
+          user: widget.user,
+          repository: widget.repository,
+        ),
+      ),
+    );
+    if (created == true && mounted) {
+      cubit.refresh();
+    }
+  }
+
   void _openDetails(BuildContext context, String itemId) async {
+    final cubit = context.read<InventoryCubit>();
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => InventoryItemDetailsScreen(
@@ -77,6 +95,9 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
         ),
       ),
     );
+    if (mounted) {
+      cubit.refresh();
+    }
   }
 
   @override
@@ -200,23 +221,43 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
             ),
           );
 
+          final canManage = InventoryItemAdministrationPolicy.canManage(
+            widget.user,
+          );
+
           if (isCompact) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 searchWidget,
                 const SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    Text(
-                      'Sort by:',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Sort by:',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        sortWidget,
+                      ],
                     ),
-                    sortWidget,
+                    if (canManage)
+                      FilledButton.icon(
+                        key: const Key('inventory_workspace_add_item_button'),
+                        onPressed: () => _openCreateItem(context),
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Add Item'),
+                      ),
                   ],
                 ),
               ],
@@ -228,6 +269,15 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
               Expanded(child: searchWidget),
               const SizedBox(width: 16),
               sortWidget,
+              if (canManage) ...[
+                const SizedBox(width: 16),
+                FilledButton.icon(
+                  key: const Key('inventory_workspace_add_item_button'),
+                  onPressed: () => _openCreateItem(context),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Add Item'),
+                ),
+              ],
             ],
           );
         },

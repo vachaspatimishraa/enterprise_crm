@@ -2,6 +2,8 @@ import 'package:enterprise_crm/features/inventory/data/repositories/mock_invento
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_item_summary.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_page.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_query.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/create_inventory_item_input.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/update_inventory_item_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/repositories/inventory_repository.dart';
 import 'package:enterprise_crm/features/inventory/presentation/bloc/inventory_item_details_cubit.dart';
 import 'package:enterprise_crm/features/inventory/presentation/bloc/inventory_item_details_state.dart';
@@ -15,6 +17,16 @@ class _FailingInventoryRepository implements InventoryRepository {
 
   @override
   Future<InventoryItemSummary?> getItemById(String id) {
+    throw Exception('Database connection failed');
+  }
+
+  @override
+  Future<InventoryItemSummary> createItem(CreateInventoryItemInput input) {
+    throw Exception('Database connection failed');
+  }
+
+  @override
+  Future<InventoryItemSummary> updateItem(UpdateInventoryItemInput input) {
     throw Exception('Database connection failed');
   }
 }

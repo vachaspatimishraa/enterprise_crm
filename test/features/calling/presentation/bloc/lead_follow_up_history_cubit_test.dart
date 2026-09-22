@@ -63,7 +63,10 @@ void main() {
         displayName: 'No Calling',
         accountType: AccountType.user,
         modules: {CrmModule.leadManagement},
-        permissions: {CrmPermissions.callingUse, CrmPermissions.leadViewAssigned},
+        permissions: {
+          CrmPermissions.callingUse,
+          CrmPermissions.leadViewAssigned,
+        },
       );
 
       final cubit = LeadFollowUpHistoryCubit(
@@ -105,7 +108,10 @@ void main() {
         displayName: 'No Lead Mod',
         accountType: AccountType.user,
         modules: {CrmModule.calling},
-        permissions: {CrmPermissions.callingUse, CrmPermissions.leadViewAssigned},
+        permissions: {
+          CrmPermissions.callingUse,
+          CrmPermissions.leadViewAssigned,
+        },
       );
 
       final cubit = LeadFollowUpHistoryCubit(
@@ -183,36 +189,39 @@ void main() {
       expect(cubit.state, isA<LeadFollowUpHistoryEmpty>());
     });
 
-    test('authorized user with follow-ups and events emits Loaded state', () async {
-      final fu = await followUpRepo.createFollowUp(
-        leadId: testLead.id,
-        sourceCallActivityId: 'act-1',
-        scheduledAt: DateTime(2026, 9, 22, 11, 0),
-        performedByUserId: 'usr-standard-1',
-      );
+    test(
+      'authorized user with follow-ups and events emits Loaded state',
+      () async {
+        final fu = await followUpRepo.createFollowUp(
+          leadId: testLead.id,
+          sourceCallActivityId: 'act-1',
+          scheduledAt: DateTime(2026, 9, 22, 11, 0),
+          performedByUserId: 'usr-standard-1',
+        );
 
-      await followUpRepo.rescheduleFollowUp(
-        followUpId: fu.id,
-        scheduledAt: DateTime(2026, 9, 23, 15, 0),
-        performedByUserId: 'usr-standard-1',
-      );
+        await followUpRepo.rescheduleFollowUp(
+          followUpId: fu.id,
+          scheduledAt: DateTime(2026, 9, 23, 15, 0),
+          performedByUserId: 'usr-standard-1',
+        );
 
-      final cubit = LeadFollowUpHistoryCubit(
-        user: authorizedUser,
-        leadId: testLead.id,
-        linkRepository: linkRepo,
-        leadRepository: leadRepo,
-        followUpRepository: followUpRepo,
-      );
+        final cubit = LeadFollowUpHistoryCubit(
+          user: authorizedUser,
+          leadId: testLead.id,
+          linkRepository: linkRepo,
+          leadRepository: leadRepo,
+          followUpRepository: followUpRepo,
+        );
 
-      await cubit.loadHistory();
+        await cubit.loadHistory();
 
-      expect(cubit.state, isA<LeadFollowUpHistoryLoaded>());
-      final loaded = cubit.state as LeadFollowUpHistoryLoaded;
-      expect(loaded.items.length, 1);
-      expect(loaded.items.first.followUp.id, fu.id);
-      expect(loaded.items.first.followUp.status, FollowUpStatus.pending);
-      expect(loaded.items.first.events.length, 2);
-    });
+        expect(cubit.state, isA<LeadFollowUpHistoryLoaded>());
+        final loaded = cubit.state as LeadFollowUpHistoryLoaded;
+        expect(loaded.items.length, 1);
+        expect(loaded.items.first.followUp.id, fu.id);
+        expect(loaded.items.first.followUp.status, FollowUpStatus.pending);
+        expect(loaded.items.first.events.length, 2);
+      },
+    );
   });
 }

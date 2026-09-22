@@ -6,6 +6,9 @@ import '../../domain/entities/inventory_page.dart';
 import '../../domain/entities/inventory_query.dart';
 import '../../domain/entities/inventory_sort.dart';
 import '../../domain/entities/stock_movement.dart';
+import '../../domain/exceptions/inventory_exception.dart';
+import '../../domain/inputs/create_inventory_item_input.dart';
+import '../../domain/inputs/update_inventory_item_input.dart';
 import '../../domain/repositories/inventory_repository.dart';
 import '../mock/mock_inventory_seed_data.dart';
 
@@ -49,6 +52,29 @@ class MockInventoryRepository implements InventoryRepository {
     return _movements
         .where((m) => m.inventoryItemId == itemId)
         .fold(0.0, (sum, m) => sum + m.quantityDelta);
+  }
+
+  String _generateNextDeterministicId() {
+    final regex = RegExp(r'^item_(\d+)$');
+    int maxNumber = 0;
+    for (final item in _items) {
+      final match = regex.firstMatch(item.id);
+      if (match != null) {
+        final num = int.tryParse(match.group(1) ?? '') ?? 0;
+        if (num > maxNumber) {
+          maxNumber = num;
+        }
+      }
+    }
+
+    int candidateNumber = maxNumber + 1;
+    while (true) {
+      final candidateId = 'item_${candidateNumber.toString().padLeft(3, '0')}';
+      if (!_items.any((item) => item.id == candidateId)) {
+        return candidateId;
+      }
+      candidateNumber++;
+    }
   }
 
   @override
@@ -141,6 +167,90 @@ class MockInventoryRepository implements InventoryRepository {
     return InventoryItemSummary(
       item: item,
       quantityOnHand: _deriveQuantityOnHand(item.id),
+    );
+  }
+
+  @override
+  Future<InventoryItemSummary> createItem(
+    CreateInventoryItemInput input,
+  ) async {
+    final trimmedName = input.name.trim();
+    final trimmedSku = input.sku.trim();
+
+    if (trimmedName.isEmpty) {
+      throw const InventoryValidationException('Item name cannot be blank.');
+    }
+    if (trimmedSku.isEmpty) {
+      throw const InventoryValidationException('Item SKU cannot be blank.');
+    }
+
+    final normalizedCandidateSku = trimmedSku.toLowerCase();
+    if (_items.any(
+      (item) => item.sku.trim().toLowerCase() == normalizedCandidateSku,
+    )) {
+      throw InventoryDuplicateSkuException(
+        'An item with SKU "$trimmedSku" already exists.',
+      );
+    }
+
+    final id = _generateNextDeterministicId();
+    final newItem = InventoryItem(id: id, name: trimmedName, sku: trimmedSku);
+
+    _items.add(newItem);
+
+    // Invariant: Do NOT create any StockMovement; quantityOnHand is derived as 0.0.
+    return InventoryItemSummary(
+      item: newItem,
+      quantityOnHand: _deriveQuantityOnHand(id),
+    );
+  }
+
+  @override
+  Future<InventoryItemSummary> updateItem(
+    UpdateInventoryItemInput input,
+  ) async {
+    final trimmedName = input.name.trim();
+    final trimmedSku = input.sku.trim();
+
+    if (trimmedName.isEmpty) {
+      throw const InventoryValidationException('Item name cannot be blank.');
+    }
+    if (trimmedSku.isEmpty) {
+      throw const InventoryValidationException('Item SKU cannot be blank.');
+    }
+
+    final existingIndex = _items.indexWhere((item) => item.id == input.id);
+    if (existingIndex == -1) {
+      throw InventoryItemNotFoundException(
+        'Inventory item with ID "${input.id}" not found.',
+      );
+    }
+
+    final normalizedCandidateSku = trimmedSku.toLowerCase();
+    final hasDuplicateOtherSku = _items.any(
+      (item) =>
+          item.id != input.id &&
+          item.sku.trim().toLowerCase() == normalizedCandidateSku,
+    );
+
+    if (hasDuplicateOtherSku) {
+      throw InventoryDuplicateSkuException(
+        'An item with SKU "$trimmedSku" already exists.',
+      );
+    }
+
+    final updatedItem = InventoryItem(
+      id: input.id,
+      name: trimmedName,
+      sku: trimmedSku,
+    );
+
+    _items[existingIndex] = updatedItem;
+
+    // Invariant: _movements is untouched; quantityOnHand is strictly preserved.
+    return InventoryItemSummary(
+      item: updatedItem,
+      quantityOnHand: _deriveQuantityOnHand(input.id),
     );
   }
 }

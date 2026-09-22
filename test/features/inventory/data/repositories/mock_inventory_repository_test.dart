@@ -4,6 +4,9 @@ import 'package:enterprise_crm/features/inventory/domain/entities/inventory_quer
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_sort.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/stock_movement.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/stock_movement_type.dart';
+import 'package:enterprise_crm/features/inventory/domain/exceptions/inventory_exception.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/create_inventory_item_input.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/update_inventory_item_input.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -262,6 +265,297 @@ void main() {
         final item = await repo.getItemById('non_existent_id');
 
         expect(item, isNull);
+      });
+    });
+
+    group('createItem', () {
+      test(
+        'creates item with trimmed name and SKU, deterministic ID, and derived quantity = 0',
+        () async {
+          final repo = MockInventoryRepository();
+          final created = await repo.createItem(
+            const CreateInventoryItemInput(
+              name: '  Ergonomic Keyboard  ',
+              sku: '  KB-999  ',
+            ),
+          );
+
+          expect(created.item.id, 'item_026');
+          expect(created.item.name, 'Ergonomic Keyboard');
+          expect(created.item.sku, 'KB-999');
+          expect(created.quantityOnHand, 0.0);
+
+          final fetched = await repo.getItemById('item_026');
+          expect(fetched, isNotNull);
+          expect(fetched?.item.name, 'Ergonomic Keyboard');
+          expect(fetched?.item.sku, 'KB-999');
+          expect(fetched?.quantityOnHand, 0.0);
+        },
+      );
+
+      test(
+        'generated ID is collision-safe when higher sequential ID exists',
+        () async {
+          final customItems = [
+            InventoryItem(id: 'item_001', name: 'Product A', sku: 'SKU-001'),
+            InventoryItem(id: 'item_002', name: 'Product B', sku: 'SKU-002'),
+            InventoryItem(id: 'item_003', name: 'Product C', sku: 'SKU-003'),
+          ];
+          final repo = MockInventoryRepository(
+            items: customItems,
+            movements: [],
+          );
+          final created = await repo.createItem(
+            const CreateInventoryItemInput(name: 'Product D', sku: 'SKU-004'),
+          );
+          expect(created.item.id, 'item_004');
+        },
+      );
+
+      test('generated ID skips existing IDs to prevent collision', () async {
+        final customItems = [
+          InventoryItem(id: 'item_001', name: 'Product A', sku: 'SKU-001'),
+          InventoryItem(id: 'item_003', name: 'Product C', sku: 'SKU-003'),
+        ];
+        final repo = MockInventoryRepository(items: customItems, movements: []);
+        final created = await repo.createItem(
+          const CreateInventoryItemInput(name: 'Product B', sku: 'SKU-002'),
+        );
+        expect(created.item.id, 'item_004');
+      });
+
+      test('no stock movement is created when an item is created', () async {
+        final repo = MockInventoryRepository();
+        await repo.createItem(
+          const CreateInventoryItemInput(name: 'New Product', sku: 'NP-001'),
+        );
+        final page = await repo.getItems(
+          const InventoryQuery(searchText: 'NP-001'),
+        );
+        expect(page.items.length, 1);
+        expect(page.items.first.quantityOnHand, 0.0);
+      });
+
+      test('rejects blank name with InventoryValidationException', () async {
+        final repo = MockInventoryRepository();
+        expect(
+          () => repo.createItem(
+            const CreateInventoryItemInput(name: '   ', sku: 'VALID-SKU'),
+          ),
+          throwsA(isA<InventoryValidationException>()),
+        );
+      });
+
+      test('rejects blank SKU with InventoryValidationException', () async {
+        final repo = MockInventoryRepository();
+        expect(
+          () => repo.createItem(
+            const CreateInventoryItemInput(name: 'Valid Name', sku: '   '),
+          ),
+          throwsA(isA<InventoryValidationException>()),
+        );
+      });
+
+      test(
+        'rejects exact duplicate SKU with InventoryDuplicateSkuException',
+        () async {
+          final repo = MockInventoryRepository();
+          expect(
+            () => repo.createItem(
+              const CreateInventoryItemInput(name: 'New Name', sku: 'INV-001'),
+            ),
+            throwsA(isA<InventoryDuplicateSkuException>()),
+          );
+        },
+      );
+
+      test(
+        'rejects case-insensitive and whitespace-padded duplicate SKU',
+        () async {
+          final repo = MockInventoryRepository();
+          expect(
+            () => repo.createItem(
+              const CreateInventoryItemInput(
+                name: 'New Name',
+                sku: '  inv-001  ',
+              ),
+            ),
+            throwsA(isA<InventoryDuplicateSkuException>()),
+          );
+        },
+      );
+    });
+
+    group('updateItem', () {
+      test(
+        'updates item name and SKU successfully with trimmed values',
+        () async {
+          final repo = MockInventoryRepository();
+          final updated = await repo.updateItem(
+            const UpdateInventoryItemInput(
+              id: 'item_001',
+              name: '  Updated Laptop Stand  ',
+              sku: '  INV-001-MOD  ',
+            ),
+          );
+
+          expect(updated.item.id, 'item_001');
+          expect(updated.item.name, 'Updated Laptop Stand');
+          expect(updated.item.sku, 'INV-001-MOD');
+          expect(updated.quantityOnHand, 25.0);
+
+          final fetched = await repo.getItemById('item_001');
+          expect(fetched?.item.name, 'Updated Laptop Stand');
+          expect(fetched?.item.sku, 'INV-001-MOD');
+          expect(fetched?.quantityOnHand, 25.0);
+        },
+      );
+
+      test('rejects update when item id does not exist', () async {
+        final repo = MockInventoryRepository();
+        expect(
+          () => repo.updateItem(
+            const UpdateInventoryItemInput(
+              id: 'non_existent_id',
+              name: 'Valid Name',
+              sku: 'VALID-SKU',
+            ),
+          ),
+          throwsA(isA<InventoryItemNotFoundException>()),
+        );
+      });
+
+      test('rejects blank name on update', () async {
+        final repo = MockInventoryRepository();
+        expect(
+          () => repo.updateItem(
+            const UpdateInventoryItemInput(
+              id: 'item_001',
+              name: '   ',
+              sku: 'INV-001',
+            ),
+          ),
+          throwsA(isA<InventoryValidationException>()),
+        );
+      });
+
+      test('rejects blank SKU on update', () async {
+        final repo = MockInventoryRepository();
+        expect(
+          () => repo.updateItem(
+            const UpdateInventoryItemInput(
+              id: 'item_001',
+              name: 'Valid Name',
+              sku: '   ',
+            ),
+          ),
+          throwsA(isA<InventoryValidationException>()),
+        );
+      });
+
+      test('allows item to retain its own exact SKU', () async {
+        final repo = MockInventoryRepository();
+        final updated = await repo.updateItem(
+          const UpdateInventoryItemInput(
+            id: 'item_001',
+            name: 'Renamed Stand',
+            sku: 'INV-001',
+          ),
+        );
+        expect(updated.item.name, 'Renamed Stand');
+        expect(updated.item.sku, 'INV-001');
+      });
+
+      test(
+        'allows item to retain its own normalized SKU (case/whitespace variation)',
+        () async {
+          final repo = MockInventoryRepository();
+          final updated = await repo.updateItem(
+            const UpdateInventoryItemInput(
+              id: 'item_001',
+              name: 'Renamed Stand',
+              sku: '  inv-001  ',
+            ),
+          );
+          expect(updated.item.name, 'Renamed Stand');
+          expect(updated.item.sku, 'inv-001');
+        },
+      );
+
+      test('rejects duplicate SKU belonging to another item', () async {
+        final repo = MockInventoryRepository();
+        expect(
+          () => repo.updateItem(
+            const UpdateInventoryItemInput(
+              id: 'item_002',
+              name: 'Item 2',
+              sku: 'INV-001',
+            ),
+          ),
+          throwsA(isA<InventoryDuplicateSkuException>()),
+        );
+      });
+
+      test(
+        'preserves item ID, stock movements, and derived quantity during update',
+        () async {
+          final repo = MockInventoryRepository();
+          final before = await repo.getItemById('item_001');
+          expect(before?.quantityOnHand, 25.0);
+
+          final updated = await repo.updateItem(
+            const UpdateInventoryItemInput(
+              id: 'item_001',
+              name: 'Brand New Name',
+              sku: 'BRAND-NEW-SKU',
+            ),
+          );
+
+          expect(updated.item.id, 'item_001');
+          expect(updated.quantityOnHand, 25.0);
+
+          final after = await repo.getItemById('item_001');
+          expect(after?.item.id, 'item_001');
+          expect(after?.quantityOnHand, 25.0);
+        },
+      );
+
+      test('search finds updated item by new name and new SKU', () async {
+        final repo = MockInventoryRepository();
+        await repo.updateItem(
+          const UpdateInventoryItemInput(
+            id: 'item_001',
+            name: 'Quantum Keyboard',
+            sku: 'QK-777',
+          ),
+        );
+
+        final searchByName = await repo.getItems(
+          const InventoryQuery(searchText: 'quantum'),
+        );
+        expect(searchByName.items.any((i) => i.item.id == 'item_001'), isTrue);
+
+        final searchBySku = await repo.getItems(
+          const InventoryQuery(searchText: 'qk-777'),
+        );
+        expect(searchBySku.items.any((i) => i.item.id == 'item_001'), isTrue);
+      });
+
+      test('sort reflects updated identity', () async {
+        final repo = MockInventoryRepository();
+        await repo.updateItem(
+          const UpdateInventoryItemInput(
+            id: 'item_001',
+            name: '000 First Item',
+            sku: 'AAA-SKU',
+          ),
+        );
+
+        final sorted = await repo.getItems(
+          const InventoryQuery(sort: InventorySort.nameAsc),
+        );
+        expect(sorted.items.first.item.id, 'item_001');
+        expect(sorted.items.first.item.name, '000 First Item');
       });
     });
   });

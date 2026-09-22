@@ -24,10 +24,12 @@ class FollowUpMigrationAdapter {
 
     final activities = await callActivityRepository
         .getScheduledActivitiesForLeadIds(authorizedLeadIds);
-    final existingFollowUps =
-        await followUpRepository.getFollowUpsForLeadIds(authorizedLeadIds);
-    final existingSourceActivityIds =
-        existingFollowUps.map((f) => f.sourceCallActivityId).toSet();
+    final existingFollowUps = await followUpRepository.getFollowUpsForLeadIds(
+      authorizedLeadIds,
+    );
+    final existingSourceActivityIds = existingFollowUps
+        .map((f) => f.sourceCallActivityId)
+        .toSet();
 
     var count = 0;
     for (final activity in activities) {

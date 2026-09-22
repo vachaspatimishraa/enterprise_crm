@@ -8,10 +8,7 @@ class FollowUpWithEvents {
   final LeadFollowUp followUp;
   final List<FollowUpEvent> events;
 
-  const FollowUpWithEvents({
-    required this.followUp,
-    required this.events,
-  });
+  const FollowUpWithEvents({required this.followUp, required this.events});
 
   @override
   bool operator ==(Object other) =>

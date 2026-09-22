@@ -3,16 +3,25 @@ import 'package:enterprise_crm/features/auth/domain/entities/crm_module.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
 import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dart';
 import 'package:enterprise_crm/features/inventory/data/repositories/mock_inventory_repository.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/update_inventory_item_input.dart';
 import 'package:enterprise_crm/features/inventory/presentation/screens/inventory_item_details_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('InventoryItemDetailsScreen Widget Tests', () {
-    final testUser = CurrentUser(
-      id: 'usr_test',
-      displayName: 'Test User',
+    final adminUser = CurrentUser(
+      id: 'usr_admin',
+      displayName: 'Admin User',
       accountType: AccountType.admin,
+      modules: {CrmModule.inventory},
+      permissions: {CrmPermissions.inventoryView},
+    );
+
+    final standardUser = CurrentUser(
+      id: 'usr_standard',
+      displayName: 'Standard User',
+      accountType: AccountType.user,
       modules: {CrmModule.inventory},
       permissions: {CrmPermissions.inventoryView},
     );
@@ -25,7 +34,7 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             home: InventoryItemDetailsScreen(
-              user: testUser,
+              user: adminUser,
               repository: repo,
               itemId: 'item_001',
             ),
@@ -50,7 +59,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: InventoryItemDetailsScreen(
-            user: testUser,
+            user: adminUser,
             repository: repo,
             itemId: 'item_003', // seeded with 0 delta
           ),
@@ -63,15 +72,57 @@ void main() {
       expect(find.text('0'), findsOneWidget);
     });
 
+    testWidgets('Admin sees Edit Item button; Standard User does not', (
+      tester,
+    ) async {
+      final repo = MockInventoryRepository();
+
+      // Admin details screen
+      await tester.pumpWidget(
+        MaterialApp(
+          home: InventoryItemDetailsScreen(
+            user: adminUser,
+            repository: repo,
+            itemId: 'item_001',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('inventory_details_edit_button')),
+        findsOneWidget,
+      );
+      expect(find.text('Edit Item'), findsOneWidget);
+
+      // Standard User details screen
+      await tester.pumpWidget(
+        MaterialApp(
+          home: InventoryItemDetailsScreen(
+            user: standardUser,
+            repository: repo,
+            itemId: 'item_001',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('inventory_details_edit_button')),
+        findsNothing,
+      );
+      expect(find.text('Edit Item'), findsNothing);
+    });
+
     testWidgets(
-      'VERIFIED READ-ONLY: zero write or mutation controls on details screen',
+      'shows updated name and SKU while preserving derived quantity',
       (tester) async {
         final repo = MockInventoryRepository();
 
         await tester.pumpWidget(
           MaterialApp(
             home: InventoryItemDetailsScreen(
-              user: testUser,
+              user: adminUser,
               repository: repo,
               itemId: 'item_001',
             ),
@@ -79,12 +130,58 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(find.text('Edit'), findsNothing);
+        expect(find.text('Laptop Stand'), findsOneWidget);
+        expect(find.text('SKU: INV-001'), findsOneWidget);
+        expect(find.text('25'), findsOneWidget);
+
+        // Update item in repository
+        await repo.updateItem(
+          const UpdateInventoryItemInput(
+            id: 'item_001',
+            name: 'Laptop Stand Ultra Pro',
+            sku: 'INV-001-PRO',
+          ),
+        );
+
+        // Freshly re-load details screen
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpWidget(
+          MaterialApp(
+            home: InventoryItemDetailsScreen(
+              user: adminUser,
+              repository: repo,
+              itemId: 'item_001',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Laptop Stand Ultra Pro'), findsOneWidget);
+        expect(find.text('SKU: INV-001-PRO'), findsOneWidget);
+        expect(find.text('25'), findsOneWidget); // Quantity preserved!
+      },
+    );
+
+    testWidgets(
+      'VERIFIED NO STOCK MUTATION: zero delete, adjust, receive, or dispatch controls on details screen',
+      (tester) async {
+        final repo = MockInventoryRepository();
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: InventoryItemDetailsScreen(
+              user: adminUser,
+              repository: repo,
+              itemId: 'item_001',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
         expect(find.text('Delete'), findsNothing);
         expect(find.text('Adjust'), findsNothing);
         expect(find.text('Receive'), findsNothing);
         expect(find.text('Dispatch'), findsNothing);
-        expect(find.byIcon(Icons.edit), findsNothing);
         expect(find.byIcon(Icons.delete), findsNothing);
       },
     );
@@ -97,7 +194,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: InventoryItemDetailsScreen(
-            user: testUser,
+            user: adminUser,
             repository: repo,
             itemId: 'non_existent_item_id',
           ),

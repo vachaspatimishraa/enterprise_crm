@@ -37,25 +37,39 @@ class LeadFollowUpHistoryCubit extends Cubit<LeadFollowUpHistoryState> {
 
     // 1. Calling module guard
     if (!AccessPolicy.canAccessModule(_user, CrmModule.calling)) {
-      emit(const LeadFollowUpHistoryAccessDenied('Calling module not assigned.'));
+      emit(
+        const LeadFollowUpHistoryAccessDenied('Calling module not assigned.'),
+      );
       return;
     }
 
     // 2. calling.use permission guard
     if (!AccessPolicy.hasPermission(_user, CrmPermissions.callingUse)) {
-      emit(const LeadFollowUpHistoryAccessDenied('calling.use permission not granted.'));
+      emit(
+        const LeadFollowUpHistoryAccessDenied(
+          'calling.use permission not granted.',
+        ),
+      );
       return;
     }
 
     // 3. Lead Management module guard
     if (!AccessPolicy.canAccessModule(_user, CrmModule.leadManagement)) {
-      emit(const LeadFollowUpHistoryAccessDenied('Lead Management module not assigned.'));
+      emit(
+        const LeadFollowUpHistoryAccessDenied(
+          'Lead Management module not assigned.',
+        ),
+      );
       return;
     }
 
     // 4. lead.view_assigned permission guard
     if (!AccessPolicy.hasPermission(_user, CrmPermissions.leadViewAssigned)) {
-      emit(const LeadFollowUpHistoryAccessDenied('lead.view_assigned permission not granted.'));
+      emit(
+        const LeadFollowUpHistoryAccessDenied(
+          'lead.view_assigned permission not granted.',
+        ),
+      );
       return;
     }
 
@@ -63,7 +77,11 @@ class LeadFollowUpHistoryCubit extends Cubit<LeadFollowUpHistoryState> {
       // 5. Resolve identity link
       final link = await _linkRepository.getLinkForUser(_user.id);
       if (link == null) {
-        emit(const LeadFollowUpHistoryAccessDenied('User is not linked to an assignee identity.'));
+        emit(
+          const LeadFollowUpHistoryAccessDenied(
+            'User is not linked to an assignee identity.',
+          ),
+        );
         return;
       }
 
@@ -71,7 +89,11 @@ class LeadFollowUpHistoryCubit extends Cubit<LeadFollowUpHistoryState> {
       final assignees = await _leadRepository.getAssignableUsers();
       final assigneeExists = assignees.any((a) => a.id == link.leadAssigneeId);
       if (!assigneeExists) {
-        emit(const LeadFollowUpHistoryAccessDenied('Assigned identity is invalid.'));
+        emit(
+          const LeadFollowUpHistoryAccessDenied(
+            'Assigned identity is invalid.',
+          ),
+        );
         return;
       }
 
@@ -84,12 +106,18 @@ class LeadFollowUpHistoryCubit extends Cubit<LeadFollowUpHistoryState> {
 
       // 8. Strict ownership check
       if (lead.assignedUserId != link.leadAssigneeId) {
-        emit(const LeadFollowUpHistoryAccessDenied('Access restricted to assigned leads only.'));
+        emit(
+          const LeadFollowUpHistoryAccessDenied(
+            'Access restricted to assigned leads only.',
+          ),
+        );
         return;
       }
 
       // 9. Query follow-ups
-      final followUps = await _followUpRepository.getFollowUpsForLeadIds({_leadId});
+      final followUps = await _followUpRepository.getFollowUpsForLeadIds({
+        _leadId,
+      });
       if (followUps.isEmpty) {
         emit(const LeadFollowUpHistoryEmpty());
         return;
@@ -103,11 +131,15 @@ class LeadFollowUpHistoryCubit extends Cubit<LeadFollowUpHistoryState> {
       }
 
       // Sort newest scheduledAt first
-      items.sort((a, b) => b.followUp.scheduledAt.compareTo(a.followUp.scheduledAt));
+      items.sort(
+        (a, b) => b.followUp.scheduledAt.compareTo(a.followUp.scheduledAt),
+      );
 
       emit(LeadFollowUpHistoryLoaded(items));
     } catch (_) {
-      emit(const LeadFollowUpHistoryFailure('Unable to load follow-up history.'));
+      emit(
+        const LeadFollowUpHistoryFailure('Unable to load follow-up history.'),
+      );
     }
   }
 }

@@ -7,7 +7,11 @@ import 'package:enterprise_crm/features/inventory/data/repositories/mock_invento
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_item_summary.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_page.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_query.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/create_inventory_item_input.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/update_inventory_item_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/repositories/inventory_repository.dart';
+import 'package:enterprise_crm/features/inventory/presentation/screens/create_inventory_item_screen.dart';
+import 'package:enterprise_crm/features/inventory/presentation/screens/edit_inventory_item_screen.dart';
 import 'package:enterprise_crm/features/inventory/presentation/screens/inventory_item_details_screen.dart';
 import 'package:enterprise_crm/features/inventory/presentation/screens/inventory_workspace_screen.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +20,8 @@ import 'package:flutter_test/flutter_test.dart';
 class _SpyInventoryRepository implements InventoryRepository {
   int getItemsCallCount = 0;
   int getItemByIdCallCount = 0;
+  int createItemCallCount = 0;
+  int updateItemCallCount = 0;
 
   @override
   Future<InventoryPage> getItems(InventoryQuery query) async {
@@ -33,6 +39,22 @@ class _SpyInventoryRepository implements InventoryRepository {
   Future<InventoryItemSummary?> getItemById(String id) async {
     getItemByIdCallCount++;
     return null;
+  }
+
+  @override
+  Future<InventoryItemSummary> createItem(
+    CreateInventoryItemInput input,
+  ) async {
+    createItemCallCount++;
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<InventoryItemSummary> updateItem(
+    UpdateInventoryItemInput input,
+  ) async {
+    updateItemCallCount++;
+    throw UnimplementedError();
   }
 }
 
@@ -202,5 +224,272 @@ void main() {
         expect(spyRepo.getItemByIdCallCount, 0);
       },
     );
+
+    group('Full Matrix Authorization Tests (Section 43)', () {
+      final admin = CurrentUser(
+        id: 'admin_full',
+        displayName: 'Admin User',
+        accountType: AccountType.admin,
+        modules: {CrmModule.inventory},
+        permissions: {CrmPermissions.inventoryView},
+      );
+
+      final userWithView = CurrentUser(
+        id: 'user_view',
+        displayName: 'Standard User with View',
+        accountType: AccountType.user,
+        modules: {CrmModule.inventory},
+        permissions: {CrmPermissions.inventoryView},
+      );
+
+      final userMissingView = CurrentUser(
+        id: 'user_no_view',
+        displayName: 'Standard User missing View',
+        accountType: AccountType.user,
+        modules: {CrmModule.inventory},
+        permissions: {},
+      );
+
+      final userWithoutModule = CurrentUser(
+        id: 'user_no_module',
+        displayName: 'User without Inventory',
+        accountType: AccountType.user,
+        modules: {CrmModule.leadManagement},
+        permissions: {CrmPermissions.inventoryView},
+      );
+
+      testWidgets(
+        'Admin: Workspace allowed, Details allowed, Create allowed, Edit allowed',
+        (tester) async {
+          final repo = MockInventoryRepository();
+
+          // Workspace
+          await tester.pumpWidget(
+            MaterialApp(
+              home: InventoryWorkspaceScreen(user: admin, repository: repo),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsNothing);
+          expect(find.text('Inventory'), findsOneWidget);
+
+          // Details
+          await tester.pumpWidget(
+            MaterialApp(
+              home: InventoryItemDetailsScreen(
+                user: admin,
+                repository: repo,
+                itemId: 'item_001',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsNothing);
+          expect(find.text('Inventory Item Details'), findsOneWidget);
+
+          // Create
+          await tester.pumpWidget(
+            MaterialApp(
+              home: CreateInventoryItemScreen(user: admin, repository: repo),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsNothing);
+          expect(find.text('Add Inventory Item'), findsOneWidget);
+
+          // Edit
+          await tester.pumpWidget(
+            MaterialApp(
+              home: EditInventoryItemScreen(
+                user: admin,
+                repository: repo,
+                itemId: 'item_001',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsNothing);
+          expect(find.text('Edit Inventory Item'), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'User with Inventory + inventory.view: Workspace allowed, Details allowed, Create denied, Edit denied with 0 writes',
+        (tester) async {
+          final spyRepo = _SpyInventoryRepository();
+
+          // Workspace allowed
+          await tester.pumpWidget(
+            MaterialApp(
+              home: InventoryWorkspaceScreen(
+                user: userWithView,
+                repository: spyRepo,
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsNothing);
+          expect(find.text('Inventory'), findsOneWidget);
+
+          // Details allowed
+          await tester.pumpWidget(
+            MaterialApp(
+              home: InventoryItemDetailsScreen(
+                user: userWithView,
+                repository: spyRepo,
+                itemId: 'item_001',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsNothing);
+
+          // Create denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: CreateInventoryItemScreen(
+                user: userWithView,
+                repository: spyRepo,
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+          expect(spyRepo.createItemCallCount, 0);
+
+          // Edit denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: EditInventoryItemScreen(
+                user: userWithView,
+                repository: spyRepo,
+                itemId: 'item_001',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+          expect(spyRepo.updateItemCallCount, 0);
+        },
+      );
+
+      testWidgets(
+        'User missing inventory.view: all routes denied with 0 writes',
+        (tester) async {
+          final spyRepo = _SpyInventoryRepository();
+
+          // Workspace denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: InventoryWorkspaceScreen(
+                user: userMissingView,
+                repository: spyRepo,
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+
+          // Details denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: InventoryItemDetailsScreen(
+                user: userMissingView,
+                repository: spyRepo,
+                itemId: 'item_001',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+
+          // Create denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: CreateInventoryItemScreen(
+                user: userMissingView,
+                repository: spyRepo,
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+          expect(spyRepo.createItemCallCount, 0);
+
+          // Edit denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: EditInventoryItemScreen(
+                user: userMissingView,
+                repository: spyRepo,
+                itemId: 'item_001',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+          expect(spyRepo.updateItemCallCount, 0);
+        },
+      );
+
+      testWidgets(
+        'User without Inventory module: all routes denied with 0 writes',
+        (tester) async {
+          final spyRepo = _SpyInventoryRepository();
+
+          // Workspace denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: InventoryWorkspaceScreen(
+                user: userWithoutModule,
+                repository: spyRepo,
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+
+          // Details denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: InventoryItemDetailsScreen(
+                user: userWithoutModule,
+                repository: spyRepo,
+                itemId: 'item_001',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+
+          // Create denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: CreateInventoryItemScreen(
+                user: userWithoutModule,
+                repository: spyRepo,
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+          expect(spyRepo.createItemCallCount, 0);
+
+          // Edit denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: EditInventoryItemScreen(
+                user: userWithoutModule,
+                repository: spyRepo,
+                itemId: 'item_001',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+          expect(spyRepo.updateItemCallCount, 0);
+        },
+      );
+    });
   });
 }

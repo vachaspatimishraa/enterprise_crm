@@ -6,14 +6,17 @@ import '../../../auth/domain/entities/current_user.dart';
 import '../../../auth/domain/policies/access_policy.dart';
 import '../../../auth/domain/policies/crm_permissions.dart';
 import '../../../auth/presentation/screens/access_restricted_screen.dart';
+import '../../domain/policies/inventory_item_administration_policy.dart';
 import '../../domain/repositories/inventory_repository.dart';
 import '../bloc/inventory_item_details_cubit.dart';
 import '../bloc/inventory_item_details_state.dart';
 import '../utils/inventory_display_formatters.dart';
+import 'edit_inventory_item_screen.dart';
 
 /// Read-only item details screen for a specific inventory product.
 ///
 /// Guarded by pre-Cubit authorization check. Displays strictly Name, SKU, and derived Quantity on hand.
+/// Administrators receive an [Edit Item] action button.
 class InventoryItemDetailsScreen extends StatelessWidget {
   final CurrentUser user;
   final InventoryRepository repository;
@@ -39,15 +42,40 @@ class InventoryItemDetailsScreen extends StatelessWidget {
 
     return BlocProvider<InventoryItemDetailsCubit>(
       create: (_) => InventoryItemDetailsCubit(repository)..load(itemId),
-      child: _InventoryItemDetailsView(itemId: itemId),
+      child: _InventoryItemDetailsView(
+        user: user,
+        repository: repository,
+        itemId: itemId,
+      ),
     );
   }
 }
 
 class _InventoryItemDetailsView extends StatelessWidget {
+  final CurrentUser user;
+  final InventoryRepository repository;
   final String itemId;
 
-  const _InventoryItemDetailsView({required this.itemId});
+  const _InventoryItemDetailsView({
+    required this.user,
+    required this.repository,
+    required this.itemId,
+  });
+
+  void _openEdit(BuildContext context, String itemId) async {
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => EditInventoryItemScreen(
+          user: user,
+          repository: repository,
+          itemId: itemId,
+        ),
+      ),
+    );
+    if (updated == true && context.mounted) {
+      context.read<InventoryItemDetailsCubit>().load(itemId);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,7 +90,27 @@ class _InventoryItemDetailsView extends StatelessWidget {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.of(context).pop(),
         ),
+        actions: [
+          BlocBuilder<InventoryItemDetailsCubit, InventoryItemDetailsState>(
+            builder: (context, state) {
+              if (InventoryItemAdministrationPolicy.canManage(user) &&
+                  state is InventoryItemDetailsLoaded) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: FilledButton.icon(
+                    key: const Key('inventory_details_edit_button'),
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: const Text('Edit Item'),
+                    onPressed: () => _openEdit(context, state.summary.item.id),
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+        ],
       ),
+
       body: BlocBuilder<InventoryItemDetailsCubit, InventoryItemDetailsState>(
         builder: (context, state) {
           if (state is InventoryItemDetailsLoading ||

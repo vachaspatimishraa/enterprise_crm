@@ -236,3 +236,40 @@ delete/archive
 
 The approved business-freeze overrides earlier UNCONFIRMED entries for these specific decisions. `INVENTORY_REQUIREMENTS.md` is now an intentional project requirements artifact tracked with INVENTORY-1.
 
+---
+
+## 9. INVENTORY-2 — ADMIN ITEM ADMINISTRATION
+**Status: IMPLEMENTED**
+
+### Summary
+INVENTORY-2 adds the first Inventory write workflow while strictly preserving the completed INVENTORY-1 architecture and frozen business model.
+
+### Record
+- **Admin item creation:** Implemented
+- **Admin identity editing:** Implemented
+- **Editable fields:**
+  - `name`
+  - `sku`
+- **New item derived quantity:** `0`
+- **Zero opening movement on creation:** Yes (no artificial 0.0 movement created; derived dynamically as `SUM(StockMovement.quantityDelta) = 0.0`)
+- **Standard Users:** Read-only (`inventory.view` operational permission; direct navigation blocked by pre-Cubit guard)
+- **Direct quantity editing:** Still prohibited
+- **Stock preservation on edit:** Editing item identity (`name`, `sku`) leaves movement ledger untouched and derived quantity strictly unchanged
+
+### Still Deferred
+- Delete / Archive
+- Opening-stock entry UI
+- Stock Adjustment
+- Stock Movement History UI
+- Negative-stock policy
+- Purchase integration
+- Dispatch integration
+- Vendor integration
+- Multiple warehouses / locations
+- Rack / Bin
+- Category
+- UOM
+- Description
+- Pricing
+- Tax / GST / HSN
+- Backend integration

@@ -51,40 +51,43 @@ void main() {
   });
 
   group('FollowUpActionCubit - Lifecycle Operations', () {
-    test('completeFollowUp transitions to completed and emits Success', () async {
-      final followUp = await followUpRepo.createFollowUp(
-        leadId: 'lead-1',
-        sourceCallActivityId: 'call-act-1',
-        scheduledAt: DateTime(2026, 9, 22, 14, 0),
-        performedByUserId: 'usr-agent-1',
-      );
+    test(
+      'completeFollowUp transitions to completed and emits Success',
+      () async {
+        final followUp = await followUpRepo.createFollowUp(
+          leadId: 'lead-1',
+          sourceCallActivityId: 'call-act-1',
+          scheduledAt: DateTime(2026, 9, 22, 14, 0),
+          performedByUserId: 'usr-agent-1',
+        );
 
-      final cubit = FollowUpActionCubit(
-        user: authorizedUser,
-        linkRepository: linkRepo,
-        leadRepository: leadRepo,
-        followUpRepository: followUpRepo,
-        now: () => fixedClock,
-      );
+        final cubit = FollowUpActionCubit(
+          user: authorizedUser,
+          linkRepository: linkRepo,
+          leadRepository: leadRepo,
+          followUpRepository: followUpRepo,
+          now: () => fixedClock,
+        );
 
-      final states = <FollowUpActionState>[];
-      cubit.stream.listen(states.add);
+        final states = <FollowUpActionState>[];
+        cubit.stream.listen(states.add);
 
-      await cubit.completeFollowUp(followUpId: followUp.id, leadId: 'lead-1');
-      await pumpEventQueue();
+        await cubit.completeFollowUp(followUpId: followUp.id, leadId: 'lead-1');
+        await pumpEventQueue();
 
-      expect(states.length, 2);
-      expect(states[0], isA<FollowUpActionSubmitting>());
-      expect(states[1], isA<FollowUpActionSuccess>());
+        expect(states.length, 2);
+        expect(states[0], isA<FollowUpActionSubmitting>());
+        expect(states[1], isA<FollowUpActionSuccess>());
 
-      final success = cubit.state as FollowUpActionSuccess;
-      expect(success.followUp.id, followUp.id);
-      expect(success.followUp.status, FollowUpStatus.completed);
+        final success = cubit.state as FollowUpActionSuccess;
+        expect(success.followUp.id, followUp.id);
+        expect(success.followUp.status, FollowUpStatus.completed);
 
-      // Verify in repository
-      final inRepo = await followUpRepo.getFollowUpById(followUp.id);
-      expect(inRepo!.status, FollowUpStatus.completed);
-    });
+        // Verify in repository
+        final inRepo = await followUpRepo.getFollowUpById(followUp.id);
+        expect(inRepo!.status, FollowUpStatus.completed);
+      },
+    );
 
     test('cancelFollowUp transitions to cancelled and emits Success', () async {
       final followUp = await followUpRepo.createFollowUp(
@@ -120,146 +123,158 @@ void main() {
       expect(inRepo!.status, FollowUpStatus.cancelled);
     });
 
-    test('rescheduleFollowUp updates scheduledAt, status remains pending, and emits Success', () async {
-      final followUp = await followUpRepo.createFollowUp(
-        leadId: 'lead-1',
-        sourceCallActivityId: 'call-act-1',
-        scheduledAt: DateTime(2026, 9, 22, 14, 0),
-        performedByUserId: 'usr-agent-1',
-      );
+    test(
+      'rescheduleFollowUp updates scheduledAt, status remains pending, and emits Success',
+      () async {
+        final followUp = await followUpRepo.createFollowUp(
+          leadId: 'lead-1',
+          sourceCallActivityId: 'call-act-1',
+          scheduledAt: DateTime(2026, 9, 22, 14, 0),
+          performedByUserId: 'usr-agent-1',
+        );
 
-      final cubit = FollowUpActionCubit(
-        user: authorizedUser,
-        linkRepository: linkRepo,
-        leadRepository: leadRepo,
-        followUpRepository: followUpRepo,
-        now: () => fixedClock,
-      );
+        final cubit = FollowUpActionCubit(
+          user: authorizedUser,
+          linkRepository: linkRepo,
+          leadRepository: leadRepo,
+          followUpRepository: followUpRepo,
+          now: () => fixedClock,
+        );
 
-      final states = <FollowUpActionState>[];
-      cubit.stream.listen(states.add);
+        final states = <FollowUpActionState>[];
+        cubit.stream.listen(states.add);
 
-      final newSchedule = DateTime(2026, 9, 25, 16, 0);
-      await cubit.rescheduleFollowUp(
-        followUpId: followUp.id,
-        leadId: 'lead-1',
-        scheduledAt: newSchedule,
-      );
-      await pumpEventQueue();
+        final newSchedule = DateTime(2026, 9, 25, 16, 0);
+        await cubit.rescheduleFollowUp(
+          followUpId: followUp.id,
+          leadId: 'lead-1',
+          scheduledAt: newSchedule,
+        );
+        await pumpEventQueue();
 
-      expect(states.length, 2);
-      expect(states[0], isA<FollowUpActionSubmitting>());
-      expect(states[1], isA<FollowUpActionSuccess>());
+        expect(states.length, 2);
+        expect(states[0], isA<FollowUpActionSubmitting>());
+        expect(states[1], isA<FollowUpActionSuccess>());
 
-      final success = cubit.state as FollowUpActionSuccess;
-      expect(success.followUp.id, followUp.id);
-      expect(success.followUp.scheduledAt, newSchedule);
-      // Invariant: status remains pending
-      expect(success.followUp.status, FollowUpStatus.pending);
+        final success = cubit.state as FollowUpActionSuccess;
+        expect(success.followUp.id, followUp.id);
+        expect(success.followUp.scheduledAt, newSchedule);
+        // Invariant: status remains pending
+        expect(success.followUp.status, FollowUpStatus.pending);
 
-      final inRepo = await followUpRepo.getFollowUpById(followUp.id);
-      expect(inRepo!.status, FollowUpStatus.pending);
-      expect(inRepo.scheduledAt, newSchedule);
-    });
+        final inRepo = await followUpRepo.getFollowUpById(followUp.id);
+        expect(inRepo!.status, FollowUpStatus.pending);
+        expect(inRepo.scheduledAt, newSchedule);
+      },
+    );
 
-    test('rescheduleFollowUp rejects past date with immediate Failure and 0 writes', () async {
-      final followUp = await followUpRepo.createFollowUp(
-        leadId: 'lead-1',
-        sourceCallActivityId: 'call-act-1',
-        scheduledAt: DateTime(2026, 9, 22, 14, 0),
-        performedByUserId: 'usr-agent-1',
-      );
+    test(
+      'rescheduleFollowUp rejects past date with immediate Failure and 0 writes',
+      () async {
+        final followUp = await followUpRepo.createFollowUp(
+          leadId: 'lead-1',
+          sourceCallActivityId: 'call-act-1',
+          scheduledAt: DateTime(2026, 9, 22, 14, 0),
+          performedByUserId: 'usr-agent-1',
+        );
 
-      final cubit = FollowUpActionCubit(
-        user: authorizedUser,
-        linkRepository: linkRepo,
-        leadRepository: leadRepo,
-        followUpRepository: followUpRepo,
-        now: () => fixedClock,
-      );
+        final cubit = FollowUpActionCubit(
+          user: authorizedUser,
+          linkRepository: linkRepo,
+          leadRepository: leadRepo,
+          followUpRepository: followUpRepo,
+          now: () => fixedClock,
+        );
 
-      final states = <FollowUpActionState>[];
-      cubit.stream.listen(states.add);
+        final states = <FollowUpActionState>[];
+        cubit.stream.listen(states.add);
 
-      final pastDate = fixedClock.subtract(const Duration(hours: 1));
-      await cubit.rescheduleFollowUp(
-        followUpId: followUp.id,
-        leadId: 'lead-1',
-        scheduledAt: pastDate,
-      );
+        final pastDate = fixedClock.subtract(const Duration(hours: 1));
+        await cubit.rescheduleFollowUp(
+          followUpId: followUp.id,
+          leadId: 'lead-1',
+          scheduledAt: pastDate,
+        );
 
-      expect(states.length, 1);
-      expect(states[0], isA<FollowUpActionFailure>());
-      expect(
-        (states[0] as FollowUpActionFailure).message,
-        'Reschedule date and time must be in the future.',
-      );
+        expect(states.length, 1);
+        expect(states[0], isA<FollowUpActionFailure>());
+        expect(
+          (states[0] as FollowUpActionFailure).message,
+          'Reschedule date and time must be in the future.',
+        );
 
-      // Follow-up remains untouched
-      final inRepo = await followUpRepo.getFollowUpById(followUp.id);
-      expect(inRepo!.scheduledAt, DateTime(2026, 9, 22, 14, 0));
-    });
+        // Follow-up remains untouched
+        final inRepo = await followUpRepo.getFollowUpById(followUp.id);
+        expect(inRepo!.scheduledAt, DateTime(2026, 9, 22, 14, 0));
+      },
+    );
   });
 
   group('FollowUpActionCubit - Security Gates & Anti-Reassignment Guards', () {
-    test('ANTI-REASSIGNMENT GUARD: reassigned lead blocks complete with AccessDenied', () async {
-      final followUp = await followUpRepo.createFollowUp(
-        leadId: 'lead-1',
-        sourceCallActivityId: 'call-act-1',
-        scheduledAt: DateTime(2026, 9, 22, 14, 0),
-        performedByUserId: 'usr-agent-1',
-      );
+    test(
+      'ANTI-REASSIGNMENT GUARD: reassigned lead blocks complete with AccessDenied',
+      () async {
+        final followUp = await followUpRepo.createFollowUp(
+          leadId: 'lead-1',
+          sourceCallActivityId: 'call-act-1',
+          scheduledAt: DateTime(2026, 9, 22, 14, 0),
+          performedByUserId: 'usr-agent-1',
+        );
 
-      // Lead is reassigned to agent-2
-      await leadRepo.assignLead(leadId: 'lead-1', assigneeId: 'agent-2');
+        // Lead is reassigned to agent-2
+        await leadRepo.assignLead(leadId: 'lead-1', assigneeId: 'agent-2');
 
-      final cubit = FollowUpActionCubit(
-        user: authorizedUser,
-        linkRepository: linkRepo,
-        leadRepository: leadRepo,
-        followUpRepository: followUpRepo,
-        now: () => fixedClock,
-      );
+        final cubit = FollowUpActionCubit(
+          user: authorizedUser,
+          linkRepository: linkRepo,
+          leadRepository: leadRepo,
+          followUpRepository: followUpRepo,
+          now: () => fixedClock,
+        );
 
-      await cubit.completeFollowUp(followUpId: followUp.id, leadId: 'lead-1');
+        await cubit.completeFollowUp(followUpId: followUp.id, leadId: 'lead-1');
 
-      expect(cubit.state, isA<FollowUpActionAccessDenied>());
-      final state = cubit.state as FollowUpActionAccessDenied;
-      expect(state.reason, contains('Lead ownership has changed'));
+        expect(cubit.state, isA<FollowUpActionAccessDenied>());
+        final state = cubit.state as FollowUpActionAccessDenied;
+        expect(state.reason, contains('Lead ownership has changed'));
 
-      // Follow-up must still be pending in repo (not completed)
-      final inRepo = await followUpRepo.getFollowUpById(followUp.id);
-      expect(inRepo!.status, FollowUpStatus.pending);
-    });
+        // Follow-up must still be pending in repo (not completed)
+        final inRepo = await followUpRepo.getFollowUpById(followUp.id);
+        expect(inRepo!.status, FollowUpStatus.pending);
+      },
+    );
 
-    test('terminal follow-up check: attempting to complete already-completed follow-up blocks with AccessDenied', () async {
-      final followUp = await followUpRepo.createFollowUp(
-        leadId: 'lead-1',
-        sourceCallActivityId: 'call-act-1',
-        scheduledAt: DateTime(2026, 9, 22, 14, 0),
-        performedByUserId: 'usr-agent-1',
-      );
+    test(
+      'terminal follow-up check: attempting to complete already-completed follow-up blocks with AccessDenied',
+      () async {
+        final followUp = await followUpRepo.createFollowUp(
+          leadId: 'lead-1',
+          sourceCallActivityId: 'call-act-1',
+          scheduledAt: DateTime(2026, 9, 22, 14, 0),
+          performedByUserId: 'usr-agent-1',
+        );
 
-      // Already completed beforehand
-      await followUpRepo.completeFollowUp(
-        followUpId: followUp.id,
-        performedByUserId: 'usr-agent-1',
-      );
+        // Already completed beforehand
+        await followUpRepo.completeFollowUp(
+          followUpId: followUp.id,
+          performedByUserId: 'usr-agent-1',
+        );
 
-      final cubit = FollowUpActionCubit(
-        user: authorizedUser,
-        linkRepository: linkRepo,
-        leadRepository: leadRepo,
-        followUpRepository: followUpRepo,
-        now: () => fixedClock,
-      );
+        final cubit = FollowUpActionCubit(
+          user: authorizedUser,
+          linkRepository: linkRepo,
+          leadRepository: leadRepo,
+          followUpRepository: followUpRepo,
+          now: () => fixedClock,
+        );
 
-      await cubit.completeFollowUp(followUpId: followUp.id, leadId: 'lead-1');
+        await cubit.completeFollowUp(followUpId: followUp.id, leadId: 'lead-1');
 
-      expect(cubit.state, isA<FollowUpActionAccessDenied>());
-      final state = cubit.state as FollowUpActionAccessDenied;
-      expect(state.reason, contains('Follow-up is no longer pending'));
-    });
+        expect(cubit.state, isA<FollowUpActionAccessDenied>());
+        final state = cubit.state as FollowUpActionAccessDenied;
+        expect(state.reason, contains('Follow-up is no longer pending'));
+      },
+    );
 
     test('missing identity link blocks with AccessDenied', () async {
       final followUp = await followUpRepo.createFollowUp(

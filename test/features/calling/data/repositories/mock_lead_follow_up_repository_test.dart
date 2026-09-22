@@ -40,20 +40,23 @@ void main() {
       },
     );
 
-    test('createFollowUp allows past date to support overdue follow-up tracking and migration', () async {
-      final repo = MockLeadFollowUpRepository(now: () => fixedClock);
+    test(
+      'createFollowUp allows past date to support overdue follow-up tracking and migration',
+      () async {
+        final repo = MockLeadFollowUpRepository(now: () => fixedClock);
 
-      final pastDate = fixedClock.subtract(const Duration(hours: 2));
-      final followUp = await repo.createFollowUp(
-        leadId: 'lead-1',
-        sourceCallActivityId: 'call-act-1',
-        scheduledAt: pastDate,
-        performedByUserId: 'usr-agent-1',
-      );
+        final pastDate = fixedClock.subtract(const Duration(hours: 2));
+        final followUp = await repo.createFollowUp(
+          leadId: 'lead-1',
+          sourceCallActivityId: 'call-act-1',
+          scheduledAt: pastDate,
+          performedByUserId: 'usr-agent-1',
+        );
 
-      expect(followUp.scheduledAt, pastDate);
-      expect(followUp.status, FollowUpStatus.pending);
-    });
+        expect(followUp.scheduledAt, pastDate);
+        expect(followUp.status, FollowUpStatus.pending);
+      },
+    );
 
     test('rescheduleFollowUp rejects past date', () async {
       final repo = MockLeadFollowUpRepository(now: () => fixedClock);
@@ -75,80 +78,89 @@ void main() {
       );
     });
 
-    test('rejects duplicate sourceCallActivityId (uniqueness invariant)', () async {
-      final repo = MockLeadFollowUpRepository(now: () => fixedClock);
+    test(
+      'rejects duplicate sourceCallActivityId (uniqueness invariant)',
+      () async {
+        final repo = MockLeadFollowUpRepository(now: () => fixedClock);
 
-      await repo.createFollowUp(
-        leadId: 'lead-1',
-        sourceCallActivityId: 'call-act-1',
-        scheduledAt: DateTime(2026, 9, 22, 10, 0),
-        performedByUserId: 'usr-agent-1',
-      );
-
-      expect(
-        () => repo.createFollowUp(
+        await repo.createFollowUp(
           leadId: 'lead-1',
           sourceCallActivityId: 'call-act-1',
-          scheduledAt: DateTime(2026, 9, 23, 10, 0),
+          scheduledAt: DateTime(2026, 9, 22, 10, 0),
           performedByUserId: 'usr-agent-1',
-        ),
-        throwsA(isA<StateError>()),
-      );
-    });
+        );
 
-    test('completeFollowUp transitions status from pending to completed and appends event', () async {
-      var currentTime = fixedClock;
-      final repo = MockLeadFollowUpRepository(now: () => currentTime);
+        expect(
+          () => repo.createFollowUp(
+            leadId: 'lead-1',
+            sourceCallActivityId: 'call-act-1',
+            scheduledAt: DateTime(2026, 9, 23, 10, 0),
+            performedByUserId: 'usr-agent-1',
+          ),
+          throwsA(isA<StateError>()),
+        );
+      },
+    );
 
-      final followUp = await repo.createFollowUp(
-        leadId: 'lead-1',
-        sourceCallActivityId: 'call-act-1',
-        scheduledAt: DateTime(2026, 9, 22, 10, 0),
-        performedByUserId: 'usr-agent-1',
-      );
+    test(
+      'completeFollowUp transitions status from pending to completed and appends event',
+      () async {
+        var currentTime = fixedClock;
+        final repo = MockLeadFollowUpRepository(now: () => currentTime);
 
-      currentTime = DateTime(2026, 9, 21, 11, 0, 0);
-      final completed = await repo.completeFollowUp(
-        followUpId: followUp.id,
-        performedByUserId: 'usr-agent-1',
-      );
+        final followUp = await repo.createFollowUp(
+          leadId: 'lead-1',
+          sourceCallActivityId: 'call-act-1',
+          scheduledAt: DateTime(2026, 9, 22, 10, 0),
+          performedByUserId: 'usr-agent-1',
+        );
 
-      expect(completed.status, FollowUpStatus.completed);
-      expect(completed.updatedAt, currentTime);
+        currentTime = DateTime(2026, 9, 21, 11, 0, 0);
+        final completed = await repo.completeFollowUp(
+          followUpId: followUp.id,
+          performedByUserId: 'usr-agent-1',
+        );
 
-      final events = await repo.getEventsForFollowUp(followUp.id);
-      expect(events.length, 2);
-      expect(events[1].type, FollowUpEventType.completed);
-      expect(events[1].performedByUserId, 'usr-agent-1');
-      expect(events[1].createdAt, currentTime);
-    });
+        expect(completed.status, FollowUpStatus.completed);
+        expect(completed.updatedAt, currentTime);
 
-    test('cancelFollowUp transitions status from pending to cancelled and appends event', () async {
-      var currentTime = fixedClock;
-      final repo = MockLeadFollowUpRepository(now: () => currentTime);
+        final events = await repo.getEventsForFollowUp(followUp.id);
+        expect(events.length, 2);
+        expect(events[1].type, FollowUpEventType.completed);
+        expect(events[1].performedByUserId, 'usr-agent-1');
+        expect(events[1].createdAt, currentTime);
+      },
+    );
 
-      final followUp = await repo.createFollowUp(
-        leadId: 'lead-1',
-        sourceCallActivityId: 'call-act-1',
-        scheduledAt: DateTime(2026, 9, 22, 10, 0),
-        performedByUserId: 'usr-agent-1',
-      );
+    test(
+      'cancelFollowUp transitions status from pending to cancelled and appends event',
+      () async {
+        var currentTime = fixedClock;
+        final repo = MockLeadFollowUpRepository(now: () => currentTime);
 
-      currentTime = DateTime(2026, 9, 21, 11, 0, 0);
-      final cancelled = await repo.cancelFollowUp(
-        followUpId: followUp.id,
-        performedByUserId: 'usr-agent-1',
-      );
+        final followUp = await repo.createFollowUp(
+          leadId: 'lead-1',
+          sourceCallActivityId: 'call-act-1',
+          scheduledAt: DateTime(2026, 9, 22, 10, 0),
+          performedByUserId: 'usr-agent-1',
+        );
 
-      expect(cancelled.status, FollowUpStatus.cancelled);
-      expect(cancelled.updatedAt, currentTime);
+        currentTime = DateTime(2026, 9, 21, 11, 0, 0);
+        final cancelled = await repo.cancelFollowUp(
+          followUpId: followUp.id,
+          performedByUserId: 'usr-agent-1',
+        );
 
-      final events = await repo.getEventsForFollowUp(followUp.id);
-      expect(events.length, 2);
-      expect(events[1].type, FollowUpEventType.cancelled);
-      expect(events[1].performedByUserId, 'usr-agent-1');
-      expect(events[1].createdAt, currentTime);
-    });
+        expect(cancelled.status, FollowUpStatus.cancelled);
+        expect(cancelled.updatedAt, currentTime);
+
+        final events = await repo.getEventsForFollowUp(followUp.id);
+        expect(events.length, 2);
+        expect(events[1].type, FollowUpEventType.cancelled);
+        expect(events[1].performedByUserId, 'usr-agent-1');
+        expect(events[1].createdAt, currentTime);
+      },
+    );
 
     test(
       'rescheduleFollowUp updates scheduledAt, appends rescheduled event, and STATUS REMAINS PENDING',
@@ -188,93 +200,99 @@ void main() {
       },
     );
 
-    test('terminal state protection: cannot complete, cancel, or reschedule completed follow-up', () async {
-      final repo = MockLeadFollowUpRepository(now: () => fixedClock);
+    test(
+      'terminal state protection: cannot complete, cancel, or reschedule completed follow-up',
+      () async {
+        final repo = MockLeadFollowUpRepository(now: () => fixedClock);
 
-      final followUp = await repo.createFollowUp(
-        leadId: 'lead-1',
-        sourceCallActivityId: 'call-act-1',
-        scheduledAt: DateTime(2026, 9, 22, 10, 0),
-        performedByUserId: 'usr-agent-1',
-      );
+        final followUp = await repo.createFollowUp(
+          leadId: 'lead-1',
+          sourceCallActivityId: 'call-act-1',
+          scheduledAt: DateTime(2026, 9, 22, 10, 0),
+          performedByUserId: 'usr-agent-1',
+        );
 
-      await repo.completeFollowUp(
-        followUpId: followUp.id,
-        performedByUserId: 'usr-agent-1',
-      );
-
-      // Subsequent complete throws
-      expect(
-        () => repo.completeFollowUp(
+        await repo.completeFollowUp(
           followUpId: followUp.id,
           performedByUserId: 'usr-agent-1',
-        ),
-        throwsA(isA<StateError>()),
-      );
+        );
 
-      // Subsequent cancel throws
-      expect(
-        () => repo.cancelFollowUp(
+        // Subsequent complete throws
+        expect(
+          () => repo.completeFollowUp(
+            followUpId: followUp.id,
+            performedByUserId: 'usr-agent-1',
+          ),
+          throwsA(isA<StateError>()),
+        );
+
+        // Subsequent cancel throws
+        expect(
+          () => repo.cancelFollowUp(
+            followUpId: followUp.id,
+            performedByUserId: 'usr-agent-1',
+          ),
+          throwsA(isA<StateError>()),
+        );
+
+        // Subsequent reschedule throws
+        expect(
+          () => repo.rescheduleFollowUp(
+            followUpId: followUp.id,
+            scheduledAt: DateTime(2026, 9, 25, 10, 0),
+            performedByUserId: 'usr-agent-1',
+          ),
+          throwsA(isA<StateError>()),
+        );
+      },
+    );
+
+    test(
+      'terminal state protection: cannot complete, cancel, or reschedule cancelled follow-up',
+      () async {
+        final repo = MockLeadFollowUpRepository(now: () => fixedClock);
+
+        final followUp = await repo.createFollowUp(
+          leadId: 'lead-1',
+          sourceCallActivityId: 'call-act-1',
+          scheduledAt: DateTime(2026, 9, 22, 10, 0),
+          performedByUserId: 'usr-agent-1',
+        );
+
+        await repo.cancelFollowUp(
           followUpId: followUp.id,
           performedByUserId: 'usr-agent-1',
-        ),
-        throwsA(isA<StateError>()),
-      );
+        );
 
-      // Subsequent reschedule throws
-      expect(
-        () => repo.rescheduleFollowUp(
-          followUpId: followUp.id,
-          scheduledAt: DateTime(2026, 9, 25, 10, 0),
-          performedByUserId: 'usr-agent-1',
-        ),
-        throwsA(isA<StateError>()),
-      );
-    });
+        // Subsequent complete throws
+        expect(
+          () => repo.completeFollowUp(
+            followUpId: followUp.id,
+            performedByUserId: 'usr-agent-1',
+          ),
+          throwsA(isA<StateError>()),
+        );
 
-    test('terminal state protection: cannot complete, cancel, or reschedule cancelled follow-up', () async {
-      final repo = MockLeadFollowUpRepository(now: () => fixedClock);
+        // Subsequent cancel throws
+        expect(
+          () => repo.cancelFollowUp(
+            followUpId: followUp.id,
+            performedByUserId: 'usr-agent-1',
+          ),
+          throwsA(isA<StateError>()),
+        );
 
-      final followUp = await repo.createFollowUp(
-        leadId: 'lead-1',
-        sourceCallActivityId: 'call-act-1',
-        scheduledAt: DateTime(2026, 9, 22, 10, 0),
-        performedByUserId: 'usr-agent-1',
-      );
-
-      await repo.cancelFollowUp(
-        followUpId: followUp.id,
-        performedByUserId: 'usr-agent-1',
-      );
-
-      // Subsequent complete throws
-      expect(
-        () => repo.completeFollowUp(
-          followUpId: followUp.id,
-          performedByUserId: 'usr-agent-1',
-        ),
-        throwsA(isA<StateError>()),
-      );
-
-      // Subsequent cancel throws
-      expect(
-        () => repo.cancelFollowUp(
-          followUpId: followUp.id,
-          performedByUserId: 'usr-agent-1',
-        ),
-        throwsA(isA<StateError>()),
-      );
-
-      // Subsequent reschedule throws
-      expect(
-        () => repo.rescheduleFollowUp(
-          followUpId: followUp.id,
-          scheduledAt: DateTime(2026, 9, 25, 10, 0),
-          performedByUserId: 'usr-agent-1',
-        ),
-        throwsA(isA<StateError>()),
-      );
-    });
+        // Subsequent reschedule throws
+        expect(
+          () => repo.rescheduleFollowUp(
+            followUpId: followUp.id,
+            scheduledAt: DateTime(2026, 9, 25, 10, 0),
+            performedByUserId: 'usr-agent-1',
+          ),
+          throwsA(isA<StateError>()),
+        );
+      },
+    );
 
     test('getFollowUpsForLeadIds filters strictly by authorized IDs', () async {
       final repo = MockLeadFollowUpRepository(now: () => fixedClock);
@@ -319,7 +337,11 @@ void main() {
       final followUps = await repo.getFollowUpsForLeadIds({'lead-1', 'lead-2'});
 
       expect(followUps.length, 3);
-      expect(followUps.map((f) => f.id).toSet(), {'follow-up-1', 'follow-up-2', 'follow-up-3'});
+      expect(followUps.map((f) => f.id).toSet(), {
+        'follow-up-1',
+        'follow-up-2',
+        'follow-up-3',
+      });
       expect(followUps.any((f) => f.leadId == 'lead-3'), isFalse);
     });
   });

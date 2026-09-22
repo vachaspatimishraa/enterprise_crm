@@ -83,189 +83,230 @@ void main() {
   }
 
   group('UserCallingWorkspaceScreen - Follow-Up Actions UI', () {
-    testWidgets('tapping Complete button completes follow-up and refreshes queue', (tester) async {
-      tester.view.physicalSize = const Size(1200, 1600);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets(
+      'tapping Complete button completes follow-up and refreshes queue',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 1600);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
 
-      final act = await callActivityRepo.recordActivity(
-        leadId: 'mock-lead-1',
-        performedByUserId: 'usr_standard',
-        outcome: CallOutcome.followUp,
-        rescheduleAt: DateTime(2026, 9, 22, 14, 0),
-      );
+        final act = await callActivityRepo.recordActivity(
+          leadId: 'mock-lead-1',
+          performedByUserId: 'usr_standard',
+          outcome: CallOutcome.followUp,
+          rescheduleAt: DateTime(2026, 9, 22, 14, 0),
+        );
 
-      final fu = await followUpRepo.createFollowUp(
-        leadId: 'mock-lead-1',
-        sourceCallActivityId: act.id,
-        scheduledAt: DateTime(2026, 9, 22, 14, 0),
-        performedByUserId: 'usr_standard',
-      );
+        final fu = await followUpRepo.createFollowUp(
+          leadId: 'mock-lead-1',
+          sourceCallActivityId: act.id,
+          scheduledAt: DateTime(2026, 9, 22, 14, 0),
+          performedByUserId: 'usr_standard',
+        );
 
-      await tester.pumpWidget(buildCallingWorkspaceApp());
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(buildCallingWorkspaceApp());
+        await tester.pumpAndSettle();
 
-      final completeBtn = find.byKey(Key('calling_queue_item_complete_button_${fu.id}'));
-      expect(completeBtn, findsOneWidget);
+        final completeBtn = find.byKey(
+          Key('calling_queue_item_complete_button_${fu.id}'),
+        );
+        expect(completeBtn, findsOneWidget);
 
-      await tester.ensureVisible(completeBtn);
-      await tester.tap(completeBtn);
-      await tester.pumpAndSettle();
+        await tester.ensureVisible(completeBtn);
+        await tester.tap(completeBtn);
+        await tester.pumpAndSettle();
 
-      // Verify SnackBar
-      expect(find.text('Follow-up updated successfully.'), findsOneWidget);
+        // Verify SnackBar
+        expect(find.text('Follow-up updated successfully.'), findsOneWidget);
 
-      // Verify follow-up is completed in repository
-      final updatedFu = await followUpRepo.getFollowUpById(fu.id);
-      expect(updatedFu!.status, FollowUpStatus.completed);
+        // Verify follow-up is completed in repository
+        final updatedFu = await followUpRepo.getFollowUpById(fu.id);
+        expect(updatedFu!.status, FollowUpStatus.completed);
 
-      // Verify queue is now empty of pending items
-      expect(find.text('No scheduled follow-ups.'), findsOneWidget);
-    });
+        // Verify queue is now empty of pending items
+        expect(find.text('No scheduled follow-ups.'), findsOneWidget);
+      },
+    );
 
-    testWidgets('tapping Cancel button shows dialog; dismissing keeps follow-up pending; confirming cancels it', (tester) async {
-      tester.view.physicalSize = const Size(1200, 1600);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets(
+      'tapping Cancel button shows dialog; dismissing keeps follow-up pending; confirming cancels it',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 1600);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
 
-      final act = await callActivityRepo.recordActivity(
-        leadId: 'mock-lead-1',
-        performedByUserId: 'usr_standard',
-        outcome: CallOutcome.followUp,
-        rescheduleAt: DateTime(2026, 9, 22, 14, 0),
-      );
+        final act = await callActivityRepo.recordActivity(
+          leadId: 'mock-lead-1',
+          performedByUserId: 'usr_standard',
+          outcome: CallOutcome.followUp,
+          rescheduleAt: DateTime(2026, 9, 22, 14, 0),
+        );
 
-      final fu = await followUpRepo.createFollowUp(
-        leadId: 'mock-lead-1',
-        sourceCallActivityId: act.id,
-        scheduledAt: DateTime(2026, 9, 22, 14, 0),
-        performedByUserId: 'usr_standard',
-      );
+        final fu = await followUpRepo.createFollowUp(
+          leadId: 'mock-lead-1',
+          sourceCallActivityId: act.id,
+          scheduledAt: DateTime(2026, 9, 22, 14, 0),
+          performedByUserId: 'usr_standard',
+        );
 
-      await tester.pumpWidget(buildCallingWorkspaceApp());
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(buildCallingWorkspaceApp());
+        await tester.pumpAndSettle();
 
-      final cancelBtn = find.byKey(Key('calling_queue_item_cancel_button_${fu.id}'));
-      expect(cancelBtn, findsOneWidget);
+        final cancelBtn = find.byKey(
+          Key('calling_queue_item_cancel_button_${fu.id}'),
+        );
+        expect(cancelBtn, findsOneWidget);
 
-      // Tap cancel to open dialog
-      await tester.ensureVisible(cancelBtn);
-      await tester.tap(cancelBtn);
-      await tester.pumpAndSettle();
+        // Tap cancel to open dialog
+        await tester.ensureVisible(cancelBtn);
+        await tester.tap(cancelBtn);
+        await tester.pumpAndSettle();
 
-      expect(find.text('Cancel Follow-Up'), findsOneWidget);
-      expect(find.text('Cancel this scheduled follow-up?'), findsOneWidget);
+        expect(find.text('Cancel Follow-Up'), findsOneWidget);
+        expect(find.text('Cancel this scheduled follow-up?'), findsOneWidget);
 
-      // Dismiss dialog
-      await tester.tap(find.byKey(const Key('calling_cancel_dialog_dismiss')));
-      await tester.pumpAndSettle();
+        // Dismiss dialog
+        await tester.tap(
+          find.byKey(const Key('calling_cancel_dialog_dismiss')),
+        );
+        await tester.pumpAndSettle();
 
-      // In repository: still pending
-      var inRepo = await followUpRepo.getFollowUpById(fu.id);
-      expect(inRepo!.status, FollowUpStatus.pending);
+        // In repository: still pending
+        var inRepo = await followUpRepo.getFollowUpById(fu.id);
+        expect(inRepo!.status, FollowUpStatus.pending);
 
-      // Tap cancel again and confirm
-      await tester.ensureVisible(cancelBtn);
-      await tester.tap(cancelBtn);
-      await tester.pumpAndSettle();
+        // Tap cancel again and confirm
+        await tester.ensureVisible(cancelBtn);
+        await tester.tap(cancelBtn);
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('calling_cancel_dialog_confirm')));
-      await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('calling_cancel_dialog_confirm')),
+        );
+        await tester.pumpAndSettle();
 
-      expect(find.text('Follow-up updated successfully.'), findsOneWidget);
+        expect(find.text('Follow-up updated successfully.'), findsOneWidget);
 
-      inRepo = await followUpRepo.getFollowUpById(fu.id);
-      expect(inRepo!.status, FollowUpStatus.cancelled);
-    });
+        inRepo = await followUpRepo.getFollowUpById(fu.id);
+        expect(inRepo!.status, FollowUpStatus.cancelled);
+      },
+    );
 
-    testWidgets('tapping Reschedule button opens dialog with date and time pickers', (tester) async {
-      tester.view.physicalSize = const Size(1200, 1600);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets(
+      'tapping Reschedule button opens dialog with date and time pickers',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 1600);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
 
-      final act = await callActivityRepo.recordActivity(
-        leadId: 'mock-lead-1',
-        performedByUserId: 'usr_standard',
-        outcome: CallOutcome.followUp,
-        rescheduleAt: DateTime(2026, 9, 22, 14, 0),
-      );
+        final act = await callActivityRepo.recordActivity(
+          leadId: 'mock-lead-1',
+          performedByUserId: 'usr_standard',
+          outcome: CallOutcome.followUp,
+          rescheduleAt: DateTime(2026, 9, 22, 14, 0),
+        );
 
-      final fu = await followUpRepo.createFollowUp(
-        leadId: 'mock-lead-1',
-        sourceCallActivityId: act.id,
-        scheduledAt: DateTime(2026, 9, 22, 14, 0),
-        performedByUserId: 'usr_standard',
-      );
+        final fu = await followUpRepo.createFollowUp(
+          leadId: 'mock-lead-1',
+          sourceCallActivityId: act.id,
+          scheduledAt: DateTime(2026, 9, 22, 14, 0),
+          performedByUserId: 'usr_standard',
+        );
 
-      await tester.pumpWidget(buildCallingWorkspaceApp());
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(buildCallingWorkspaceApp());
+        await tester.pumpAndSettle();
 
-      final rescheduleBtn = find.byKey(Key('calling_queue_item_reschedule_button_${fu.id}'));
-      expect(rescheduleBtn, findsOneWidget);
+        final rescheduleBtn = find.byKey(
+          Key('calling_queue_item_reschedule_button_${fu.id}'),
+        );
+        expect(rescheduleBtn, findsOneWidget);
 
-      await tester.ensureVisible(rescheduleBtn);
-      await tester.tap(rescheduleBtn);
-      await tester.pumpAndSettle();
+        await tester.ensureVisible(rescheduleBtn);
+        await tester.tap(rescheduleBtn);
+        await tester.pumpAndSettle();
 
-      expect(find.text('Reschedule Follow-Up'), findsOneWidget);
-      expect(find.byKey(const Key('calling_reschedule_pick_date_button')), findsOneWidget);
-      expect(find.byKey(const Key('calling_reschedule_pick_time_button')), findsOneWidget);
+        expect(find.text('Reschedule Follow-Up'), findsOneWidget);
+        expect(
+          find.byKey(const Key('calling_reschedule_pick_date_button')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('calling_reschedule_pick_time_button')),
+          findsOneWidget,
+        );
 
-      // Tap Cancel in dialog
-      await tester.tap(find.byKey(const Key('calling_reschedule_dialog_dismiss')));
-      await tester.pumpAndSettle();
+        // Tap Cancel in dialog
+        await tester.tap(
+          find.byKey(const Key('calling_reschedule_dialog_dismiss')),
+        );
+        await tester.pumpAndSettle();
 
-      expect(find.text('Reschedule Follow-Up'), findsNothing);
-    });
+        expect(find.text('Reschedule Follow-Up'), findsNothing);
+      },
+    );
   });
 
   group('UserLeadDetailsScreen - Follow-Up History Integration', () {
-    testWidgets('renders LeadFollowUpHistorySection with follow-ups and events', (tester) async {
-      tester.view.physicalSize = const Size(1200, 1600);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets(
+      'renders LeadFollowUpHistorySection with follow-ups and events',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 1600);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
 
-      final act = await callActivityRepo.recordActivity(
-        leadId: 'mock-lead-1',
-        performedByUserId: 'usr_standard',
-        outcome: CallOutcome.followUp,
-        rescheduleAt: DateTime(2026, 9, 22, 14, 0),
-      );
+        final act = await callActivityRepo.recordActivity(
+          leadId: 'mock-lead-1',
+          performedByUserId: 'usr_standard',
+          outcome: CallOutcome.followUp,
+          rescheduleAt: DateTime(2026, 9, 22, 14, 0),
+        );
 
-      final fu = await followUpRepo.createFollowUp(
-        leadId: 'mock-lead-1',
-        sourceCallActivityId: act.id,
-        scheduledAt: DateTime(2026, 9, 22, 14, 0),
-        performedByUserId: 'usr_standard',
-      );
+        final fu = await followUpRepo.createFollowUp(
+          leadId: 'mock-lead-1',
+          sourceCallActivityId: act.id,
+          scheduledAt: DateTime(2026, 9, 22, 14, 0),
+          performedByUserId: 'usr_standard',
+        );
 
-      await followUpRepo.rescheduleFollowUp(
-        followUpId: fu.id,
-        scheduledAt: DateTime(2026, 9, 25, 11, 0),
-        performedByUserId: 'usr_standard',
-      );
+        await followUpRepo.rescheduleFollowUp(
+          followUpId: fu.id,
+          scheduledAt: DateTime(2026, 9, 25, 11, 0),
+          performedByUserId: 'usr_standard',
+        );
 
+        await tester.pumpWidget(buildLeadDetailsApp(leadId: 'mock-lead-1'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadFollowUpHistorySection), findsOneWidget);
+        expect(
+          find.byKey(Key('lead_follow_up_history_card_${fu.id}')),
+          findsOneWidget,
+        );
+        expect(find.text('Follow-Up History'), findsOneWidget);
+        expect(find.textContaining('Created •'), findsOneWidget);
+        expect(find.textContaining('Rescheduled to'), findsOneWidget);
+      },
+    );
+
+    testWidgets('empty follow-up history renders empty message', (
+      tester,
+    ) async {
       await tester.pumpWidget(buildLeadDetailsApp(leadId: 'mock-lead-1'));
       await tester.pumpAndSettle();
 
       expect(find.byType(LeadFollowUpHistorySection), findsOneWidget);
-      expect(find.byKey(Key('lead_follow_up_history_card_${fu.id}')), findsOneWidget);
-      expect(find.text('Follow-Up History'), findsOneWidget);
-      expect(find.textContaining('Created •'), findsOneWidget);
-      expect(find.textContaining('Rescheduled to'), findsOneWidget);
-    });
-
-    testWidgets('empty follow-up history renders empty message', (tester) async {
-      await tester.pumpWidget(buildLeadDetailsApp(leadId: 'mock-lead-1'));
-      await tester.pumpAndSettle();
-
-      expect(find.byType(LeadFollowUpHistorySection), findsOneWidget);
-      expect(find.byKey(const Key('lead_follow_up_history_empty_message')), findsOneWidget);
-      expect(find.text('No follow-ups recorded for this lead.'), findsOneWidget);
+      expect(
+        find.byKey(const Key('lead_follow_up_history_empty_message')),
+        findsOneWidget,
+      );
+      expect(
+        find.text('No follow-ups recorded for this lead.'),
+        findsOneWidget,
+      );
     });
   });
 }

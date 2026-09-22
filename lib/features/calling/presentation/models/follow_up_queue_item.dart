@@ -16,16 +16,17 @@ class FollowUpQueueItem {
     LeadFollowUp? followUp,
     this.activity,
     required this.timing,
-  }) : followUp = followUp ??
-            LeadFollowUp(
-              id: activity?.id ?? 'follow-up-legacy',
-              leadId: lead.id,
-              sourceCallActivityId: activity?.id ?? '',
-              scheduledAt: activity?.rescheduleAt ?? DateTime.now(),
-              status: FollowUpStatus.pending,
-              createdAt: activity?.createdAt ?? DateTime.now(),
-              updatedAt: activity?.createdAt ?? DateTime.now(),
-            );
+  }) : followUp =
+           followUp ??
+           LeadFollowUp(
+             id: activity?.id ?? 'follow-up-legacy',
+             leadId: lead.id,
+             sourceCallActivityId: activity?.id ?? '',
+             scheduledAt: activity?.rescheduleAt ?? DateTime.now(),
+             status: FollowUpStatus.pending,
+             createdAt: activity?.createdAt ?? DateTime.now(),
+             updatedAt: activity?.createdAt ?? DateTime.now(),
+           );
 
   @override
   bool operator ==(Object other) =>

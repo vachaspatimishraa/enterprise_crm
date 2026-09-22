@@ -1,12 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 /// Types of lifecycle events recorded for a scheduled follow-up.
-enum FollowUpEventType {
-  created,
-  rescheduled,
-  completed,
-  cancelled,
-}
+enum FollowUpEventType { created, rescheduled, completed, cancelled }
 
 /// Pure immutable domain event recording a lifecycle transition of a [LeadFollowUp].
 @immutable
@@ -57,14 +52,14 @@ class FollowUpEvent {
 
   @override
   int get hashCode => Object.hash(
-        id,
-        followUpId,
-        type,
-        performedByUserId,
-        createdAt,
-        previousScheduledAt,
-        newScheduledAt,
-      );
+    id,
+    followUpId,
+    type,
+    performedByUserId,
+    createdAt,
+    previousScheduledAt,
+    newScheduledAt,
+  );
 
   @override
   String toString() =>

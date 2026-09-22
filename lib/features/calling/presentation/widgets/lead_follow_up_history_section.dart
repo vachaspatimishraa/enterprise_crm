@@ -112,7 +112,9 @@ class LeadFollowUpHistorySection extends StatelessWidget {
                     key: Key('lead_follow_up_history_card_${fu.id}'),
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                      color: colorScheme.surfaceContainerHighest.withValues(
+                        alpha: 0.35,
+                      ),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: colorScheme.outlineVariant),
                     ),

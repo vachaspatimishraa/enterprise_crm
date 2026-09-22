@@ -42,7 +42,10 @@ class FollowUpActionCubit extends Cubit<FollowUpActionState> {
 
     emit(const FollowUpActionSubmitting());
 
-    final gateResult = await _verifyAccess(followUpId: followUpId, leadId: leadId);
+    final gateResult = await _verifyAccess(
+      followUpId: followUpId,
+      leadId: leadId,
+    );
     if (!gateResult.isSuccess) {
       emit(FollowUpActionAccessDenied(gateResult.errorMessage!));
       return;
@@ -68,7 +71,10 @@ class FollowUpActionCubit extends Cubit<FollowUpActionState> {
 
     emit(const FollowUpActionSubmitting());
 
-    final gateResult = await _verifyAccess(followUpId: followUpId, leadId: leadId);
+    final gateResult = await _verifyAccess(
+      followUpId: followUpId,
+      leadId: leadId,
+    );
     if (!gateResult.isSuccess) {
       emit(FollowUpActionAccessDenied(gateResult.errorMessage!));
       return;
@@ -95,13 +101,20 @@ class FollowUpActionCubit extends Cubit<FollowUpActionState> {
 
     // Reschedule validation: must be in the future
     if (!scheduledAt.isAfter(_now())) {
-      emit(const FollowUpActionFailure('Reschedule date and time must be in the future.'));
+      emit(
+        const FollowUpActionFailure(
+          'Reschedule date and time must be in the future.',
+        ),
+      );
       return;
     }
 
     emit(const FollowUpActionSubmitting());
 
-    final gateResult = await _verifyAccess(followUpId: followUpId, leadId: leadId);
+    final gateResult = await _verifyAccess(
+      followUpId: followUpId,
+      leadId: leadId,
+    );
     if (!gateResult.isSuccess) {
       emit(FollowUpActionAccessDenied(gateResult.errorMessage!));
       return;
@@ -126,21 +139,30 @@ class FollowUpActionCubit extends Cubit<FollowUpActionState> {
   }) async {
     // 1. Module and permission guard
     if (!UserFollowUpPolicy.canManageFollowUps(_user)) {
-      return (isSuccess: false, errorMessage: 'Calling or Lead permissions revoked.');
+      return (
+        isSuccess: false,
+        errorMessage: 'Calling or Lead permissions revoked.',
+      );
     }
 
     try {
       // 2. Re-resolve UserLeadLink
       final link = await _linkRepository.getLinkForUser(_user.id);
       if (link == null) {
-        return (isSuccess: false, errorMessage: 'Identity link is no longer valid.');
+        return (
+          isSuccess: false,
+          errorMessage: 'Identity link is no longer valid.',
+        );
       }
 
       // 3. Validate assignee exists
       final assignees = await _leadRepository.getAssignableUsers();
       final assigneeExists = assignees.any((a) => a.id == link.leadAssigneeId);
       if (!assigneeExists) {
-        return (isSuccess: false, errorMessage: 'Assigned identity is invalid.');
+        return (
+          isSuccess: false,
+          errorMessage: 'Assigned identity is invalid.',
+        );
       }
 
       // 4. Re-fetch fresh lead
@@ -153,24 +175,33 @@ class FollowUpActionCubit extends Cubit<FollowUpActionState> {
       if (freshLead.assignedUserId != link.leadAssigneeId) {
         return (
           isSuccess: false,
-          errorMessage: 'Lead ownership has changed or is no longer accessible.',
+          errorMessage:
+              'Lead ownership has changed or is no longer accessible.',
         );
       }
 
       // 6. Re-fetch fresh follow-up
-      final freshFollowUp = await _followUpRepository.getFollowUpById(followUpId);
+      final freshFollowUp = await _followUpRepository.getFollowUpById(
+        followUpId,
+      );
       if (freshFollowUp == null) {
         return (isSuccess: false, errorMessage: 'Follow-up not found.');
       }
 
       // 7. Strict pending status check
       if (freshFollowUp.status != FollowUpStatus.pending) {
-        return (isSuccess: false, errorMessage: 'Follow-up is no longer pending.');
+        return (
+          isSuccess: false,
+          errorMessage: 'Follow-up is no longer pending.',
+        );
       }
 
       return (isSuccess: true, errorMessage: null);
     } catch (_) {
-      return (isSuccess: false, errorMessage: 'Unable to verify follow-up access.');
+      return (
+        isSuccess: false,
+        errorMessage: 'Unable to verify follow-up access.',
+      );
     }
   }
 }

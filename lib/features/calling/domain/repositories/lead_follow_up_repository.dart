@@ -16,9 +16,7 @@ abstract interface class LeadFollowUpRepository {
   /// Returns all follow-up records belonging to the given [leadIds].
   ///
   /// If [leadIds] is empty, returns an empty list without wildcard interpretation.
-  Future<List<LeadFollowUp>> getFollowUpsForLeadIds(
-    Set<String> leadIds,
-  );
+  Future<List<LeadFollowUp>> getFollowUpsForLeadIds(Set<String> leadIds);
 
   /// Retrieves a single follow-up by its unique identifier, or null if not found.
   Future<LeadFollowUp?> getFollowUpById(String id);
@@ -51,7 +49,5 @@ abstract interface class LeadFollowUpRepository {
   });
 
   /// Retrieves all lifecycle events recorded for the given [followUpId], ordered chronological.
-  Future<List<FollowUpEvent>> getEventsForFollowUp(
-    String followUpId,
-  );
+  Future<List<FollowUpEvent>> getEventsForFollowUp(String followUpId);
 }
