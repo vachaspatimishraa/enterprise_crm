@@ -276,19 +276,38 @@ INVENTORY-2 adds the first Inventory write workflow while strictly preserving th
 
 ---
 
-## 10. INVENTORY-3 — STOCK MOVEMENT BUSINESS FREEZE
-**Status: FROZEN**
+## 10. INVENTORY-3 — STOCK MOVEMENT CORE
+**Status: FROZEN AND IMPLEMENTED**
 
 ### 10.1 Overview & Scope
-INVENTORY-3 introduces the first operational stock-changing workflows:
-- One-time Opening Stock (Admin only, 0-movement items only, quantity > 0)
-- Manual Stock Adjustment (Admin only, initialized items only, Increase/Decrease UI with positive magnitude mapped to signed quantityDelta, required non-blank free-text reason)
-- Strict non-negative resulting stock enforcement
-- Movement-ledger-based quantity updates (`SUM(StockMovement.quantityDelta)`)
-- Actor (`performedByUserId` from `CurrentUser.id`) and timestamp audit data for new movements
-- Immediate quantity refresh on Inventory Details and Workspace
-- Stock Movement History UI is deferred to INVENTORY-4
-- Standard Users remain strictly read-only with pre-Cubit mutation route security
+INVENTORY-3 implements the first operational stock-changing workflows:
+- **Opening Stock:**
+  - Admin only
+  - separate post-create operation
+  - only with zero previous movements (`hasStockMovements == false`)
+  - finite quantity > 0
+  - reason null
+  - actor recorded (`performedByUserId` from `CurrentUser.id`)
+- **Adjustment:**
+  - Admin only
+  - initialized items only (`hasStockMovements == true`)
+  - Increase / Decrease UI
+  - signed quantityDelta in domain
+  - finite nonzero delta
+  - required trimmed nonblank free-text reason
+  - actor recorded (`performedByUserId` from `CurrentUser.id`)
+- **Negative final stock:**
+  - prohibited (`currentQuantity + quantityDelta >= 0` enforced atomically at repository boundary)
+- **Quantity:**
+  - movement-derived (`SUM(StockMovement.quantityDelta)`)
+  - direct edits prohibited
+- **History UI:**
+  - deferred to INVENTORY-4
+- **Permissions:**
+  - no new Inventory permissions (`InventoryStockManagementPolicy.canManageStock(CurrentUser)`)
+- **Legacy seed compatibility:**
+  - existing movements may have null actor/reason
+  - new movements must obey current mutation rules
 
 ### 10.2 Decision Matrix (Approved & Frozen)
 

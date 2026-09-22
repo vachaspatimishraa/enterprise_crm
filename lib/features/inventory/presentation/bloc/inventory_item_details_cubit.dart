@@ -11,7 +11,7 @@ class InventoryItemDetailsCubit extends Cubit<InventoryItemDetailsState> {
   InventoryItemDetailsCubit(this._repository)
     : super(const InventoryItemDetailsInitial());
 
-  /// Loads item details by [id].
+  /// Loads item details and stock movement initialization status by [id].
   Future<void> load(String id) async {
     _lastId = id;
     emit(const InventoryItemDetailsLoading());
@@ -21,7 +21,10 @@ class InventoryItemDetailsCubit extends Cubit<InventoryItemDetailsState> {
       if (summary == null) {
         emit(InventoryItemDetailsNotFound(id));
       } else {
-        emit(InventoryItemDetailsLoaded(summary));
+        final hasMovements = await _repository.hasStockMovements(id);
+        emit(
+          InventoryItemDetailsLoaded(summary, hasStockMovements: hasMovements),
+        );
       }
     } catch (_) {
       emit(

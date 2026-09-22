@@ -5,9 +5,13 @@ import '../../domain/entities/inventory_item_summary.dart';
 import '../../domain/entities/inventory_page.dart';
 import '../../domain/entities/inventory_query.dart';
 import '../../domain/entities/inventory_sort.dart';
+import '../../domain/entities/inventory_stock_mutation_result.dart';
 import '../../domain/entities/stock_movement.dart';
+import '../../domain/entities/stock_movement_type.dart';
 import '../../domain/exceptions/inventory_exception.dart';
+import '../../domain/inputs/adjust_inventory_stock_input.dart';
 import '../../domain/inputs/create_inventory_item_input.dart';
+import '../../domain/inputs/record_opening_stock_input.dart';
 import '../../domain/inputs/update_inventory_item_input.dart';
 import '../../domain/repositories/inventory_repository.dart';
 import '../mock/mock_inventory_seed_data.dart';
@@ -15,18 +19,22 @@ import '../mock/mock_inventory_seed_data.dart';
 /// In-memory mock implementation of [InventoryRepository].
 ///
 /// Current stock quantity is dynamically derived from [StockMovement] deltas.
-/// Enforces case-insensitive trimmed SKU uniqueness at the repository boundary.
+/// Enforces case-insensitive trimmed SKU uniqueness, atomic non-negative stock validation,
+/// and append-only stock movement ledger persistence.
 class MockInventoryRepository implements InventoryRepository {
   final List<InventoryItem> _items;
   final List<StockMovement> _movements;
+  final DateTime Function() _nowProvider;
 
   MockInventoryRepository({
     List<InventoryItem>? items,
     List<StockMovement>? movements,
+    DateTime Function()? nowProvider,
   }) : _items = List.of(items ?? MockInventorySeedData.createDefaultItems()),
        _movements = List.of(
          movements ?? MockInventorySeedData.createDefaultMovements(),
-       ) {
+       ),
+       _nowProvider = nowProvider ?? DateTime.now {
     _validateInvariants();
   }
 
@@ -71,6 +79,29 @@ class MockInventoryRepository implements InventoryRepository {
     while (true) {
       final candidateId = 'item_${candidateNumber.toString().padLeft(3, '0')}';
       if (!_items.any((item) => item.id == candidateId)) {
+        return candidateId;
+      }
+      candidateNumber++;
+    }
+  }
+
+  String _generateNextDeterministicMovementId() {
+    final regex = RegExp(r'^mov_(\d+)$');
+    int maxNumber = 0;
+    for (final movement in _movements) {
+      final match = regex.firstMatch(movement.id);
+      if (match != null) {
+        final num = int.tryParse(match.group(1) ?? '') ?? 0;
+        if (num > maxNumber) {
+          maxNumber = num;
+        }
+      }
+    }
+
+    int candidateNumber = maxNumber + 1;
+    while (true) {
+      final candidateId = 'mov_${candidateNumber.toString().padLeft(3, '0')}';
+      if (!_movements.any((m) => m.id == candidateId)) {
         return candidateId;
       }
       candidateNumber++;
@@ -251,6 +282,139 @@ class MockInventoryRepository implements InventoryRepository {
     return InventoryItemSummary(
       item: updatedItem,
       quantityOnHand: _deriveQuantityOnHand(input.id),
+    );
+  }
+
+  @override
+  Future<bool> hasStockMovements(String itemId) async {
+    final itemExists = _items.any((item) => item.id == itemId);
+    if (!itemExists) {
+      throw InventoryItemNotFoundException(
+        'Inventory item with ID "$itemId" not found.',
+      );
+    }
+    return _movements.any((m) => m.inventoryItemId == itemId);
+  }
+
+  @override
+  Future<InventoryStockMutationResult> recordOpeningStock(
+    RecordOpeningStockInput input,
+  ) async {
+    final matchingItem = _items.where((i) => i.id == input.itemId).firstOrNull;
+    if (matchingItem == null) {
+      throw InventoryItemNotFoundException(
+        'Inventory item with ID "${input.itemId}" not found.',
+      );
+    }
+
+    final trimmedActor = input.performedByUserId.trim();
+    if (trimmedActor.isEmpty) {
+      throw const InventoryValidationException('User ID cannot be blank.');
+    }
+
+    if (!input.quantity.isFinite || input.quantity <= 0) {
+      throw const InventoryValidationException(
+        'Opening quantity must be a finite number greater than zero.',
+      );
+    }
+
+    final hasExistingMovements = _movements.any(
+      (m) => m.inventoryItemId == input.itemId,
+    );
+    if (hasExistingMovements) {
+      throw const InventoryOpeningStockAlreadyRecordedException(
+        'Opening stock has already been recorded for this item.',
+      );
+    }
+
+    final id = _generateNextDeterministicMovementId();
+    final movement = StockMovement(
+      id: id,
+      inventoryItemId: input.itemId,
+      type: StockMovementType.openingStock,
+      quantityDelta: input.quantity,
+      createdAt: _nowProvider(),
+      performedByUserId: trimmedActor,
+      reason: null,
+    );
+
+    _movements.add(movement);
+
+    return InventoryStockMutationResult(
+      movement: movement,
+      item: InventoryItemSummary(
+        item: matchingItem,
+        quantityOnHand: _deriveQuantityOnHand(input.itemId),
+      ),
+    );
+  }
+
+  @override
+  Future<InventoryStockMutationResult> adjustStock(
+    AdjustInventoryStockInput input,
+  ) async {
+    final matchingItem = _items.where((i) => i.id == input.itemId).firstOrNull;
+    if (matchingItem == null) {
+      throw InventoryItemNotFoundException(
+        'Inventory item with ID "${input.itemId}" not found.',
+      );
+    }
+
+    final trimmedActor = input.performedByUserId.trim();
+    if (trimmedActor.isEmpty) {
+      throw const InventoryValidationException('User ID cannot be blank.');
+    }
+
+    if (!input.quantityDelta.isFinite || input.quantityDelta == 0) {
+      throw const InventoryValidationException(
+        'Adjustment quantity must be a non-zero finite number.',
+      );
+    }
+
+    final trimmedReason = input.reason.trim();
+    if (trimmedReason.isEmpty) {
+      throw const InventoryValidationException(
+        'Adjustment reason cannot be blank.',
+      );
+    }
+
+    final hasExistingMovements = _movements.any(
+      (m) => m.inventoryItemId == input.itemId,
+    );
+    if (!hasExistingMovements) {
+      throw const InventoryUninitializedStockException(
+        'Stock must be initialized before manual adjustments can be applied.',
+      );
+    }
+
+    // Atomic stock check: calculate from current movements at write time
+    final currentQty = _deriveQuantityOnHand(input.itemId);
+    final candidateQty = currentQty + input.quantityDelta;
+    if (candidateQty < 0) {
+      throw InventoryNegativeStockException(
+        'Adjustment of ${input.quantityDelta} would result in negative stock ($currentQty -> $candidateQty).',
+      );
+    }
+
+    final id = _generateNextDeterministicMovementId();
+    final movement = StockMovement(
+      id: id,
+      inventoryItemId: input.itemId,
+      type: StockMovementType.adjustment,
+      quantityDelta: input.quantityDelta,
+      createdAt: _nowProvider(),
+      performedByUserId: trimmedActor,
+      reason: trimmedReason,
+    );
+
+    _movements.add(movement);
+
+    return InventoryStockMutationResult(
+      movement: movement,
+      item: InventoryItemSummary(
+        item: matchingItem,
+        quantityOnHand: _deriveQuantityOnHand(input.itemId),
+      ),
     );
   }
 }

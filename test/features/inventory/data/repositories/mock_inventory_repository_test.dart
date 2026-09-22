@@ -1,3 +1,4 @@
+import 'package:enterprise_crm/features/inventory/data/mock/mock_inventory_seed_data.dart';
 import 'package:enterprise_crm/features/inventory/data/repositories/mock_inventory_repository.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_item.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_query.dart';
@@ -5,7 +6,9 @@ import 'package:enterprise_crm/features/inventory/domain/entities/inventory_sort
 import 'package:enterprise_crm/features/inventory/domain/entities/stock_movement.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/stock_movement_type.dart';
 import 'package:enterprise_crm/features/inventory/domain/exceptions/inventory_exception.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/adjust_inventory_stock_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/create_inventory_item_input.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/record_opening_stock_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/update_inventory_item_input.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -557,6 +560,524 @@ void main() {
         expect(sorted.items.first.item.id, 'item_001');
         expect(sorted.items.first.item.name, '000 First Item');
       });
+    });
+
+    group('hasStockMovements Tests', () {
+      test(
+        'throws InventoryItemNotFoundException when item does not exist',
+        () async {
+          final repo = MockInventoryRepository();
+          expect(
+            () => repo.hasStockMovements('nonexistent_id'),
+            throwsA(isA<InventoryItemNotFoundException>()),
+          );
+        },
+      );
+
+      test('returns false for newly created item with 0 movements', () async {
+        final repo = MockInventoryRepository();
+        final created = await repo.createItem(
+          const CreateInventoryItemInput(name: 'Fresh Item', sku: 'FRESH-001'),
+        );
+        final hasMovements = await repo.hasStockMovements(created.item.id);
+        expect(hasMovements, isFalse);
+      });
+
+      test(
+        'returns true for seeded item with existing opening movement',
+        () async {
+          final repo = MockInventoryRepository();
+          final hasMovements = await repo.hasStockMovements('item_001');
+          expect(hasMovements, isTrue);
+        },
+      );
+
+      test(
+        'returns true for seeded item with zero stock balance but movement present',
+        () async {
+          final repo = MockInventoryRepository();
+          // item_003 has openingStock of 0.0 in seed data
+          final hasMovements = await repo.hasStockMovements('item_003');
+          expect(hasMovements, isTrue);
+        },
+      );
+    });
+
+    group('recordOpeningStock Tests', () {
+      test(
+        'succeeds for uninitialized item with positive quantity and records actor',
+        () async {
+          final fixedTime = DateTime.utc(2026, 9, 22, 10, 0);
+          final repo = MockInventoryRepository(nowProvider: () => fixedTime);
+          final created = await repo.createItem(
+            const CreateInventoryItemInput(name: 'Brand New', sku: 'NEW-001'),
+          );
+
+          final result = await repo.recordOpeningStock(
+            RecordOpeningStockInput(
+              itemId: created.item.id,
+              quantity: 50.0,
+              performedByUserId: 'usr_admin',
+            ),
+          );
+
+          expect(result.movement.id, startsWith('mov_'));
+          expect(result.movement.inventoryItemId, created.item.id);
+          expect(result.movement.type, StockMovementType.openingStock);
+          expect(result.movement.quantityDelta, 50.0);
+          expect(result.movement.createdAt, fixedTime);
+          expect(result.movement.performedByUserId, 'usr_admin');
+          expect(result.movement.reason, isNull);
+          expect(result.item.quantityOnHand, 50.0);
+
+          final rechecked = await repo.getItemById(created.item.id);
+          expect(rechecked?.quantityOnHand, 50.0);
+          expect(await repo.hasStockMovements(created.item.id), isTrue);
+        },
+      );
+
+      test('succeeds with positive decimal opening quantity', () async {
+        final repo = MockInventoryRepository();
+        final created = await repo.createItem(
+          const CreateInventoryItemInput(name: 'Decimal Item', sku: 'DEC-001'),
+        );
+
+        final result = await repo.recordOpeningStock(
+          RecordOpeningStockInput(
+            itemId: created.item.id,
+            quantity: 12.75,
+            performedByUserId: 'usr_admin',
+          ),
+        );
+
+        expect(result.item.quantityOnHand, 12.75);
+      });
+
+      test(
+        'rejects second opening stock on item that already has movements',
+        () async {
+          final repo = MockInventoryRepository();
+          final created = await repo.createItem(
+            const CreateInventoryItemInput(
+              name: 'Single Opening',
+              sku: 'SO-001',
+            ),
+          );
+
+          await repo.recordOpeningStock(
+            RecordOpeningStockInput(
+              itemId: created.item.id,
+              quantity: 10.0,
+              performedByUserId: 'usr_admin',
+            ),
+          );
+
+          expect(
+            () => repo.recordOpeningStock(
+              RecordOpeningStockInput(
+                itemId: created.item.id,
+                quantity: 20.0,
+                performedByUserId: 'usr_admin',
+              ),
+            ),
+            throwsA(isA<InventoryOpeningStockAlreadyRecordedException>()),
+          );
+        },
+      );
+
+      test(
+        'rejects opening stock on seeded item even when current quantity is 0',
+        () async {
+          final repo = MockInventoryRepository();
+          // item_003 has openingStock with 0.0 delta
+          expect(
+            () => repo.recordOpeningStock(
+              const RecordOpeningStockInput(
+                itemId: 'item_003',
+                quantity: 15.0,
+                performedByUserId: 'usr_admin',
+              ),
+            ),
+            throwsA(isA<InventoryOpeningStockAlreadyRecordedException>()),
+          );
+        },
+      );
+
+      test('rejects zero opening quantity', () async {
+        final repo = MockInventoryRepository();
+        final created = await repo.createItem(
+          const CreateInventoryItemInput(name: 'Zero Test', sku: 'ZT-001'),
+        );
+
+        expect(
+          () => repo.recordOpeningStock(
+            RecordOpeningStockInput(
+              itemId: created.item.id,
+              quantity: 0.0,
+              performedByUserId: 'usr_admin',
+            ),
+          ),
+          throwsA(isA<InventoryValidationException>()),
+        );
+      });
+
+      test('rejects negative opening quantity', () async {
+        final repo = MockInventoryRepository();
+        final created = await repo.createItem(
+          const CreateInventoryItemInput(name: 'Neg Test', sku: 'NT-001'),
+        );
+
+        expect(
+          () => repo.recordOpeningStock(
+            RecordOpeningStockInput(
+              itemId: created.item.id,
+              quantity: -5.0,
+              performedByUserId: 'usr_admin',
+            ),
+          ),
+          throwsA(isA<InventoryValidationException>()),
+        );
+      });
+
+      test('rejects NaN and Infinity opening quantity', () async {
+        final repo = MockInventoryRepository();
+        final created = await repo.createItem(
+          const CreateInventoryItemInput(name: 'Infinite Test', sku: 'INF-001'),
+        );
+
+        expect(
+          () => repo.recordOpeningStock(
+            RecordOpeningStockInput(
+              itemId: created.item.id,
+              quantity: double.nan,
+              performedByUserId: 'usr_admin',
+            ),
+          ),
+          throwsA(isA<InventoryValidationException>()),
+        );
+
+        expect(
+          () => repo.recordOpeningStock(
+            RecordOpeningStockInput(
+              itemId: created.item.id,
+              quantity: double.infinity,
+              performedByUserId: 'usr_admin',
+            ),
+          ),
+          throwsA(isA<InventoryValidationException>()),
+        );
+      });
+
+      test('rejects blank actor ID', () async {
+        final repo = MockInventoryRepository();
+        final created = await repo.createItem(
+          const CreateInventoryItemInput(name: 'Actor Test', sku: 'ACT-001'),
+        );
+
+        expect(
+          () => repo.recordOpeningStock(
+            RecordOpeningStockInput(
+              itemId: created.item.id,
+              quantity: 10.0,
+              performedByUserId: '   ',
+            ),
+          ),
+          throwsA(isA<InventoryValidationException>()),
+        );
+      });
+
+      test('rejects unknown item ID', () async {
+        final repo = MockInventoryRepository();
+        expect(
+          () => repo.recordOpeningStock(
+            const RecordOpeningStockInput(
+              itemId: 'unknown_item',
+              quantity: 10.0,
+              performedByUserId: 'usr_admin',
+            ),
+          ),
+          throwsA(isA<InventoryItemNotFoundException>()),
+        );
+      });
+    });
+
+    group('adjustStock Tests', () {
+      test('succeeds with positive adjustment on initialized item', () async {
+        final fixedTime = DateTime.utc(2026, 9, 22, 11, 0);
+        final repo = MockInventoryRepository(nowProvider: () => fixedTime);
+        // item_001 starts with 25.0
+        final result = await repo.adjustStock(
+          const AdjustInventoryStockInput(
+            itemId: 'item_001',
+            quantityDelta: 10.0,
+            reason: 'Received shipment audit',
+            performedByUserId: 'usr_admin',
+          ),
+        );
+
+        expect(result.movement.type, StockMovementType.adjustment);
+        expect(result.movement.quantityDelta, 10.0);
+        expect(result.movement.createdAt, fixedTime);
+        expect(result.movement.performedByUserId, 'usr_admin');
+        expect(result.movement.reason, 'Received shipment audit');
+        expect(result.item.quantityOnHand, 35.0);
+
+        final details = await repo.getItemById('item_001');
+        expect(details?.quantityOnHand, 35.0);
+      });
+
+      test('succeeds with negative adjustment', () async {
+        final repo = MockInventoryRepository();
+        // item_001 starts with 25.0
+        final result = await repo.adjustStock(
+          const AdjustInventoryStockInput(
+            itemId: 'item_001',
+            quantityDelta: -5.0,
+            reason: 'Damaged packaging',
+            performedByUserId: 'usr_admin',
+          ),
+        );
+
+        expect(result.movement.quantityDelta, -5.0);
+        expect(result.item.quantityOnHand, 20.0);
+      });
+
+      test('succeeds with decimal adjustment', () async {
+        final repo = MockInventoryRepository();
+        // item_001 starts with 25.0
+        final result = await repo.adjustStock(
+          const AdjustInventoryStockInput(
+            itemId: 'item_001',
+            quantityDelta: -2.5,
+            reason: 'Partial scrap',
+            performedByUserId: 'usr_admin',
+          ),
+        );
+
+        expect(result.item.quantityOnHand, 22.5);
+      });
+
+      test('succeeds decreasing stock exactly to zero', () async {
+        final repo = MockInventoryRepository();
+        // item_001 starts with 25.0
+        final result = await repo.adjustStock(
+          const AdjustInventoryStockInput(
+            itemId: 'item_001',
+            quantityDelta: -25.0,
+            reason: 'Full liquidation',
+            performedByUserId: 'usr_admin',
+          ),
+        );
+
+        expect(result.item.quantityOnHand, 0.0);
+      });
+
+      test(
+        'rejects decrease below zero with InventoryNegativeStockException',
+        () async {
+          final repo = MockInventoryRepository();
+          // item_001 starts with 25.0 -> decrease of 26.0 results in -1.0
+          expect(
+            () => repo.adjustStock(
+              const AdjustInventoryStockInput(
+                itemId: 'item_001',
+                quantityDelta: -26.0,
+                reason: 'Over-reduction',
+                performedByUserId: 'usr_admin',
+              ),
+            ),
+            throwsA(isA<InventoryNegativeStockException>()),
+          );
+
+          final details = await repo.getItemById('item_001');
+          expect(details?.quantityOnHand, 25.0); // balance untouched
+        },
+      );
+
+      test('rejects zero adjustment delta', () async {
+        final repo = MockInventoryRepository();
+        expect(
+          () => repo.adjustStock(
+            const AdjustInventoryStockInput(
+              itemId: 'item_001',
+              quantityDelta: 0.0,
+              reason: 'No-op',
+              performedByUserId: 'usr_admin',
+            ),
+          ),
+          throwsA(isA<InventoryValidationException>()),
+        );
+      });
+
+      test('rejects NaN and Infinity adjustment delta', () async {
+        final repo = MockInventoryRepository();
+        expect(
+          () => repo.adjustStock(
+            const AdjustInventoryStockInput(
+              itemId: 'item_001',
+              quantityDelta: double.nan,
+              reason: 'Bad delta',
+              performedByUserId: 'usr_admin',
+            ),
+          ),
+          throwsA(isA<InventoryValidationException>()),
+        );
+
+        expect(
+          () => repo.adjustStock(
+            const AdjustInventoryStockInput(
+              itemId: 'item_001',
+              quantityDelta: double.infinity,
+              reason: 'Infinite delta',
+              performedByUserId: 'usr_admin',
+            ),
+          ),
+          throwsA(isA<InventoryValidationException>()),
+        );
+      });
+
+      test('rejects blank and whitespace-only reason', () async {
+        final repo = MockInventoryRepository();
+        expect(
+          () => repo.adjustStock(
+            const AdjustInventoryStockInput(
+              itemId: 'item_001',
+              quantityDelta: 5.0,
+              reason: '',
+              performedByUserId: 'usr_admin',
+            ),
+          ),
+          throwsA(isA<InventoryValidationException>()),
+        );
+
+        expect(
+          () => repo.adjustStock(
+            const AdjustInventoryStockInput(
+              itemId: 'item_001',
+              quantityDelta: 5.0,
+              reason: '    ',
+              performedByUserId: 'usr_admin',
+            ),
+          ),
+          throwsA(isA<InventoryValidationException>()),
+        );
+      });
+
+      test('trims reason before recording movement', () async {
+        final repo = MockInventoryRepository();
+        final result = await repo.adjustStock(
+          const AdjustInventoryStockInput(
+            itemId: 'item_001',
+            quantityDelta: 2.0,
+            reason: '   Count correction   ',
+            performedByUserId: 'usr_admin',
+          ),
+        );
+
+        expect(result.movement.reason, 'Count correction');
+      });
+
+      test('rejects blank actor ID', () async {
+        final repo = MockInventoryRepository();
+        expect(
+          () => repo.adjustStock(
+            const AdjustInventoryStockInput(
+              itemId: 'item_001',
+              quantityDelta: 5.0,
+              reason: 'Valid reason',
+              performedByUserId: '   ',
+            ),
+          ),
+          throwsA(isA<InventoryValidationException>()),
+        );
+      });
+
+      test('rejects unknown item ID', () async {
+        final repo = MockInventoryRepository();
+        expect(
+          () => repo.adjustStock(
+            const AdjustInventoryStockInput(
+              itemId: 'unknown_item',
+              quantityDelta: 5.0,
+              reason: 'Valid reason',
+              performedByUserId: 'usr_admin',
+            ),
+          ),
+          throwsA(isA<InventoryItemNotFoundException>()),
+        );
+      });
+
+      test(
+        'rejects manual adjustment on uninitialized item (0 movements)',
+        () async {
+          final repo = MockInventoryRepository();
+          final created = await repo.createItem(
+            const CreateInventoryItemInput(
+              name: 'Uninitialized',
+              sku: 'UNINIT-001',
+            ),
+          );
+
+          expect(
+            () => repo.adjustStock(
+              AdjustInventoryStockInput(
+                itemId: created.item.id,
+                quantityDelta: 10.0,
+                reason: 'Trying to bypass opening stock',
+                performedByUserId: 'usr_admin',
+              ),
+            ),
+            throwsA(isA<InventoryUninitializedStockException>()),
+          );
+        },
+      );
+    });
+
+    group('Negative-Stock Atomicity & Legacy Compatibility Tests', () {
+      test(
+        'calculates stock from current movements at write time and rejects sequential deficit',
+        () async {
+          final repo = MockInventoryRepository();
+          // item_001 starts with 25.0
+          // First adjustment reduces by 20.0 -> balance becomes 5.0
+          await repo.adjustStock(
+            const AdjustInventoryStockInput(
+              itemId: 'item_001',
+              quantityDelta: -20.0,
+              reason: 'Batch 1 deduction',
+              performedByUserId: 'usr_admin',
+            ),
+          );
+
+          // Second adjustment of -10.0 against stale expectation of 25.0 fails against real balance of 5.0
+          expect(
+            () => repo.adjustStock(
+              const AdjustInventoryStockInput(
+                itemId: 'item_001',
+                quantityDelta: -10.0,
+                reason: 'Batch 2 deduction based on stale balance',
+                performedByUserId: 'usr_admin',
+              ),
+            ),
+            throwsA(isA<InventoryNegativeStockException>()),
+          );
+
+          final finalItem = await repo.getItemById('item_001');
+          expect(finalItem?.quantityOnHand, 5.0);
+        },
+      );
+
+      test(
+        'legacy seed movements have null actor and null reason without errors',
+        () {
+          final movements = MockInventorySeedData.createDefaultMovements();
+          for (final m in movements) {
+            expect(m.performedByUserId, isNull);
+            expect(m.reason, isNull);
+            expect(m.type, StockMovementType.openingStock);
+          }
+        },
+      );
     });
   });
 }

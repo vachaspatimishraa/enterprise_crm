@@ -7,16 +7,20 @@ import '../../../auth/domain/policies/access_policy.dart';
 import '../../../auth/domain/policies/crm_permissions.dart';
 import '../../../auth/presentation/screens/access_restricted_screen.dart';
 import '../../domain/policies/inventory_item_administration_policy.dart';
+import '../../domain/policies/inventory_stock_management_policy.dart';
 import '../../domain/repositories/inventory_repository.dart';
 import '../bloc/inventory_item_details_cubit.dart';
 import '../bloc/inventory_item_details_state.dart';
 import '../utils/inventory_display_formatters.dart';
+import 'adjust_inventory_stock_screen.dart';
 import 'edit_inventory_item_screen.dart';
+import 'set_opening_stock_screen.dart';
 
 /// Read-only item details screen for a specific inventory product.
 ///
 /// Guarded by pre-Cubit authorization check. Displays strictly Name, SKU, and derived Quantity on hand.
-/// Administrators receive an [Edit Item] action button.
+/// Administrators receive [Edit Item] and contextual stock mutation actions ([Set Opening Stock]
+/// or [Adjust Stock] depending on movement history).
 class InventoryItemDetailsScreen extends StatelessWidget {
   final CurrentUser user;
   final InventoryRepository repository;
@@ -66,6 +70,36 @@ class _InventoryItemDetailsView extends StatelessWidget {
     final updated = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => EditInventoryItemScreen(
+          user: user,
+          repository: repository,
+          itemId: itemId,
+        ),
+      ),
+    );
+    if (updated == true && context.mounted) {
+      context.read<InventoryItemDetailsCubit>().load(itemId);
+    }
+  }
+
+  void _openSetOpeningStock(BuildContext context, String itemId) async {
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => SetOpeningStockScreen(
+          user: user,
+          repository: repository,
+          itemId: itemId,
+        ),
+      ),
+    );
+    if (updated == true && context.mounted) {
+      context.read<InventoryItemDetailsCubit>().load(itemId);
+    }
+  }
+
+  void _openAdjustStock(BuildContext context, String itemId) async {
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => AdjustInventoryStockScreen(
           user: user,
           repository: repository,
           itemId: itemId,
@@ -369,6 +403,43 @@ class _InventoryItemDetailsView extends StatelessWidget {
                               },
                             ),
                           ),
+
+                          // Admin Stock Management Action Button
+                          if (InventoryStockManagementPolicy.canManageStock(
+                            user,
+                          )) ...[
+                            const SizedBox(height: 16),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: !state.hasStockMovements
+                                  ? FilledButton.tonalIcon(
+                                      key: const Key(
+                                        'inventory_details_set_opening_stock_button',
+                                      ),
+                                      icon: const Icon(
+                                        Icons.add_chart_outlined,
+                                        size: 18,
+                                      ),
+                                      label: const Text('Set Opening Stock'),
+                                      onPressed: () => _openSetOpeningStock(
+                                        context,
+                                        item.id,
+                                      ),
+                                    )
+                                  : FilledButton.tonalIcon(
+                                      key: const Key(
+                                        'inventory_details_adjust_stock_button',
+                                      ),
+                                      icon: const Icon(
+                                        Icons.tune_outlined,
+                                        size: 18,
+                                      ),
+                                      label: const Text('Adjust Stock'),
+                                      onPressed: () =>
+                                          _openAdjustStock(context, item.id),
+                                    ),
+                            ),
+                          ],
                         ],
                       ),
                     ),

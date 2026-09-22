@@ -7,6 +7,9 @@ import 'package:enterprise_crm/features/inventory/domain/entities/inventory_quer
 import 'package:enterprise_crm/features/inventory/domain/exceptions/inventory_exception.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/create_inventory_item_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/update_inventory_item_input.dart';
+import 'package:enterprise_crm/features/inventory/domain/entities/inventory_stock_mutation_result.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/adjust_inventory_stock_input.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/record_opening_stock_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/repositories/inventory_repository.dart';
 import 'package:enterprise_crm/features/inventory/presentation/bloc/create_inventory_item_cubit.dart';
 import 'package:enterprise_crm/features/inventory/presentation/bloc/create_inventory_item_state.dart';
@@ -39,6 +42,19 @@ class _CustomInventoryRepository implements InventoryRepository {
   @override
   Future<InventoryItemSummary> updateItem(UpdateInventoryItemInput input) =>
       throw UnimplementedError();
+
+  @override
+  Future<bool> hasStockMovements(String itemId) => throw UnimplementedError();
+
+  @override
+  Future<InventoryStockMutationResult> recordOpeningStock(
+    RecordOpeningStockInput input,
+  ) => throw UnimplementedError();
+
+  @override
+  Future<InventoryStockMutationResult> adjustStock(
+    AdjustInventoryStockInput input,
+  ) => throw UnimplementedError();
 }
 
 void main() {

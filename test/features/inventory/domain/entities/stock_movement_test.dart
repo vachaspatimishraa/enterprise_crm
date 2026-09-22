@@ -22,9 +22,79 @@ void main() {
       expect(movement.createdAt, testDate);
     });
 
-    test('StockMovementType contains exactly openingStock in INVENTORY-1', () {
-      expect(StockMovementType.values, [StockMovementType.openingStock]);
+    test(
+      'StockMovementType contains openingStock and adjustment in INVENTORY-3',
+      () {
+        expect(StockMovementType.values, [
+          StockMovementType.openingStock,
+          StockMovementType.adjustment,
+        ]);
+      },
+    );
+
+    test('instantiates valid StockMovement with audit fields', () {
+      final movement = StockMovement(
+        id: 'mov_002',
+        inventoryItemId: 'item_001',
+        type: StockMovementType.adjustment,
+        quantityDelta: 10.0,
+        createdAt: testDate,
+        performedByUserId: 'usr_admin',
+        reason: 'Restock correction',
+      );
+
+      expect(movement.performedByUserId, 'usr_admin');
+      expect(movement.reason, 'Restock correction');
     });
+
+    test('legacy compatibility: performedByUserId and reason are nullable', () {
+      final movement = StockMovement(
+        id: 'mov_seed',
+        inventoryItemId: 'item_001',
+        type: StockMovementType.openingStock,
+        quantityDelta: 10.0,
+        createdAt: testDate,
+        performedByUserId: null,
+        reason: null,
+      );
+
+      expect(movement.performedByUserId, isNull);
+      expect(movement.reason, isNull);
+    });
+
+    test(
+      'throws ArgumentError when non-null performedByUserId is blank or whitespace',
+      () {
+        expect(
+          () => StockMovement(
+            id: 'mov_001',
+            inventoryItemId: 'item_001',
+            type: StockMovementType.adjustment,
+            quantityDelta: 10.0,
+            createdAt: testDate,
+            performedByUserId: '   ',
+          ),
+          throwsArgumentError,
+        );
+      },
+    );
+
+    test(
+      'throws ArgumentError when non-null reason is blank or whitespace',
+      () {
+        expect(
+          () => StockMovement(
+            id: 'mov_001',
+            inventoryItemId: 'item_001',
+            type: StockMovementType.adjustment,
+            quantityDelta: 10.0,
+            createdAt: testDate,
+            reason: '   ',
+          ),
+          throwsArgumentError,
+        );
+      },
+    );
 
     test('throws ArgumentError when id is blank or whitespace', () {
       expect(

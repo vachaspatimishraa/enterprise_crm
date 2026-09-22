@@ -9,11 +9,16 @@ import 'package:enterprise_crm/features/inventory/domain/entities/inventory_page
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_query.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/create_inventory_item_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/update_inventory_item_input.dart';
+import 'package:enterprise_crm/features/inventory/domain/entities/inventory_stock_mutation_result.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/adjust_inventory_stock_input.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/record_opening_stock_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/repositories/inventory_repository.dart';
+import 'package:enterprise_crm/features/inventory/presentation/screens/adjust_inventory_stock_screen.dart';
 import 'package:enterprise_crm/features/inventory/presentation/screens/create_inventory_item_screen.dart';
 import 'package:enterprise_crm/features/inventory/presentation/screens/edit_inventory_item_screen.dart';
 import 'package:enterprise_crm/features/inventory/presentation/screens/inventory_item_details_screen.dart';
 import 'package:enterprise_crm/features/inventory/presentation/screens/inventory_workspace_screen.dart';
+import 'package:enterprise_crm/features/inventory/presentation/screens/set_opening_stock_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -22,6 +27,9 @@ class _SpyInventoryRepository implements InventoryRepository {
   int getItemByIdCallCount = 0;
   int createItemCallCount = 0;
   int updateItemCallCount = 0;
+  int hasStockMovementsCallCount = 0;
+  int recordOpeningStockCallCount = 0;
+  int adjustStockCallCount = 0;
 
   @override
   Future<InventoryPage> getItems(InventoryQuery query) async {
@@ -54,6 +62,28 @@ class _SpyInventoryRepository implements InventoryRepository {
     UpdateInventoryItemInput input,
   ) async {
     updateItemCallCount++;
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<bool> hasStockMovements(String itemId) async {
+    hasStockMovementsCallCount++;
+    return false;
+  }
+
+  @override
+  Future<InventoryStockMutationResult> recordOpeningStock(
+    RecordOpeningStockInput input,
+  ) async {
+    recordOpeningStockCallCount++;
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<InventoryStockMutationResult> adjustStock(
+    AdjustInventoryStockInput input,
+  ) async {
+    adjustStockCallCount++;
     throw UnimplementedError();
   }
 }
@@ -310,11 +340,42 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.byType(AccessRestrictedScreen), findsNothing);
           expect(find.text('Edit Inventory Item'), findsOneWidget);
+
+          // Set Opening Stock
+          await tester.pumpWidget(
+            MaterialApp(
+              home: SetOpeningStockScreen(
+                user: admin,
+                repository: repo,
+                itemId: 'item_001',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsNothing);
+          expect(
+            find.widgetWithText(AppBar, 'Set Opening Stock'),
+            findsOneWidget,
+          );
+
+          // Adjust Stock
+          await tester.pumpWidget(
+            MaterialApp(
+              home: AdjustInventoryStockScreen(
+                user: admin,
+                repository: repo,
+                itemId: 'item_001',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsNothing);
+          expect(find.widgetWithText(AppBar, 'Adjust Stock'), findsOneWidget);
         },
       );
 
       testWidgets(
-        'User with Inventory + inventory.view: Workspace allowed, Details allowed, Create denied, Edit denied with 0 writes',
+        'User with Inventory + inventory.view: Workspace allowed, Details allowed, Create denied, Edit denied, Stock mutation denied with 0 writes',
         (tester) async {
           final spyRepo = _SpyInventoryRepository();
 
@@ -370,6 +431,34 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.byType(AccessRestrictedScreen), findsOneWidget);
           expect(spyRepo.updateItemCallCount, 0);
+
+          // Set Opening Stock denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: SetOpeningStockScreen(
+                user: userWithView,
+                repository: spyRepo,
+                itemId: 'item_001',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+          expect(spyRepo.recordOpeningStockCallCount, 0);
+
+          // Adjust Stock denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: AdjustInventoryStockScreen(
+                user: userWithView,
+                repository: spyRepo,
+                itemId: 'item_001',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+          expect(spyRepo.adjustStockCallCount, 0);
         },
       );
 
@@ -429,6 +518,34 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.byType(AccessRestrictedScreen), findsOneWidget);
           expect(spyRepo.updateItemCallCount, 0);
+
+          // Set Opening Stock denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: SetOpeningStockScreen(
+                user: userMissingView,
+                repository: spyRepo,
+                itemId: 'item_001',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+          expect(spyRepo.recordOpeningStockCallCount, 0);
+
+          // Adjust Stock denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: AdjustInventoryStockScreen(
+                user: userMissingView,
+                repository: spyRepo,
+                itemId: 'item_001',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+          expect(spyRepo.adjustStockCallCount, 0);
         },
       );
 
@@ -488,6 +605,34 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.byType(AccessRestrictedScreen), findsOneWidget);
           expect(spyRepo.updateItemCallCount, 0);
+
+          // Set Opening Stock denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: SetOpeningStockScreen(
+                user: userWithoutModule,
+                repository: spyRepo,
+                itemId: 'item_001',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+          expect(spyRepo.recordOpeningStockCallCount, 0);
+
+          // Adjust Stock denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: AdjustInventoryStockScreen(
+                user: userWithoutModule,
+                repository: spyRepo,
+                itemId: 'item_001',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+          expect(spyRepo.adjustStockCallCount, 0);
         },
       );
     });

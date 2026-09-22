@@ -17,18 +17,23 @@ final class InventoryItemDetailsLoading extends InventoryItemDetailsState {
 
 final class InventoryItemDetailsLoaded extends InventoryItemDetailsState {
   final InventoryItemSummary summary;
+  final bool hasStockMovements;
 
-  const InventoryItemDetailsLoaded(this.summary);
+  const InventoryItemDetailsLoaded(
+    this.summary, {
+    this.hasStockMovements = false,
+  });
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is InventoryItemDetailsLoaded &&
           runtimeType == other.runtimeType &&
-          summary == other.summary;
+          summary == other.summary &&
+          hasStockMovements == other.hasStockMovements;
 
   @override
-  int get hashCode => summary.hashCode;
+  int get hashCode => Object.hash(summary, hasStockMovements);
 }
 
 final class InventoryItemDetailsNotFound extends InventoryItemDetailsState {
