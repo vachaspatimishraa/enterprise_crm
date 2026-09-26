@@ -371,3 +371,81 @@ INVENTORY-3 implements the first operational stock-changing workflows:
 - Existing seed movements created before actor/reason auditing remain valid with `performedByUserId = null` and `reason = null`.
 - Seed items with opening movements are treated as initialized (`hasStockMovements == true`), so `[Set Opening Stock]` is unavailable and `[Adjust Stock]` is available.
 - New operational movements require `performedByUserId` and follow the frozen rules.
+
+---
+
+## 11. INVENTORY-4 — CSV / XLSX INVENTORY IMPORT
+**Status: FROZEN**
+
+### 11.1 Overview & Scope
+INVENTORY-4 implements the CSV and XLSX inventory bulk import workflow for administrative users while strictly preserving the frozen Inventory architecture, ledger integrity, and access controls.
+
+### 11.2 Core Specifications & Invariants
+- **Formats:**
+  - Supported: Exactly `.csv` and `.xlsx`
+  - Unsupported: `.xls`, `.json`, `.xml`, `.txt`, `.pdf`, Google Sheets
+  - Web-safe byte-based parsing (no platform-specific `dart:io` file path dependency)
+- **Authorization:**
+  - Admin only (`InventoryImportPolicy` / `user.isAdmin`)
+  - Standard User denied
+  - Direct route guard: Evaluates authorization before Cubit initialization; unauthorized navigation routes to `AccessRestrictedScreen` with zero parser/repository calls
+  - No new permission strings (do NOT introduce `inventory.import` or `inventory.bulk_create`)
+- **Supported Fields:**
+  - Required: `Name`, `SKU`
+  - Optional: `Opening Stock`
+  - Strictly outside scope: Category, UOM, Description, Warehouse, Location, Rack, Bin, Vendor, Purchase Price, Selling Price, MRP, Cost, GST, Tax, HSN, Adjustment Reason, Performed By, Movement Type
+- **Header & Column Mapping:**
+  - Source headers may be blank, duplicated, or whitespace-only; columns identified by position/index
+  - Explicit header row selection supported (not assumed to be row 1)
+  - No fuzzy or automated similarity mapping; manual selection is authoritative
+  - Destination field rules:
+    - `Name`: exactly one source column
+    - `SKU`: exactly one source column
+    - `Opening Stock`: zero or one source column
+  - Same source column cannot be mapped to multiple destination fields
+- **Blank Rows:**
+  - Completely blank rows are ignored and neither count as failures nor inflate totals
+- **Validation & Duplicate Rules:**
+  - `Name`: Trimmed, non-blank required ("Name is required.")
+  - `SKU`: Trimmed, non-blank required ("SKU is required.")
+  - Duplicate comparison: Trimmed + case-insensitive (`INV-001` == `inv-001` == ` Inv-001`), preserving source casing upon creation
+  - Same-file duplicates: If multiple valid rows in the import file share the same normalized SKU, ALL matching occurrences are marked duplicate and rejected from selection
+  - Existing repository SKU duplicate: Row is invalid ("An inventory item with this SKU already exists."); no upsert, merge, or overwrite
+  - Revalidation: Freshness enforced by re-checking SKU uniqueness at repository import execution time
+- **Opening Stock Semantics:**
+  - Blank / unmapped: Valid, item created with 0 movements and derived quantity 0.0; item remains eligible for later `Set Opening Stock`
+  - Explicit zero (`0`, `0.0`): Invalid ("Opening stock must be greater than zero.")
+  - Positive numeric: Valid finite `double > 0`, creates exactly one `StockMovementType.openingStock`
+  - Invalid values: Negative numbers, non-numeric strings, NaN, Infinity rejected
+- **Stock Ledger Integrity:**
+  - Opening stock NEVER directly sets quantity on `InventoryItem`
+  - Derived balance strictly calculated as `SUM(StockMovement.quantityDelta)`
+  - Ledger movement properties:
+    - `type`: `StockMovementType.openingStock`
+    - `quantityDelta`: imported opening stock value
+    - `performedByUserId`: Current authenticated Admin `CurrentUser.id` (never mapped from file)
+    - `reason`: `null` (no artificial strings like "CSV Import")
+    - `createdAt`: Injected deterministic repository/service clock
+- **Atomicity & Batch Execution:**
+  - Row atomicity: For rows with opening stock, item creation + opening stock movement are atomic. If movement creation fails, the item is rolled back / not persisted
+  - Batch semantics: Partial success is supported (independent valid rows succeed even if others fail)
+  - Intra-request duplicate defense: Repository independently enforces SKU uniqueness within the request batch
+- **Workflow & UI:**
+  - Workflow: Select File -> Parse -> Select Sheet (XLSX) -> Select Header Row -> Map Columns -> Build Preview -> Validate Rows -> Select Valid Rows -> Confirm Import -> Repository Import -> Result Summary -> Return to Workspace
+  - Workspace entry point: Admin workspace includes `[Add Item]` and `[Import]` button (`inventory_workspace_import_button`); hidden for Standard Users
+  - Double-submit protection: Submit action disabled during active import
+  - Result view: Shows summary counts (imported, failed) with source row numbers and safe error messages; Done button returns to workspace and triggers fresh reload
+  - Responsive layout: Adapts cleanly across mobile (320x568, 360x640), tablet (768x1024), and desktop (1200x800)
+  - Dark theme & Accessibility: Proper contrast via theme colors, text-based error feedback, accessible labels
+- **Deferred Areas:**
+  - Stock Movement History UI
+  - Inventory Export (CSV/XLSX)
+  - Update / Upsert / Merge Import
+  - Delete / Archive
+  - Purchase integration
+  - Dispatch integration
+  - Return / Transfer / Reservation workflows
+  - Multiple warehouses / locations / rack / bin
+  - Category / UOM / Description / Pricing / Tax / GST / HSN / Vendor
+  - New Inventory User write permissions
+  - Backend integration (future backend invariant: item + opening stock movement must be atomic server-side)
