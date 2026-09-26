@@ -208,7 +208,8 @@ class _CallingDashboardViewState extends State<_CallingDashboardView> {
                           onPressed: () async {
                             final picked = await showDatePicker(
                               context: context,
-                              initialDate: selectedDate ??
+                              initialDate:
+                                  selectedDate ??
                                   now.add(const Duration(days: 1)),
                               firstDate: now,
                               lastDate: now.add(const Duration(days: 365)),
@@ -235,7 +236,8 @@ class _CallingDashboardViewState extends State<_CallingDashboardView> {
                           onPressed: () async {
                             final picked = await showTimePicker(
                               context: context,
-                              initialTime: selectedTime ??
+                              initialTime:
+                                  selectedTime ??
                                   const TimeOfDay(hour: 10, minute: 0),
                             );
                             if (picked != null) {
@@ -354,199 +356,199 @@ class _CallingDashboardViewState extends State<_CallingDashboardView> {
             );
             context.read<CallingDashboardCubit>().refresh();
           } else if (actionState is FollowUpActionFailure) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(actionState.message)),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(actionState.message)));
           } else if (actionState is FollowUpActionAccessDenied) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(actionState.reason)),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(actionState.reason)));
           }
         },
         child: BlocBuilder<CallingDashboardCubit, CallingDashboardState>(
           builder: (context, state) {
-          if (state is CallingDashboardLoading ||
-              state is CallingDashboardInitial) {
-            return const Center(child: CircularProgressIndicator());
-          }
+            if (state is CallingDashboardLoading ||
+                state is CallingDashboardInitial) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          if (state is CallingDashboardNoLeadAccess) {
-            return _buildInformationalCard(
-              context,
-              messageKey: 'user_calling_no_lead_access_message',
-              message:
-                  'Calling access is enabled, but no Lead viewing access has been assigned to your account.',
-              icon: Icons.info_outline,
-            );
-          }
+            if (state is CallingDashboardNoLeadAccess) {
+              return _buildInformationalCard(
+                context,
+                messageKey: 'user_calling_no_lead_access_message',
+                message:
+                    'Calling access is enabled, but no Lead viewing access has been assigned to your account.',
+                icon: Icons.info_outline,
+              );
+            }
 
-          if (state is CallingDashboardNoLink) {
-            return _buildInformationalCard(
-              context,
-              messageKey: 'calling_dashboard_no_link_message',
-              message:
-                  'Lead assignment identity is not configured for this account. Contact an administrator.',
-              icon: Icons.warning_amber_rounded,
-            );
-          }
+            if (state is CallingDashboardNoLink) {
+              return _buildInformationalCard(
+                context,
+                messageKey: 'calling_dashboard_no_link_message',
+                message:
+                    'Lead assignment identity is not configured for this account. Contact an administrator.',
+                icon: Icons.warning_amber_rounded,
+              );
+            }
 
-          if (state is CallingDashboardInvalidLink) {
-            return _buildInformationalCard(
-              context,
-              messageKey: 'calling_dashboard_invalid_link_message',
-              message:
-                  'Lead assignment identity is not configured for this account. Contact an administrator.',
-              icon: Icons.error_outline,
-            );
-          }
+            if (state is CallingDashboardInvalidLink) {
+              return _buildInformationalCard(
+                context,
+                messageKey: 'calling_dashboard_invalid_link_message',
+                message:
+                    'Lead assignment identity is not configured for this account. Contact an administrator.',
+                icon: Icons.error_outline,
+              );
+            }
 
-          if (state is CallingDashboardFailure) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Container(
-                  key: const Key('calling_dashboard_failure_view'),
-                  constraints: const BoxConstraints(maxWidth: 480),
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: colorScheme.errorContainer.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: colorScheme.error),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.error_outline,
-                        size: 40,
-                        color: colorScheme.error,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Unable to load scheduled follow-ups.',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: colorScheme.onErrorContainer,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        state.message,
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onErrorContainer.withValues(
-                            alpha: 0.8,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      FilledButton.icon(
-                        key: const Key('calling_dashboard_retry_button'),
-                        icon: const Icon(Icons.refresh, size: 18),
-                        label: const Text('Retry'),
-                        onPressed: () =>
-                            context.read<CallingDashboardCubit>().retry(),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          }
-
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              final isWide = constraints.maxWidth >= 720;
-              final isNarrow = constraints.maxWidth < 400;
-
-              final visibleItems = state is CallingDashboardLoaded
-                  ? state.visibleItems
-                  : const <FollowUpQueueItem>[];
-              final overdueCount = state is CallingDashboardLoaded
-                  ? state.overdueCount
-                  : 0;
-              final dueTodayCount = state is CallingDashboardLoaded
-                  ? state.dueTodayCount
-                  : 0;
-              final upcomingCount = state is CallingDashboardLoaded
-                  ? state.upcomingCount
-                  : 0;
-              final selectedFilter = state is CallingDashboardLoaded
-                  ? state.selectedFilter
-                  : FollowUpTimingFilter.all;
-
+            if (state is CallingDashboardFailure) {
               return Center(
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isWide ? 32 : 16,
-                    vertical: 24,
-                  ),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 800),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Container(
+                    key: const Key('calling_dashboard_failure_view'),
+                    constraints: const BoxConstraints(maxWidth: 480),
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: colorScheme.errorContainer.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: colorScheme.error),
+                    ),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        // 1. Header Card (Calling enabled & Open Assigned Leads)
-                        _buildHeaderCard(context, isWide: isWide),
-                        const SizedBox(height: 20),
-
-                        // 2. Summary Metrics Cards
-                        _buildSummaryMetrics(
-                          context,
-                          constraints: constraints,
-                          isWide: isWide,
-                          isNarrow: isNarrow,
-                          overdueCount: overdueCount,
-                          dueTodayCount: dueTodayCount,
-                          upcomingCount: upcomingCount,
-                          selectedFilter: selectedFilter,
+                        Icon(
+                          Icons.error_outline,
+                          size: 40,
+                          color: colorScheme.error,
                         ),
-                        const SizedBox(height: 24),
-
-                        // 3. Queue Section
-                        if (state is CallingDashboardEmpty) ...[
-                          _buildEmptyQueueCard(context),
-                        ] else if (state is CallingDashboardLoaded) ...[
-                          // Search & Filters
-                          _buildSearchAndFilters(
-                            context,
-                            selectedFilter: selectedFilter,
-                            isWide: isWide,
+                        const SizedBox(height: 16),
+                        Text(
+                          'Unable to load scheduled follow-ups.',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: colorScheme.onErrorContainer,
+                            fontWeight: FontWeight.bold,
                           ),
-                          const SizedBox(height: 16),
-
-                          // Queue Items List
-                          if (visibleItems.isEmpty) ...[
-                            _buildSearchNoResultsCard(context),
-                          ] else ...[
-                            ListView.separated(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount: visibleItems.length,
-                              separatorBuilder: (_, _) =>
-                                  const SizedBox(height: 12),
-                              itemBuilder: (context, index) {
-                                return _buildQueueItemCard(
-                                  context,
-                                  item: visibleItems[index],
-                                );
-                              },
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          state.message,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onErrorContainer.withValues(
+                              alpha: 0.8,
                             ),
-                          ],
-                        ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        FilledButton.icon(
+                          key: const Key('calling_dashboard_retry_button'),
+                          icon: const Icon(Icons.refresh, size: 18),
+                          label: const Text('Retry'),
+                          onPressed: () =>
+                              context.read<CallingDashboardCubit>().retry(),
+                        ),
                       ],
                     ),
                   ),
                 ),
               );
-            },
-          );
-        },
+            }
+
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                final isWide = constraints.maxWidth >= 720;
+                final isNarrow = constraints.maxWidth < 400;
+
+                final visibleItems = state is CallingDashboardLoaded
+                    ? state.visibleItems
+                    : const <FollowUpQueueItem>[];
+                final overdueCount = state is CallingDashboardLoaded
+                    ? state.overdueCount
+                    : 0;
+                final dueTodayCount = state is CallingDashboardLoaded
+                    ? state.dueTodayCount
+                    : 0;
+                final upcomingCount = state is CallingDashboardLoaded
+                    ? state.upcomingCount
+                    : 0;
+                final selectedFilter = state is CallingDashboardLoaded
+                    ? state.selectedFilter
+                    : FollowUpTimingFilter.all;
+
+                return Center(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isWide ? 32 : 16,
+                      vertical: 24,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 800),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // 1. Header Card (Calling enabled & Open Assigned Leads)
+                          _buildHeaderCard(context, isWide: isWide),
+                          const SizedBox(height: 20),
+
+                          // 2. Summary Metrics Cards
+                          _buildSummaryMetrics(
+                            context,
+                            constraints: constraints,
+                            isWide: isWide,
+                            isNarrow: isNarrow,
+                            overdueCount: overdueCount,
+                            dueTodayCount: dueTodayCount,
+                            upcomingCount: upcomingCount,
+                            selectedFilter: selectedFilter,
+                          ),
+                          const SizedBox(height: 24),
+
+                          // 3. Queue Section
+                          if (state is CallingDashboardEmpty) ...[
+                            _buildEmptyQueueCard(context),
+                          ] else if (state is CallingDashboardLoaded) ...[
+                            // Search & Filters
+                            _buildSearchAndFilters(
+                              context,
+                              selectedFilter: selectedFilter,
+                              isWide: isWide,
+                            ),
+                            const SizedBox(height: 16),
+
+                            // Queue Items List
+                            if (visibleItems.isEmpty) ...[
+                              _buildSearchNoResultsCard(context),
+                            ] else ...[
+                              ListView.separated(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                itemCount: visibleItems.length,
+                                separatorBuilder: (_, _) =>
+                                    const SizedBox(height: 12),
+                                itemBuilder: (context, index) {
+                                  return _buildQueueItemCard(
+                                    context,
+                                    item: visibleItems[index],
+                                  );
+                                },
+                              ),
+                            ],
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildHeaderCard(BuildContext context, {required bool isWide}) {
     final theme = Theme.of(context);
@@ -1028,9 +1030,7 @@ class _CallingDashboardViewState extends State<_CallingDashboardView> {
               Text(
                 'Recorded ${formatActivityDateTime(item.activity?.createdAt ?? item.followUp.createdAt)}',
                 style: theme.textTheme.labelSmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant.withValues(
-                    alpha: 0.7,
-                  ),
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                 ),
               ),
               const SizedBox(height: 14),

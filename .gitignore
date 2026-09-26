@@ -45,6 +45,7 @@ app.*.map.json
 /android/app/release
 
 # AI / Agent context and specification files
+context/
 AI_BRAIN.md
 AI_RULES.md
 CODING_AGENT_MASTER_PROMPT.txt
@@ -55,5 +56,7 @@ CRM_PROJECT_PHASES.md
 CRM_TRD.md
 CRM_UI_UX.md
 CRM_UPDATED_PROJECT_FLOW_AND_STRUCTURE.md
+Enterprise_CRM_Team_Collaboration_Handoff.md
+INVENTORY_REQUIREMENTS.md
+MASTER_DEVELOPMENT_RULES.md
 SESSION_MEMORY.md
-

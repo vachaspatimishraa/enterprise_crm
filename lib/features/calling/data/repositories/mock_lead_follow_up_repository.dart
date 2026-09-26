@@ -93,15 +93,14 @@ class MockLeadFollowUpRepository implements LeadFollowUpRepository {
   }
 
   @override
-  Future<List<LeadFollowUp>> getFollowUpsForLeadIds(
-    Set<String> leadIds,
-  ) async {
+  Future<List<LeadFollowUp>> getFollowUpsForLeadIds(Set<String> leadIds) async {
     if (leadIds.isEmpty) {
       return const [];
     }
 
-    final matching =
-        _followUps.where((f) => leadIds.contains(f.leadId)).toList();
+    final matching = _followUps
+        .where((f) => leadIds.contains(f.leadId))
+        .toList();
 
     // Sort earliest scheduledAt first. Tie-break by ID ascending.
     matching.sort((a, b) {
@@ -271,11 +270,8 @@ class MockLeadFollowUpRepository implements LeadFollowUpRepository {
   }
 
   @override
-  Future<List<FollowUpEvent>> getEventsForFollowUp(
-    String followUpId,
-  ) async {
-    final matching =
-        _events.where((e) => e.followUpId == followUpId).toList();
+  Future<List<FollowUpEvent>> getEventsForFollowUp(String followUpId) async {
+    final matching = _events.where((e) => e.followUpId == followUpId).toList();
 
     // Sort chronological ascending
     matching.sort((a, b) {

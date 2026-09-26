@@ -10,10 +10,7 @@ class RecordedCallingWorkflow {
   /// The scheduled follow-up created if [activity.rescheduleAt] was non-null.
   final LeadFollowUp? followUp;
 
-  const RecordedCallingWorkflow({
-    required this.activity,
-    this.followUp,
-  });
+  const RecordedCallingWorkflow({required this.activity, this.followUp});
 }
 
 /// Domain abstraction coordinating call activity recording and follow-up creation.

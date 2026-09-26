@@ -125,7 +125,8 @@ class CallingDashboardCubit extends Cubit<CallingDashboardState> {
 
       // 6. Run historical bootstrap migration strictly scoped to authorized lead IDs
       if (_callActivityRepository != null) {
-        final adapter = _migrationAdapter ??
+        final adapter =
+            _migrationAdapter ??
             FollowUpMigrationAdapter(
               callActivityRepository: _callActivityRepository,
               followUpRepository: _followUpRepository,
@@ -134,10 +135,12 @@ class CallingDashboardCubit extends Cubit<CallingDashboardState> {
       }
 
       // 7. Query pending follow-ups for authorized lead IDs
-      final followUps =
-          await _followUpRepository.getFollowUpsForLeadIds(authorizedLeadIds);
-      final pendingFollowUps =
-          followUps.where((f) => f.status == FollowUpStatus.pending).toList();
+      final followUps = await _followUpRepository.getFollowUpsForLeadIds(
+        authorizedLeadIds,
+      );
+      final pendingFollowUps = followUps
+          .where((f) => f.status == FollowUpStatus.pending)
+          .toList();
 
       if (pendingFollowUps.isEmpty) {
         emit(const CallingDashboardEmpty());

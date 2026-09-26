@@ -60,16 +60,16 @@ class LeadFollowUp {
 
   @override
   int get hashCode => Object.hash(
-        id,
-        leadId,
-        sourceCallActivityId,
-        scheduledAt,
-        status,
-        createdAt,
-        updatedAt,
-        completedAt,
-        cancelledAt,
-      );
+    id,
+    leadId,
+    sourceCallActivityId,
+    scheduledAt,
+    status,
+    createdAt,
+    updatedAt,
+    completedAt,
+    cancelledAt,
+  );
 
   @override
   String toString() =>

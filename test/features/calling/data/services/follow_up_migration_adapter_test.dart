@@ -10,7 +10,9 @@ void main() {
 
   group('FollowUpMigrationAdapter', () {
     test('returns 0 when authorizedLeadIds is empty', () async {
-      final callActivityRepo = MockLeadCallActivityRepository(now: () => fixedClock);
+      final callActivityRepo = MockLeadCallActivityRepository(
+        now: () => fixedClock,
+      );
       final followUpRepo = MockLeadFollowUpRepository(now: () => fixedClock);
       final adapter = FollowUpMigrationAdapter(
         callActivityRepository: callActivityRepo,
@@ -21,99 +23,120 @@ void main() {
       expect(count, 0);
     });
 
-    test('migrates scheduled activities for authorized lead IDs into pending follow-ups', () async {
-      final callActivityRepo = MockLeadCallActivityRepository(now: () => fixedClock);
-      final followUpRepo = MockLeadFollowUpRepository(now: () => fixedClock);
-      final adapter = FollowUpMigrationAdapter(
-        callActivityRepository: callActivityRepo,
-        followUpRepository: followUpRepo,
-      );
+    test(
+      'migrates scheduled activities for authorized lead IDs into pending follow-ups',
+      () async {
+        final callActivityRepo = MockLeadCallActivityRepository(
+          now: () => fixedClock,
+        );
+        final followUpRepo = MockLeadFollowUpRepository(now: () => fixedClock);
+        final adapter = FollowUpMigrationAdapter(
+          callActivityRepository: callActivityRepo,
+          followUpRepository: followUpRepo,
+        );
 
-      final scheduledTime1 = DateTime(2026, 9, 22, 14, 0);
-      final act1 = await callActivityRepo.recordActivity(
-        leadId: 'lead-1',
-        performedByUserId: 'usr-agent-1',
-        outcome: CallOutcome.followUp,
-        rescheduleAt: scheduledTime1,
-      );
+        final scheduledTime1 = DateTime(2026, 9, 22, 14, 0);
+        final act1 = await callActivityRepo.recordActivity(
+          leadId: 'lead-1',
+          performedByUserId: 'usr-agent-1',
+          outcome: CallOutcome.followUp,
+          rescheduleAt: scheduledTime1,
+        );
 
-      // Activity without rescheduleAt (should not migrate)
-      await callActivityRepo.recordActivity(
-        leadId: 'lead-1',
-        performedByUserId: 'usr-agent-1',
-        outcome: CallOutcome.notConnected,
-        rescheduleAt: null,
-      );
+        // Activity without rescheduleAt (should not migrate)
+        await callActivityRepo.recordActivity(
+          leadId: 'lead-1',
+          performedByUserId: 'usr-agent-1',
+          outcome: CallOutcome.notConnected,
+          rescheduleAt: null,
+        );
 
-      final count = await adapter.ensureMigratedForLeadIds({'lead-1'});
-      expect(count, 1);
+        final count = await adapter.ensureMigratedForLeadIds({'lead-1'});
+        expect(count, 1);
 
-      final followUps = await followUpRepo.getFollowUpsForLeadIds({'lead-1'});
-      expect(followUps.length, 1);
-      expect(followUps.first.leadId, 'lead-1');
-      expect(followUps.first.sourceCallActivityId, act1.id);
-      expect(followUps.first.scheduledAt, scheduledTime1);
-      expect(followUps.first.status, FollowUpStatus.pending);
-    });
+        final followUps = await followUpRepo.getFollowUpsForLeadIds({'lead-1'});
+        expect(followUps.length, 1);
+        expect(followUps.first.leadId, 'lead-1');
+        expect(followUps.first.sourceCallActivityId, act1.id);
+        expect(followUps.first.scheduledAt, scheduledTime1);
+        expect(followUps.first.status, FollowUpStatus.pending);
+      },
+    );
 
-    test('IDEMPOTENCY: running twice results in 0 on second run with 0 duplicate follow-ups', () async {
-      final callActivityRepo = MockLeadCallActivityRepository(now: () => fixedClock);
-      final followUpRepo = MockLeadFollowUpRepository(now: () => fixedClock);
-      final adapter = FollowUpMigrationAdapter(
-        callActivityRepository: callActivityRepo,
-        followUpRepository: followUpRepo,
-      );
+    test(
+      'IDEMPOTENCY: running twice results in 0 on second run with 0 duplicate follow-ups',
+      () async {
+        final callActivityRepo = MockLeadCallActivityRepository(
+          now: () => fixedClock,
+        );
+        final followUpRepo = MockLeadFollowUpRepository(now: () => fixedClock);
+        final adapter = FollowUpMigrationAdapter(
+          callActivityRepository: callActivityRepo,
+          followUpRepository: followUpRepo,
+        );
 
-      await callActivityRepo.recordActivity(
-        leadId: 'lead-1',
-        performedByUserId: 'usr-agent-1',
-        outcome: CallOutcome.followUp,
-        rescheduleAt: DateTime(2026, 9, 22, 14, 0),
-      );
+        await callActivityRepo.recordActivity(
+          leadId: 'lead-1',
+          performedByUserId: 'usr-agent-1',
+          outcome: CallOutcome.followUp,
+          rescheduleAt: DateTime(2026, 9, 22, 14, 0),
+        );
 
-      // First run
-      final firstCount = await adapter.ensureMigratedForLeadIds({'lead-1'});
-      expect(firstCount, 1);
+        // First run
+        final firstCount = await adapter.ensureMigratedForLeadIds({'lead-1'});
+        expect(firstCount, 1);
 
-      // Second run
-      final secondCount = await adapter.ensureMigratedForLeadIds({'lead-1'});
-      expect(secondCount, 0);
+        // Second run
+        final secondCount = await adapter.ensureMigratedForLeadIds({'lead-1'});
+        expect(secondCount, 0);
 
-      final followUps = await followUpRepo.getFollowUpsForLeadIds({'lead-1'});
-      expect(followUps.length, 1, reason: 'Must not create duplicate follow-up');
-    });
+        final followUps = await followUpRepo.getFollowUpsForLeadIds({'lead-1'});
+        expect(
+          followUps.length,
+          1,
+          reason: 'Must not create duplicate follow-up',
+        );
+      },
+    );
 
-    test('SCOPE ISOLATION: does not migrate activities for unauthorized leads', () async {
-      final callActivityRepo = MockLeadCallActivityRepository(now: () => fixedClock);
-      final followUpRepo = MockLeadFollowUpRepository(now: () => fixedClock);
-      final adapter = FollowUpMigrationAdapter(
-        callActivityRepository: callActivityRepo,
-        followUpRepository: followUpRepo,
-      );
+    test(
+      'SCOPE ISOLATION: does not migrate activities for unauthorized leads',
+      () async {
+        final callActivityRepo = MockLeadCallActivityRepository(
+          now: () => fixedClock,
+        );
+        final followUpRepo = MockLeadFollowUpRepository(now: () => fixedClock);
+        final adapter = FollowUpMigrationAdapter(
+          callActivityRepository: callActivityRepo,
+          followUpRepository: followUpRepo,
+        );
 
-      // Lead 1 (authorized)
-      await callActivityRepo.recordActivity(
-        leadId: 'lead-1',
-        performedByUserId: 'usr-agent-1',
-        outcome: CallOutcome.followUp,
-        rescheduleAt: DateTime(2026, 9, 22, 14, 0),
-      );
+        // Lead 1 (authorized)
+        await callActivityRepo.recordActivity(
+          leadId: 'lead-1',
+          performedByUserId: 'usr-agent-1',
+          outcome: CallOutcome.followUp,
+          rescheduleAt: DateTime(2026, 9, 22, 14, 0),
+        );
 
-      // Lead 2 (unauthorized)
-      await callActivityRepo.recordActivity(
-        leadId: 'lead-2',
-        performedByUserId: 'usr-agent-2',
-        outcome: CallOutcome.followUp,
-        rescheduleAt: DateTime(2026, 9, 23, 10, 0),
-      );
+        // Lead 2 (unauthorized)
+        await callActivityRepo.recordActivity(
+          leadId: 'lead-2',
+          performedByUserId: 'usr-agent-2',
+          outcome: CallOutcome.followUp,
+          rescheduleAt: DateTime(2026, 9, 23, 10, 0),
+        );
 
-      // Migrate only for lead-1
-      final count = await adapter.ensureMigratedForLeadIds({'lead-1'});
-      expect(count, 1);
+        // Migrate only for lead-1
+        final count = await adapter.ensureMigratedForLeadIds({'lead-1'});
+        expect(count, 1);
 
-      // Lead 2 must have 0 follow-ups
-      final lead2FollowUps = await followUpRepo.getFollowUpsForLeadIds({'lead-2'});
-      expect(lead2FollowUps, isEmpty);
-    });
+        // Lead 2 must have 0 follow-ups
+        final lead2FollowUps = await followUpRepo.getFollowUpsForLeadIds({
+          'lead-2',
+        });
+        expect(lead2FollowUps, isEmpty);
+      },
+    );
   });
 }

@@ -43,7 +43,8 @@ class RecordCallActivityCubit extends Cubit<RecordCallActivityState> {
        _initialLead = initialLead,
        _linkRepository = linkRepository,
        _leadRepository = leadRepository,
-       _workflowService = workflowService ??
+       _workflowService =
+           workflowService ??
            (callActivityRepository != null && followUpRepository != null
                ? MockCallingWorkflowService(
                    callActivityRepository: callActivityRepository,
@@ -261,10 +262,12 @@ class RecordCallActivityCubit extends Cubit<RecordCallActivityState> {
         rescheduleAt: rescheduleAt,
       );
 
-      emit(RecordCallActivitySuccess(
-        workflowResult.activity,
-        followUp: workflowResult.followUp,
-      ));
+      emit(
+        RecordCallActivitySuccess(
+          workflowResult.activity,
+          followUp: workflowResult.followUp,
+        ),
+      );
     } catch (_) {
       emit(
         RecordCallActivityFailure(

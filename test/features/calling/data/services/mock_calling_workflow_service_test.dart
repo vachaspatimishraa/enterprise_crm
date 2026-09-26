@@ -27,7 +27,9 @@ void main() {
     test(
       'records historical activity only when rescheduleAt is null',
       () async {
-        final callActivityRepo = MockLeadCallActivityRepository(now: () => fixedClock);
+        final callActivityRepo = MockLeadCallActivityRepository(
+          now: () => fixedClock,
+        );
         final followUpRepo = MockLeadFollowUpRepository(now: () => fixedClock);
         final service = MockCallingWorkflowService(
           callActivityRepository: callActivityRepo,
@@ -55,7 +57,9 @@ void main() {
     test(
       'creates both historical activity and pending follow-up when rescheduleAt is provided',
       () async {
-        final callActivityRepo = MockLeadCallActivityRepository(now: () => fixedClock);
+        final callActivityRepo = MockLeadCallActivityRepository(
+          now: () => fixedClock,
+        );
         final followUpRepo = MockLeadFollowUpRepository(now: () => fixedClock);
         final service = MockCallingWorkflowService(
           callActivityRepository: callActivityRepo,
@@ -90,8 +94,12 @@ void main() {
     test(
       'mock atomicity: rolls back recorded activity if follow-up creation fails',
       () async {
-        final callActivityRepo = MockLeadCallActivityRepository(now: () => fixedClock);
-        final failingFollowUpRepo = _FailingFollowUpRepository(now: () => fixedClock);
+        final callActivityRepo = MockLeadCallActivityRepository(
+          now: () => fixedClock,
+        );
+        final failingFollowUpRepo = _FailingFollowUpRepository(
+          now: () => fixedClock,
+        );
         final service = MockCallingWorkflowService(
           callActivityRepository: callActivityRepo,
           followUpRepository: failingFollowUpRepo,
@@ -110,15 +118,23 @@ void main() {
         );
 
         // CRITICAL: Call activity repository must NOT contain the failed activity!
-        final activities = await callActivityRepo.getActivitiesForLead('lead-1');
-        expect(activities, isEmpty, reason: 'Activity must be rolled back on follow-up failure');
+        final activities = await callActivityRepo.getActivitiesForLead(
+          'lead-1',
+        );
+        expect(
+          activities,
+          isEmpty,
+          reason: 'Activity must be rolled back on follow-up failure',
+        );
       },
     );
 
     test(
       'HISTORICAL IMMUTABILITY: completing or cancelling a follow-up NEVER alters the historical CallActivity',
       () async {
-        final callActivityRepo = MockLeadCallActivityRepository(now: () => fixedClock);
+        final callActivityRepo = MockLeadCallActivityRepository(
+          now: () => fixedClock,
+        );
         final followUpRepo = MockLeadFollowUpRepository(now: () => fixedClock);
         final service = MockCallingWorkflowService(
           callActivityRepository: callActivityRepo,
@@ -143,7 +159,9 @@ void main() {
         );
 
         // Verify the original activity is 100% UNCHANGED
-        final activities = await callActivityRepo.getActivitiesForLead('lead-1');
+        final activities = await callActivityRepo.getActivitiesForLead(
+          'lead-1',
+        );
         expect(activities.length, 1);
         expect(activities.first.id, activityId);
         expect(activities.first.rescheduleAt, rescheduleTime);

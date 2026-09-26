@@ -6,8 +6,4 @@
 /// - `pending` -> `rescheduled` (updates scheduledAt, status remains `pending`)
 ///
 /// Terminal states: `completed`, `cancelled` (no further lifecycle mutations permitted).
-enum FollowUpStatus {
-  pending,
-  completed,
-  cancelled,
-}
+enum FollowUpStatus { pending, completed, cancelled }

@@ -6,6 +6,11 @@ import '../../../auth/domain/repositories/user_lead_link_repository.dart';
 import '../../../calling/domain/repositories/lead_call_activity_repository.dart';
 import '../../../calling/domain/repositories/lead_follow_up_repository.dart';
 import '../../../calling/presentation/screens/user_calling_workspace_screen.dart';
+import '../../../hr/data/repositories/mock_employee_repository.dart';
+import '../../../hr/domain/repositories/attendance_repository.dart';
+import '../../../hr/domain/repositories/employee_document_repository.dart';
+import '../../../hr/domain/repositories/employee_repository.dart';
+import '../../../hr/presentation/screens/employee_directory_screen.dart';
 import '../../../leads/domain/repositories/lead_repository.dart';
 import '../widgets/crm_app_header.dart';
 import '../widgets/crm_module_card.dart';
@@ -22,6 +27,9 @@ class UserDashboardScreen extends StatelessWidget {
   final LeadRepository leadRepository;
   final LeadCallActivityRepository callActivityRepository;
   final LeadFollowUpRepository leadFollowUpRepository;
+  final EmployeeRepository? employeeRepository;
+  final EmployeeDocumentRepository? employeeDocumentRepository;
+  final AttendanceRepository? attendanceRepository;
 
   const UserDashboardScreen({
     super.key,
@@ -31,6 +39,9 @@ class UserDashboardScreen extends StatelessWidget {
     required this.leadRepository,
     required this.callActivityRepository,
     required this.leadFollowUpRepository,
+    this.employeeRepository,
+    this.employeeDocumentRepository,
+    this.attendanceRepository,
   });
 
   void _openModule(BuildContext context, CrmModule module) {
@@ -55,6 +66,17 @@ class UserDashboardScreen extends StatelessWidget {
             linkRepository: userLeadLinkRepository,
             callActivityRepository: callActivityRepository,
             leadFollowUpRepository: leadFollowUpRepository,
+          ),
+        ),
+      );
+    } else if (module == CrmModule.hrPayroll) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => EmployeeDirectoryScreen(
+            user: user,
+            repository: employeeRepository ?? MockEmployeeRepository(),
+            documentRepository: employeeDocumentRepository,
+            attendanceRepository: attendanceRepository,
           ),
         ),
       );

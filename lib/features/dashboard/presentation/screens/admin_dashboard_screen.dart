@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../../auth/domain/entities/crm_module.dart';
 import '../../../auth/domain/entities/current_user.dart';
+import '../../../hr/data/repositories/mock_employee_repository.dart';
+import '../../../hr/domain/repositories/attendance_repository.dart';
+import '../../../hr/domain/repositories/employee_document_repository.dart';
+import '../../../hr/domain/repositories/employee_repository.dart';
+import '../../../hr/presentation/screens/employee_directory_screen.dart';
 import '../../../user_management/domain/repositories/user_management_repository.dart';
 import '../../../user_management/presentation/screens/users_and_access_screen.dart';
 import '../widgets/crm_app_header.dart';
@@ -15,6 +20,9 @@ class AdminDashboardScreen extends StatelessWidget {
   final VoidCallback onLogout;
   final VoidCallback onOpenLeadManagement;
   final UserManagementRepository? userManagementRepository;
+  final EmployeeRepository? employeeRepository;
+  final EmployeeDocumentRepository? employeeDocumentRepository;
+  final AttendanceRepository? attendanceRepository;
 
   const AdminDashboardScreen({
     super.key,
@@ -22,11 +30,25 @@ class AdminDashboardScreen extends StatelessWidget {
     required this.onLogout,
     required this.onOpenLeadManagement,
     this.userManagementRepository,
+    this.employeeRepository,
+    this.employeeDocumentRepository,
+    this.attendanceRepository,
   });
 
   void _openModule(BuildContext context, CrmModule module) {
     if (module == CrmModule.leadManagement) {
       onOpenLeadManagement();
+    } else if (module == CrmModule.hrPayroll) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => EmployeeDirectoryScreen(
+            user: user,
+            repository: employeeRepository ?? MockEmployeeRepository(),
+            documentRepository: employeeDocumentRepository,
+            attendanceRepository: attendanceRepository,
+          ),
+        ),
+      );
     } else {
       Navigator.of(context).push(
         MaterialPageRoute(
