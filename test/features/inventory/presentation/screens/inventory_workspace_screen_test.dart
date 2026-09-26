@@ -95,6 +95,11 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Add Item'), findsOneWidget);
+      expect(
+        find.byKey(const Key('inventory_workspace_import_button')),
+        findsOneWidget,
+      );
+      expect(find.text('Import'), findsOneWidget);
 
       // Standard User workspace
       await tester.pumpWidget(
@@ -109,6 +114,11 @@ void main() {
         findsNothing,
       );
       expect(find.text('Add Item'), findsNothing);
+      expect(
+        find.byKey(const Key('inventory_workspace_import_button')),
+        findsNothing,
+      );
+      expect(find.text('Import'), findsNothing);
     });
 
     testWidgets(

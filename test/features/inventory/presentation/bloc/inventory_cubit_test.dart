@@ -12,6 +12,7 @@ import 'package:enterprise_crm/features/inventory/domain/repositories/inventory_
 import 'package:enterprise_crm/features/inventory/presentation/bloc/inventory_cubit.dart';
 import 'package:enterprise_crm/features/inventory/presentation/bloc/inventory_state.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:enterprise_crm/features/inventory/domain/entities/inventory_import_models.dart';
 
 class _FailingInventoryRepository implements InventoryRepository {
   @override
@@ -52,6 +53,13 @@ class _FailingInventoryRepository implements InventoryRepository {
   ) {
     throw Exception('Database connection failed');
   }
+
+  @override
+  Future<Set<String>> getExistingSkus() => Future.value({});
+
+  @override
+  Future<InventoryImportResult> importItems(InventoryImportRequest request) =>
+      throw UnimplementedError();
 }
 
 void main() {

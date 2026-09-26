@@ -4,18 +4,20 @@ import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
 import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dart';
 import 'package:enterprise_crm/features/auth/presentation/screens/access_restricted_screen.dart';
 import 'package:enterprise_crm/features/inventory/data/repositories/mock_inventory_repository.dart';
+import 'package:enterprise_crm/features/inventory/domain/entities/inventory_import_models.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_item_summary.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_page.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_query.dart';
-import 'package:enterprise_crm/features/inventory/domain/inputs/create_inventory_item_input.dart';
-import 'package:enterprise_crm/features/inventory/domain/inputs/update_inventory_item_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_stock_mutation_result.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/adjust_inventory_stock_input.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/create_inventory_item_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/record_opening_stock_input.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/update_inventory_item_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/repositories/inventory_repository.dart';
 import 'package:enterprise_crm/features/inventory/presentation/screens/adjust_inventory_stock_screen.dart';
 import 'package:enterprise_crm/features/inventory/presentation/screens/create_inventory_item_screen.dart';
 import 'package:enterprise_crm/features/inventory/presentation/screens/edit_inventory_item_screen.dart';
+import 'package:enterprise_crm/features/inventory/presentation/screens/inventory_import_screen.dart';
 import 'package:enterprise_crm/features/inventory/presentation/screens/inventory_item_details_screen.dart';
 import 'package:enterprise_crm/features/inventory/presentation/screens/inventory_workspace_screen.dart';
 import 'package:enterprise_crm/features/inventory/presentation/screens/set_opening_stock_screen.dart';
@@ -30,6 +32,8 @@ class _SpyInventoryRepository implements InventoryRepository {
   int hasStockMovementsCallCount = 0;
   int recordOpeningStockCallCount = 0;
   int adjustStockCallCount = 0;
+  int getExistingSkusCallCount = 0;
+  int importItemsCallCount = 0;
 
   @override
   Future<InventoryPage> getItems(InventoryQuery query) async {
@@ -86,6 +90,20 @@ class _SpyInventoryRepository implements InventoryRepository {
     adjustStockCallCount++;
     throw UnimplementedError();
   }
+
+  @override
+  Future<Set<String>> getExistingSkus() async {
+    getExistingSkusCallCount++;
+    return {};
+  }
+
+  @override
+  Future<InventoryImportResult> importItems(
+    InventoryImportRequest request,
+  ) async {
+    importItemsCallCount++;
+    throw UnimplementedError();
+  }
 }
 
 void main() {
@@ -97,14 +115,12 @@ void main() {
           id: 'admin_1',
           displayName: 'Administrator',
           accountType: AccountType.admin,
-          modules:
-              {}, // Empty modules, but Admin accountType gives access via AccessPolicy
+          modules: {},
           permissions: {},
         );
 
         final repo = MockInventoryRepository();
 
-        // Workspace check
         await tester.pumpWidget(
           MaterialApp(
             home: InventoryWorkspaceScreen(user: adminUser, repository: repo),
@@ -115,7 +131,6 @@ void main() {
         expect(find.byType(AccessRestrictedScreen), findsNothing);
         expect(find.text('Inventory'), findsOneWidget);
 
-        // Details check
         await tester.pumpWidget(
           MaterialApp(
             home: InventoryItemDetailsScreen(
@@ -137,7 +152,7 @@ void main() {
       (tester) async {
         final authorizedUser = CurrentUser(
           id: 'user_1',
-          displayName: 'Inventory Manager',
+          displayName: 'Standard Warehouse Clerk',
           accountType: AccountType.user,
           modules: {CrmModule.inventory},
           permissions: {CrmPermissions.inventoryView},
@@ -168,9 +183,7 @@ void main() {
           displayName: 'Sales Rep',
           accountType: AccountType.user,
           modules: {CrmModule.leadManagement},
-          permissions: {
-            CrmPermissions.inventoryView,
-          }, // Has permission string, but NOT the module
+          permissions: {CrmPermissions.inventoryView},
         );
 
         final spyRepo = _SpyInventoryRepository();
@@ -185,11 +198,9 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Pre-Cubit guard fires: shows AccessRestrictedScreen
         expect(find.byType(AccessRestrictedScreen), findsOneWidget);
         expect(find.text('Inventory'), findsNothing);
 
-        // ZERO calls made to repository
         expect(spyRepo.getItemsCallCount, 0);
         expect(spyRepo.getItemByIdCallCount, 0);
       },
@@ -203,7 +214,7 @@ void main() {
           displayName: 'Junior Staff',
           accountType: AccountType.user,
           modules: {CrmModule.inventory},
-          permissions: {}, // Module assigned, but lacks inventory.view
+          permissions: {},
         );
 
         final spyRepo = _SpyInventoryRepository();
@@ -257,16 +268,16 @@ void main() {
 
     group('Full Matrix Authorization Tests (Section 43)', () {
       final admin = CurrentUser(
-        id: 'admin_full',
-        displayName: 'Admin User',
+        id: 'admin_user',
+        displayName: 'Super Admin',
         accountType: AccountType.admin,
-        modules: {CrmModule.inventory},
-        permissions: {CrmPermissions.inventoryView},
+        modules: {},
+        permissions: {},
       );
 
       final userWithView = CurrentUser(
         id: 'user_view',
-        displayName: 'Standard User with View',
+        displayName: 'Viewer',
         accountType: AccountType.user,
         modules: {CrmModule.inventory},
         permissions: {CrmPermissions.inventoryView},
@@ -274,7 +285,7 @@ void main() {
 
       final userMissingView = CurrentUser(
         id: 'user_no_view',
-        displayName: 'Standard User missing View',
+        displayName: 'No View',
         accountType: AccountType.user,
         modules: {CrmModule.inventory},
         permissions: {},
@@ -282,7 +293,7 @@ void main() {
 
       final userWithoutModule = CurrentUser(
         id: 'user_no_module',
-        displayName: 'User without Inventory',
+        displayName: 'No Module',
         accountType: AccountType.user,
         modules: {CrmModule.leadManagement},
         permissions: {CrmPermissions.inventoryView},
@@ -371,6 +382,16 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.byType(AccessRestrictedScreen), findsNothing);
           expect(find.widgetWithText(AppBar, 'Adjust Stock'), findsOneWidget);
+
+          // Import
+          await tester.pumpWidget(
+            MaterialApp(
+              home: InventoryImportScreen(user: admin, repository: repo),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsNothing);
+          expect(find.byType(InventoryImportScreen), findsOneWidget);
         },
       );
 
@@ -459,6 +480,20 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.byType(AccessRestrictedScreen), findsOneWidget);
           expect(spyRepo.adjustStockCallCount, 0);
+
+          // Import denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: InventoryImportScreen(
+                user: userWithView,
+                repository: spyRepo,
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+          expect(spyRepo.importItemsCallCount, 0);
+          expect(spyRepo.getExistingSkusCallCount, 0);
         },
       );
 
@@ -546,6 +581,20 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.byType(AccessRestrictedScreen), findsOneWidget);
           expect(spyRepo.adjustStockCallCount, 0);
+
+          // Import denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: InventoryImportScreen(
+                user: userMissingView,
+                repository: spyRepo,
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+          expect(spyRepo.importItemsCallCount, 0);
+          expect(spyRepo.getExistingSkusCallCount, 0);
         },
       );
 
@@ -633,6 +682,20 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.byType(AccessRestrictedScreen), findsOneWidget);
           expect(spyRepo.adjustStockCallCount, 0);
+
+          // Import denied
+          await tester.pumpWidget(
+            MaterialApp(
+              home: InventoryImportScreen(
+                user: userWithoutModule,
+                repository: spyRepo,
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+          expect(spyRepo.importItemsCallCount, 0);
+          expect(spyRepo.getExistingSkusCallCount, 0);
         },
       );
     });

@@ -1,3 +1,4 @@
+import '../entities/inventory_import_models.dart';
 import '../entities/inventory_item_summary.dart';
 import '../entities/inventory_page.dart';
 import '../entities/inventory_query.dart';
@@ -10,7 +11,8 @@ import '../inputs/update_inventory_item_input.dart';
 /// Repository interface for the Inventory module.
 ///
 /// Supports paginated item reads, item details, administrative item identity management,
-/// and append-only stock movement ledger mutations (opening stock and manual adjustments).
+/// append-only stock movement ledger mutations (opening stock and manual adjustments),
+/// and bulk CSV/XLSX imports.
 /// Direct quantity editing remains strictly prohibited.
 abstract interface class InventoryRepository {
   /// Retrieves a paginated list of inventory item summaries matching [query].
@@ -49,4 +51,13 @@ abstract interface class InventoryRepository {
   Future<InventoryStockMutationResult> adjustStock(
     AdjustInventoryStockInput input,
   );
+
+  /// Retrieves all existing item SKUs (trimmed, lowercase) currently stored in the repository.
+  Future<Set<String>> getExistingSkus();
+
+  /// Bulk imports inventory items according to [request].
+  ///
+  /// Atomically commits item creation and optional opening stock movements per row.
+  /// Revalidates SKU uniqueness at write-time and rejects duplicates within request.
+  Future<InventoryImportResult> importItems(InventoryImportRequest request);
 }

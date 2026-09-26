@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import '../../domain/entities/inventory_import_models.dart';
 import '../../domain/entities/inventory_item.dart';
 import '../../domain/entities/inventory_item_summary.dart';
 import '../../domain/entities/inventory_page.dart';
@@ -25,16 +26,19 @@ class MockInventoryRepository implements InventoryRepository {
   final List<InventoryItem> _items;
   final List<StockMovement> _movements;
   final DateTime Function() _nowProvider;
+  final bool Function(String sku)? _simulateMovementFailure;
 
   MockInventoryRepository({
     List<InventoryItem>? items,
     List<StockMovement>? movements,
     DateTime Function()? nowProvider,
+    bool Function(String sku)? simulateMovementFailure,
   }) : _items = List.of(items ?? MockInventorySeedData.createDefaultItems()),
        _movements = List.of(
          movements ?? MockInventorySeedData.createDefaultMovements(),
        ),
-       _nowProvider = nowProvider ?? DateTime.now {
+       _nowProvider = nowProvider ?? DateTime.now,
+       _simulateMovementFailure = simulateMovementFailure {
     _validateInvariants();
   }
 
@@ -415,6 +419,175 @@ class MockInventoryRepository implements InventoryRepository {
         item: matchingItem,
         quantityOnHand: _deriveQuantityOnHand(input.itemId),
       ),
+    );
+  }
+
+  @override
+  Future<Set<String>> getExistingSkus() async {
+    return _items.map((item) => item.sku.trim().toLowerCase()).toSet();
+  }
+
+  @override
+  Future<InventoryImportResult> importItems(
+    InventoryImportRequest request,
+  ) async {
+    final trimmedActor = request.performedByUserId.trim();
+    if (trimmedActor.isEmpty) {
+      throw const InventoryValidationException('User ID cannot be blank.');
+    }
+
+    if (request.rows.isEmpty) {
+      return const InventoryImportResult(
+        requestedCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        importedSummaries: [],
+        failures: [],
+      );
+    }
+
+    // Intra-request duplicate detection: all occurrences of duplicated SKUs within request fail.
+    final seenRequestSkus = <String>{};
+    final duplicateRequestSkus = <String>{};
+    for (final row in request.rows) {
+      final norm = row.sku.trim().toLowerCase();
+      if (norm.isNotEmpty) {
+        if (!seenRequestSkus.add(norm)) {
+          duplicateRequestSkus.add(norm);
+        }
+      }
+    }
+
+    final importedSummaries = <InventoryItemSummary>[];
+    final failures = <InventoryImportRowFailure>[];
+
+    for (final row in request.rows) {
+      final trimmedName = row.name.trim();
+      final trimmedSku = row.sku.trim();
+      final normSku = trimmedSku.toLowerCase();
+
+      // 1. Validation
+      if (trimmedName.isEmpty) {
+        failures.add(
+          InventoryImportRowFailure(
+            sourceRowNumber: row.sourceRowNumber,
+            sku: row.sku,
+            reason: 'Name is required.',
+          ),
+        );
+        continue;
+      }
+
+      if (trimmedSku.isEmpty) {
+        failures.add(
+          InventoryImportRowFailure(
+            sourceRowNumber: row.sourceRowNumber,
+            sku: row.sku,
+            reason: 'SKU is required.',
+          ),
+        );
+        continue;
+      }
+
+      if (duplicateRequestSkus.contains(normSku)) {
+        failures.add(
+          InventoryImportRowFailure(
+            sourceRowNumber: row.sourceRowNumber,
+            sku: row.sku,
+            reason: 'Duplicate SKU in import file.',
+          ),
+        );
+        continue;
+      }
+
+      // Revalidate freshness against existing repository state
+      final alreadyExists = _items.any(
+        (item) => item.sku.trim().toLowerCase() == normSku,
+      );
+      if (alreadyExists) {
+        failures.add(
+          InventoryImportRowFailure(
+            sourceRowNumber: row.sourceRowNumber,
+            sku: row.sku,
+            reason: 'An inventory item with this SKU already exists.',
+          ),
+        );
+        continue;
+      }
+
+      // Opening stock validation
+      if (row.openingStock != null) {
+        if (!row.openingStock!.isFinite || row.openingStock! <= 0) {
+          failures.add(
+            InventoryImportRowFailure(
+              sourceRowNumber: row.sourceRowNumber,
+              sku: row.sku,
+              reason: 'Opening stock must be greater than zero.',
+            ),
+          );
+          continue;
+        }
+      }
+
+      // 2. Atomic row staging & execution
+      try {
+        final itemId = _generateNextDeterministicId();
+        final newItem = InventoryItem(
+          id: itemId,
+          name: trimmedName,
+          sku: trimmedSku,
+        );
+
+        StockMovement? candidateMovement;
+        if (row.openingStock != null) {
+          if (_simulateMovementFailure != null &&
+              _simulateMovementFailure(trimmedSku)) {
+            throw const InventoryValidationException(
+              'Simulated movement persistence failure.',
+            );
+          }
+
+          final movId = _generateNextDeterministicMovementId();
+          candidateMovement = StockMovement(
+            id: movId,
+            inventoryItemId: itemId,
+            type: StockMovementType.openingStock,
+            quantityDelta: row.openingStock!,
+            createdAt: _nowProvider(),
+            performedByUserId: trimmedActor,
+            reason: null,
+          );
+        }
+
+        // Commit atomically: both succeed or neither is added to state
+        _items.add(newItem);
+        if (candidateMovement != null) {
+          _movements.add(candidateMovement);
+        }
+
+        importedSummaries.add(
+          InventoryItemSummary(
+            item: newItem,
+            quantityOnHand: _deriveQuantityOnHand(itemId),
+          ),
+        );
+      } catch (e) {
+        failures.add(
+          InventoryImportRowFailure(
+            sourceRowNumber: row.sourceRowNumber,
+            sku: row.sku,
+            reason: 'Failed to import row: $e',
+          ),
+        );
+      }
+    }
+
+    return InventoryImportResult(
+      requestedCount: request.rows.length,
+      successCount: importedSummaries.length,
+      failureCount: failures.length,
+      importedSummaries: List.unmodifiable(importedSummaries),
+      failures: List.unmodifiable(failures),
     );
   }
 }

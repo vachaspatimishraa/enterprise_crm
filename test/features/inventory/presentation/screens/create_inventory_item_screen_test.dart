@@ -18,6 +18,7 @@ import 'package:enterprise_crm/features/inventory/domain/repositories/inventory_
 import 'package:enterprise_crm/features/inventory/presentation/screens/create_inventory_item_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:enterprise_crm/features/inventory/domain/entities/inventory_import_models.dart';
 
 class _TrackingInventoryRepository implements InventoryRepository {
   final Future<InventoryItemSummary> Function(CreateInventoryItemInput)?
@@ -59,6 +60,13 @@ class _TrackingInventoryRepository implements InventoryRepository {
   Future<InventoryStockMutationResult> adjustStock(
     AdjustInventoryStockInput input,
   ) => throw UnimplementedError();
+
+  @override
+  Future<Set<String>> getExistingSkus() => Future.value({});
+
+  @override
+  Future<InventoryImportResult> importItems(InventoryImportRequest request) =>
+      throw UnimplementedError();
 }
 
 void main() {
