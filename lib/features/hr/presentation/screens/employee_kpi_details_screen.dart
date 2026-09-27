@@ -51,8 +51,8 @@ class EmployeeKpiDetailsScreen extends StatelessWidget {
     }
 
     return BlocProvider(
-      create: (_) => EmployeeKpiDetailsCubit(repository: effectiveRepo)
-        ..loadKpi(kpiId),
+      create: (_) =>
+          EmployeeKpiDetailsCubit(repository: effectiveRepo)..loadKpi(kpiId),
       child: _EmployeeKpiDetailsView(
         user: user,
         kpiId: kpiId,
@@ -189,11 +189,7 @@ class _EmployeeKpiDetailsViewState extends State<_EmployeeKpiDetailsView> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.error_outline,
-                  size: 64,
-                  color: colorScheme.error,
-                ),
+                Icon(Icons.error_outline, size: 64, color: colorScheme.error),
                 const SizedBox(height: 16),
                 Text(
                   state.errorMessage ?? 'Failed to load KPI details.',
@@ -238,8 +234,7 @@ class _EmployeeKpiDetailsViewState extends State<_EmployeeKpiDetailsView> {
       });
     }
 
-    final employeeDisplayName =
-        _resolvedEmployee?.fullName ?? kpi.employeeId;
+    final employeeDisplayName = _resolvedEmployee?.fullName ?? kpi.employeeId;
 
     return Center(
       child: ConstrainedBox(
@@ -286,9 +281,8 @@ class _EmployeeKpiDetailsViewState extends State<_EmployeeKpiDetailsView> {
                                 Text(
                                   kpi.metricName,
                                   key: const Key('kpi_details_metric_name'),
-                                  style: theme.textTheme.headlineSmall?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                                  style: theme.textTheme.headlineSmall
+                                      ?.copyWith(fontWeight: FontWeight.bold),
                                 ),
                                 const SizedBox(height: 6),
                                 Row(
@@ -302,18 +296,23 @@ class _EmployeeKpiDetailsViewState extends State<_EmployeeKpiDetailsView> {
                                     Expanded(
                                       child: Text(
                                         employeeDisplayName,
-                                        key: const Key('kpi_details_employee_name'),
-                                        overflow: TextOverflow.ellipsis,
-                                        style: theme.textTheme.titleMedium?.copyWith(
-                                          color: colorScheme.primary,
-                                          fontWeight: FontWeight.w600,
+                                        key: const Key(
+                                          'kpi_details_employee_name',
                                         ),
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme.textTheme.titleMedium
+                                            ?.copyWith(
+                                              color: colorScheme.primary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
                                       ),
                                     ),
                                   ],
                                 ),
                                 if (_resolvedEmployee?.designation != null &&
-                                    _resolvedEmployee!.designation!.isNotEmpty) ...[
+                                    _resolvedEmployee!
+                                        .designation!
+                                        .isNotEmpty) ...[
                                   const SizedBox(height: 2),
                                   Text(
                                     _resolvedEmployee!.designation!,
@@ -338,12 +337,15 @@ class _EmployeeKpiDetailsViewState extends State<_EmployeeKpiDetailsView> {
                             color: colorScheme.onSurfaceVariant,
                           ),
                           const SizedBox(width: 6),
-                          Text(
-                            'Period: ${kpi.formattedPeriod}',
-                            key: const Key('kpi_details_period_text'),
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                              fontWeight: FontWeight.w500,
+                          Expanded(
+                            child: Text(
+                              'Period: ${kpi.formattedPeriod}',
+                              key: const Key('kpi_details_period_text'),
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
                         ],
@@ -366,7 +368,7 @@ class _EmployeeKpiDetailsViewState extends State<_EmployeeKpiDetailsView> {
                 child: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
                         'Performance Metrics',
@@ -375,82 +377,79 @@ class _EmployeeKpiDetailsViewState extends State<_EmployeeKpiDetailsView> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          if (constraints.maxWidth < 500) {
-                            return Column(
-                              children: [
-                                _buildMetricTile(
-                                  context: context,
-                                  label: 'Target Value',
-                                  value: '${kpi.targetValue}',
-                                  valueKey: 'kpi_details_target_value',
-                                  icon: Icons.track_changes_outlined,
-                                  color: colorScheme.primary,
-                                ),
-                                const SizedBox(height: 10),
-                                _buildMetricTile(
-                                  context: context,
-                                  label: 'Actual Value',
-                                  value: '${kpi.actualValue}',
-                                  valueKey: 'kpi_details_actual_value',
-                                  icon: Icons.done_all_outlined,
-                                  color: colorScheme.secondary,
-                                ),
-                                const SizedBox(height: 10),
-                                _buildMetricTile(
-                                  context: context,
-                                  label: 'Stored Score',
-                                  value: kpi.score != null ? '${kpi.score}' : 'Not recorded',
-                                  valueKey: 'kpi_details_score_value',
-                                  icon: Icons.grade_outlined,
-                                  color: kpi.score != null
-                                      ? colorScheme.tertiary
-                                      : colorScheme.outline,
-                                ),
-                              ],
-                            );
-                          }
-                          return Row(
-                            children: [
-                              Expanded(
-                                child: _buildMetricTile(
-                                  context: context,
-                                  label: 'Target Value',
-                                  value: '${kpi.targetValue}',
-                                  valueKey: 'kpi_details_target_value',
-                                  icon: Icons.track_changes_outlined,
-                                  color: colorScheme.primary,
-                                ),
+                      if (MediaQuery.of(context).size.width < 600) ...[
+                        _buildMetricTile(
+                          context: context,
+                          label: 'Target Value',
+                          value: '${kpi.targetValue}',
+                          valueKey: 'kpi_details_target_value',
+                          icon: Icons.track_changes_outlined,
+                          color: colorScheme.primary,
+                        ),
+                        const SizedBox(height: 10),
+                        _buildMetricTile(
+                          context: context,
+                          label: 'Actual Value',
+                          value: '${kpi.actualValue}',
+                          valueKey: 'kpi_details_actual_value',
+                          icon: Icons.done_all_outlined,
+                          color: colorScheme.secondary,
+                        ),
+                        const SizedBox(height: 10),
+                        _buildMetricTile(
+                          context: context,
+                          label: 'Stored Score',
+                          value: kpi.score != null
+                              ? '${kpi.score}'
+                              : 'Not recorded',
+                          valueKey: 'kpi_details_score_value',
+                          icon: Icons.grade_outlined,
+                          color: kpi.score != null
+                              ? colorScheme.tertiary
+                              : colorScheme.outline,
+                        ),
+                      ] else ...[
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildMetricTile(
+                                context: context,
+                                label: 'Target Value',
+                                value: '${kpi.targetValue}',
+                                valueKey: 'kpi_details_target_value',
+                                icon: Icons.track_changes_outlined,
+                                color: colorScheme.primary,
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildMetricTile(
-                                  context: context,
-                                  label: 'Actual Value',
-                                  value: '${kpi.actualValue}',
-                                  valueKey: 'kpi_details_actual_value',
-                                  icon: Icons.done_all_outlined,
-                                  color: colorScheme.secondary,
-                                ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildMetricTile(
+                                context: context,
+                                label: 'Actual Value',
+                                value: '${kpi.actualValue}',
+                                valueKey: 'kpi_details_actual_value',
+                                icon: Icons.done_all_outlined,
+                                color: colorScheme.secondary,
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildMetricTile(
-                                  context: context,
-                                  label: 'Stored Score',
-                                  value: kpi.score != null ? '${kpi.score}' : 'Not recorded',
-                                  valueKey: 'kpi_details_score_value',
-                                  icon: Icons.grade_outlined,
-                                  color: kpi.score != null
-                                      ? colorScheme.tertiary
-                                      : colorScheme.outline,
-                                ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildMetricTile(
+                                context: context,
+                                label: 'Stored Score',
+                                value: kpi.score != null
+                                    ? '${kpi.score}'
+                                    : 'Not recorded',
+                                valueKey: 'kpi_details_score_value',
+                                icon: Icons.grade_outlined,
+                                color: kpi.score != null
+                                    ? colorScheme.tertiary
+                                    : colorScheme.outline,
                               ),
-                            ],
-                          );
-                        },
-                      ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),

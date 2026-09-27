@@ -7,7 +7,6 @@ import 'package:enterprise_crm/features/hr/data/repositories/mock_employee_kpi_r
 import 'package:enterprise_crm/features/hr/data/repositories/mock_employee_repository.dart';
 import 'package:enterprise_crm/features/hr/domain/entities/employee_kpi.dart';
 import 'package:enterprise_crm/features/hr/domain/repositories/employee_kpi_repository.dart';
-import 'package:enterprise_crm/features/hr/presentation/bloc/employee_kpi_details_cubit.dart';
 import 'package:enterprise_crm/features/hr/presentation/screens/employee_kpi_details_screen.dart';
 import 'package:enterprise_crm/features/hr/presentation/screens/employee_kpi_list_screen.dart';
 import 'package:flutter/material.dart';
@@ -102,18 +101,22 @@ void main() {
       expect(find.text('Access Restricted'), findsOneWidget);
     });
 
-    testWidgets('authorized non-admin user with HR permissions sees KPI details', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        buildDetailsTestWidget(user: hrViewerUser, kpiId: 'kpi_101'),
-      );
-      await tester.pumpAndSettle();
+    testWidgets(
+      'authorized non-admin user with HR permissions sees KPI details',
+      (tester) async {
+        await tester.pumpWidget(
+          buildDetailsTestWidget(user: hrViewerUser, kpiId: 'kpi_101'),
+        );
+        await tester.pumpAndSettle();
 
-      expect(find.byType(AccessRestrictedScreen), findsNothing);
-      expect(find.byKey(const Key('employee_kpi_details_scaffold')), findsOneWidget);
-      expect(find.text('Employee Retention Rate'), findsOneWidget);
-    });
+        expect(find.byType(AccessRestrictedScreen), findsNothing);
+        expect(
+          find.byKey(const Key('employee_kpi_details_scaffold')),
+          findsOneWidget,
+        );
+        expect(find.text('Employee Retention Rate'), findsOneWidget);
+      },
+    );
 
     testWidgets('valid KPI ID loads and renders all approved fields accurately', (
       tester,
@@ -142,7 +145,10 @@ void main() {
       expect(find.text('emp_1'), findsOneWidget);
       expect(find.text('2026-07-01'), findsOneWidget);
       expect(find.text('2026-09-30'), findsOneWidget);
-      expect(find.text('Exceeded retention target across departments'), findsOneWidget);
+      expect(
+        find.text('Exceeded retention target across departments'),
+        findsOneWidget,
+      );
 
       // Scoring integrity: verify NO fabricated percentage calculation like 102.7%
       expect(find.textContaining('102.7'), findsNothing);
@@ -151,32 +157,39 @@ void main() {
       expect(find.text('Grade A'), findsNothing);
     });
 
-    testWidgets('KPI with null score renders Not recorded and null remarks as None recorded', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        buildDetailsTestWidget(
-          kpiId: 'kpi_null_fields',
-          repo: NullableFieldsKpiRepository(),
-        ),
-      );
-      await tester.pumpAndSettle();
+    testWidgets(
+      'KPI with null score renders Not recorded and null remarks as None recorded',
+      (tester) async {
+        await tester.pumpWidget(
+          buildDetailsTestWidget(
+            kpiId: 'kpi_null_fields',
+            repo: NullableFieldsKpiRepository(),
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      expect(find.text('HR Ticket Resolution SLA'), findsOneWidget);
-      expect(find.text('Not recorded'), findsOneWidget);
-      expect(find.text('None recorded'), findsOneWidget);
-    });
+        expect(find.text('HR Ticket Resolution SLA'), findsOneWidget);
+        expect(find.text('Not recorded'), findsOneWidget);
+        expect(find.text('None recorded'), findsOneWidget);
+      },
+    );
 
-    testWidgets('unknown KPI ID displays not found state with functional return button', (
-      tester,
-    ) async {
-      await tester.pumpWidget(buildDetailsTestWidget(kpiId: 'non_existent_kpi'));
-      await tester.pumpAndSettle();
+    testWidgets(
+      'unknown KPI ID displays not found state with functional return button',
+      (tester) async {
+        await tester.pumpWidget(
+          buildDetailsTestWidget(kpiId: 'non_existent_kpi'),
+        );
+        await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('kpi_details_not_found')), findsOneWidget);
-      expect(find.text('KPI record not found.'), findsOneWidget);
-      expect(find.byKey(const Key('kpi_details_back_to_list_button')), findsOneWidget);
-    });
+        expect(find.byKey(const Key('kpi_details_not_found')), findsOneWidget);
+        expect(find.text('KPI record not found.'), findsOneWidget);
+        expect(
+          find.byKey(const Key('kpi_details_back_to_list_button')),
+          findsOneWidget,
+        );
+      },
+    );
 
     testWidgets('repository error displays error state with functional Retry', (
       tester,
@@ -187,7 +200,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('kpi_details_error_message')), findsOneWidget);
+      expect(
+        find.byKey(const Key('kpi_details_error_message')),
+        findsOneWidget,
+      );
       expect(find.text('Simulated repository failure'), findsOneWidget);
       expect(find.byKey(const Key('kpi_details_retry_button')), findsOneWidget);
     });
@@ -220,7 +236,10 @@ void main() {
       await tester.pumpAndSettle();
 
       // Verify on Details Screen
-      expect(find.byKey(const Key('employee_kpi_details_scaffold')), findsOneWidget);
+      expect(
+        find.byKey(const Key('employee_kpi_details_scaffold')),
+        findsOneWidget,
+      );
       expect(find.text('KPI Details'), findsOneWidget);
       expect(find.text('Employee Retention Rate'), findsOneWidget);
       expect(find.text('Alice Johnson'), findsOneWidget);
@@ -230,7 +249,10 @@ void main() {
       await tester.pumpAndSettle();
 
       // Back on List Screen
-      expect(find.byKey(const Key('employee_kpi_list_scaffold')), findsOneWidget);
+      expect(
+        find.byKey(const Key('employee_kpi_list_scaffold')),
+        findsOneWidget,
+      );
       expect(find.byKey(const Key('kpi_card_kpi_101')), findsOneWidget);
     });
 
@@ -260,7 +282,10 @@ void main() {
       await tester.pumpAndSettle();
 
       // Verify on Details Screen
-      expect(find.byKey(const Key('employee_kpi_details_scaffold')), findsOneWidget);
+      expect(
+        find.byKey(const Key('employee_kpi_details_scaffold')),
+        findsOneWidget,
+      );
       expect(find.text('Inventory Accuracy'), findsOneWidget);
       expect(find.text('Bob Miller'), findsOneWidget);
 
@@ -277,12 +302,6 @@ void main() {
     testWidgets('renders cleanly without overflow across screen sizes', (
       tester,
     ) async {
-      FlutterError.onError = (details) {
-        debugPrint('DETAILS: ${details.exceptionAsString()}');
-        debugPrint('CONTEXT: ${details.context?.toDescription()}');
-        debugPrint('STACK: ${details.stack}');
-      };
-
       const testSizes = [
         Size(320, 568),
         Size(360, 640),
@@ -299,14 +318,15 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(tester.takeException(), isNull);
-        expect(find.byKey(const Key('kpi_details_header_card')), findsOneWidget);
+        expect(
+          find.byKey(const Key('kpi_details_header_card')),
+          findsOneWidget,
+        );
         expect(find.text('Employee Retention Rate'), findsOneWidget);
       }
     });
 
-    testWidgets('renders cleanly in dark theme', (
-      tester,
-    ) async {
+    testWidgets('renders cleanly in dark theme', (tester) async {
       await tester.pumpWidget(
         buildDetailsTestWidget(kpiId: 'kpi_101', themeMode: ThemeMode.dark),
       );
