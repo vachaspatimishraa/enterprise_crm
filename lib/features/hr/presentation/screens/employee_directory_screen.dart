@@ -4,17 +4,20 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../auth/domain/entities/current_user.dart';
 import '../../../auth/presentation/screens/access_restricted_screen.dart';
 import '../../data/repositories/mock_attendance_repository.dart';
+import '../../data/repositories/mock_employee_kpi_repository.dart';
 import '../../domain/entities/employee.dart';
 import '../../domain/entities/employment_status.dart';
 import '../../domain/policies/hr_access_policy.dart';
 import '../../domain/repositories/attendance_repository.dart';
 import '../../domain/repositories/employee_document_repository.dart';
+import '../../domain/repositories/employee_kpi_repository.dart';
 import '../../domain/repositories/employee_repository.dart';
 import '../bloc/employee_directory_cubit.dart';
 import '../bloc/employee_directory_state.dart';
 import 'add_employee_screen.dart';
 import 'attendance_list_screen.dart';
 import 'employee_details_screen.dart';
+import 'employee_kpi_list_screen.dart';
 
 /// Main Employee Directory workspace screen in the HR module.
 ///
@@ -25,6 +28,7 @@ class EmployeeDirectoryScreen extends StatelessWidget {
   final EmployeeRepository repository;
   final EmployeeDocumentRepository? documentRepository;
   final AttendanceRepository? attendanceRepository;
+  final EmployeeKpiRepository? kpiRepository;
 
   const EmployeeDirectoryScreen({
     super.key,
@@ -32,6 +36,7 @@ class EmployeeDirectoryScreen extends StatelessWidget {
     required this.repository,
     this.documentRepository,
     this.attendanceRepository,
+    this.kpiRepository,
   });
 
   @override
@@ -53,6 +58,7 @@ class EmployeeDirectoryScreen extends StatelessWidget {
         repository: repository,
         documentRepository: documentRepository,
         attendanceRepository: attendanceRepository,
+        kpiRepository: kpiRepository,
       ),
     );
   }
@@ -63,12 +69,14 @@ class _EmployeeDirectoryView extends StatefulWidget {
   final EmployeeRepository repository;
   final EmployeeDocumentRepository? documentRepository;
   final AttendanceRepository? attendanceRepository;
+  final EmployeeKpiRepository? kpiRepository;
 
   const _EmployeeDirectoryView({
     required this.user,
     required this.repository,
     this.documentRepository,
     this.attendanceRepository,
+    this.kpiRepository,
   });
 
   @override
@@ -105,6 +113,23 @@ class _EmployeeDirectoryViewState extends State<_EmployeeDirectoryView> {
                     repository:
                         widget.attendanceRepository ??
                         MockAttendanceRepository(),
+                  ),
+                ),
+              );
+            },
+          ),
+          IconButton(
+            key: const Key('employee_directory_kpi_button'),
+            tooltip: 'KPI Management',
+            icon: const Icon(Icons.assessment_outlined),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => EmployeeKpiListScreen(
+                    user: widget.user,
+                    kpiRepository:
+                        widget.kpiRepository ?? MockEmployeeKpiRepository(),
+                    employeeRepository: widget.repository,
                   ),
                 ),
               );

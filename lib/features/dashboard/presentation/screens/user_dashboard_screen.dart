@@ -9,6 +9,7 @@ import '../../../calling/presentation/screens/user_calling_workspace_screen.dart
 import '../../../hr/data/repositories/mock_employee_repository.dart';
 import '../../../hr/domain/repositories/attendance_repository.dart';
 import '../../../hr/domain/repositories/employee_document_repository.dart';
+import '../../../hr/domain/repositories/employee_kpi_repository.dart';
 import '../../../hr/domain/repositories/employee_repository.dart';
 import '../../../hr/presentation/screens/employee_directory_screen.dart';
 import '../../../leads/domain/repositories/lead_repository.dart';
@@ -30,6 +31,7 @@ class UserDashboardScreen extends StatelessWidget {
   final EmployeeRepository? employeeRepository;
   final EmployeeDocumentRepository? employeeDocumentRepository;
   final AttendanceRepository? attendanceRepository;
+  final EmployeeKpiRepository? employeeKpiRepository;
 
   const UserDashboardScreen({
     super.key,
@@ -42,6 +44,7 @@ class UserDashboardScreen extends StatelessWidget {
     this.employeeRepository,
     this.employeeDocumentRepository,
     this.attendanceRepository,
+    this.employeeKpiRepository,
   });
 
   void _openModule(BuildContext context, CrmModule module) {
@@ -77,6 +80,7 @@ class UserDashboardScreen extends StatelessWidget {
             repository: employeeRepository ?? MockEmployeeRepository(),
             documentRepository: employeeDocumentRepository,
             attendanceRepository: attendanceRepository,
+            kpiRepository: employeeKpiRepository,
           ),
         ),
       );
