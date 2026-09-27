@@ -11,6 +11,7 @@ import '../../domain/repositories/employee_kpi_repository.dart';
 import '../../domain/repositories/employee_repository.dart';
 import '../bloc/employee_kpi_list_cubit.dart';
 import '../bloc/employee_kpi_list_state.dart';
+import 'employee_kpi_details_screen.dart';
 
 /// Screen displaying Employee Key Performance Indicators (KPIs).
 ///
@@ -51,6 +52,7 @@ class EmployeeKpiListScreen extends StatelessWidget {
       )..loadKpis(),
       child: _EmployeeKpiListView(
         user: user,
+        kpiRepository: kpiRepository,
         employeeRepository: employeeRepository ?? MockEmployeeRepository(),
       ),
     );
@@ -59,10 +61,12 @@ class EmployeeKpiListScreen extends StatelessWidget {
 
 class _EmployeeKpiListView extends StatefulWidget {
   final CurrentUser user;
+  final EmployeeKpiRepository kpiRepository;
   final EmployeeRepository employeeRepository;
 
   const _EmployeeKpiListView({
     required this.user,
+    required this.kpiRepository,
     required this.employeeRepository,
   });
 
@@ -152,6 +156,22 @@ class _EmployeeKpiListViewState extends State<_EmployeeKpiListView> {
   void _clearSearch() {
     _searchController.clear();
     context.read<EmployeeKpiListCubit>().setSearchQuery('');
+  }
+
+  Future<void> _navigateToDetails(String kpiId) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => EmployeeKpiDetailsScreen(
+          user: widget.user,
+          kpiId: kpiId,
+          kpiRepository: widget.kpiRepository,
+          employeeRepository: widget.employeeRepository,
+        ),
+      ),
+    );
+    if (mounted) {
+      context.read<EmployeeKpiListCubit>().reload();
+    }
   }
 
   @override
@@ -594,13 +614,17 @@ class _EmployeeKpiListViewState extends State<_EmployeeKpiListView> {
         return Card(
           key: Key('kpi_card_${kpi.id}'),
           elevation: 0,
+          clipBehavior: Clip.antiAlias,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
             side: BorderSide(color: colorScheme.outlineVariant),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
+          child: InkWell(
+            key: Key('kpi_card_tap_${kpi.id}'),
+            onTap: () => _navigateToDetails(kpi.id),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Header: Metric Name
@@ -696,9 +720,10 @@ class _EmployeeKpiListViewState extends State<_EmployeeKpiListView> {
               ],
             ),
           ),
-        );
-      },
-    );
+        ),
+      );
+    },
+  );
   }
 
   Widget _buildMetricStat(String label, String value) {
@@ -729,6 +754,7 @@ class _EmployeeKpiListViewState extends State<_EmployeeKpiListView> {
             child: ConstrainedBox(
               constraints: BoxConstraints(minWidth: constraints.maxWidth - 32),
               child: DataTable(
+                showCheckboxColumn: false,
                 headingRowColor: WidgetStateProperty.all(
                   colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
                 ),
@@ -746,6 +772,7 @@ class _EmployeeKpiListViewState extends State<_EmployeeKpiListView> {
 
                   return DataRow(
                     key: ValueKey('kpi_row_${kpi.id}'),
+                    onSelectChanged: (_) => _navigateToDetails(kpi.id),
                     cells: [
                       DataCell(
                         Text(
@@ -753,6 +780,7 @@ class _EmployeeKpiListViewState extends State<_EmployeeKpiListView> {
                           key: Key('kpi_row_${kpi.id}'),
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
+                        onTap: () => _navigateToDetails(kpi.id),
                       ),
                       DataCell(Text(empName)),
                       DataCell(Text(kpi.formattedPeriod)),
