@@ -18,6 +18,7 @@ import 'package:enterprise_crm/features/inventory/presentation/bloc/set_opening_
 import 'package:enterprise_crm/features/inventory/presentation/bloc/set_opening_stock_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_import_models.dart';
+import 'package:enterprise_crm/features/inventory/domain/entities/pending_inventory_deletion.dart';
 
 class _CustomInventoryRepository implements InventoryRepository {
   final Future<InventoryItemSummary?> Function(String)? onGetItemById;
@@ -77,6 +78,24 @@ class _CustomInventoryRepository implements InventoryRepository {
   @override
   Future<InventoryImportResult> importItems(InventoryImportRequest request) =>
       throw UnimplementedError();
+
+  @override
+  Future<PendingInventoryDeletion> requestItemDeletion({
+    required String itemId,
+    required String performedByUserId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> undoItemDeletion({
+    required String itemId,
+    required String performedByUserId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> finalizeExpiredDeletions() => throw UnimplementedError();
+
+  @override
+  Future<List<PendingInventoryDeletion>> getPendingDeletions() async => [];
 }
 
 void main() {

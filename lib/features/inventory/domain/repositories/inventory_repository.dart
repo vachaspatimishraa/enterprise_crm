@@ -3,6 +3,7 @@ import '../entities/inventory_item_summary.dart';
 import '../entities/inventory_page.dart';
 import '../entities/inventory_query.dart';
 import '../entities/inventory_stock_mutation_result.dart';
+import '../entities/pending_inventory_deletion.dart';
 import '../inputs/adjust_inventory_stock_input.dart';
 import '../inputs/create_inventory_item_input.dart';
 import '../inputs/record_opening_stock_input.dart';
@@ -60,4 +61,23 @@ abstract interface class InventoryRepository {
   /// Atomically commits item creation and optional opening stock movements per row.
   /// Revalidates SKU uniqueness at write-time and rejects duplicates within request.
   Future<InventoryImportResult> importItems(InventoryImportRequest request);
+
+  /// Requests permanent deletion of an inventory item, placing it in a 60-second pending deletion window.
+  Future<PendingInventoryDeletion> requestItemDeletion({
+    required String itemId,
+    required String performedByUserId,
+  });
+
+  /// Cancels a pending deletion before the 60-second undo window expires, restoring active visibility.
+  Future<void> undoItemDeletion({
+    required String itemId,
+    required String performedByUserId,
+  });
+
+  /// Finalizes any pending deletions whose 60-second undo window has expired,
+  /// atomically deleting the item and all associated stock movements.
+  Future<void> finalizeExpiredDeletions();
+
+  /// Retrieves all currently active pending deletions that have not yet expired or been finalized.
+  Future<List<PendingInventoryDeletion>> getPendingDeletions();
 }

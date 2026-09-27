@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../auth/domain/entities/current_user.dart';
 import '../../domain/entities/inventory_import_models.dart';
+import '../../domain/policies/inventory_import_policy.dart';
 import '../../domain/repositories/inventory_repository.dart';
 import '../services/inventory_import_file_picker.dart';
 import '../services/inventory_import_parser.dart';
@@ -26,11 +27,31 @@ class InventoryImportCubit extends Cubit<InventoryImportState> {
 
   bool _isImporting = false;
 
+  bool get canImportCsv => InventoryImportPolicy.canImportCsv(user);
+  bool get canImportXlsx => InventoryImportPolicy.canImportXlsx(user);
+
+  /// Returns the allowed file extensions based on user permissions.
+  List<String> get allowedExtensions => <String>[
+    if (canImportCsv) 'csv',
+    if (canImportXlsx) 'xlsx',
+  ];
+
   /// Prompts user to select a CSV or XLSX file and parses it into sheets.
   Future<void> selectFileAndParse() async {
+    final allowedExts = allowedExtensions;
+
+    if (allowedExts.isEmpty) {
+      emit(
+        const InventoryImportErrorState(
+          message: 'You do not have permission to import inventory files.',
+        ),
+      );
+      return;
+    }
+
     final InventoryImportSelectedFile? selectedFile;
     try {
-      selectedFile = await filePicker.pickFile();
+      selectedFile = await filePicker.pickFile(allowedExtensions: allowedExts);
     } catch (e) {
       emit(InventoryImportErrorState(message: e.toString()));
       return;
@@ -38,6 +59,24 @@ class InventoryImportCubit extends Cubit<InventoryImportState> {
 
     if (selectedFile == null) {
       // User cancelled picker: retain current state safely
+      return;
+    }
+
+    final ext = selectedFile.extension.toLowerCase();
+    if (ext == 'csv' && !canImportCsv) {
+      emit(
+        const InventoryImportErrorState(
+          message: 'You do not have permission to import CSV files.',
+        ),
+      );
+      return;
+    }
+    if (ext == 'xlsx' && !canImportXlsx) {
+      emit(
+        const InventoryImportErrorState(
+          message: 'You do not have permission to import Excel files.',
+        ),
+      );
       return;
     }
 

@@ -22,8 +22,16 @@ class InventoryItemDetailsCubit extends Cubit<InventoryItemDetailsState> {
         emit(InventoryItemDetailsNotFound(id));
       } else {
         final hasMovements = await _repository.hasStockMovements(id);
+        final pendingDeletions = await _repository.getPendingDeletions();
+        final pending = pendingDeletions
+            .where((p) => p.itemId == id)
+            .firstOrNull;
         emit(
-          InventoryItemDetailsLoaded(summary, hasStockMovements: hasMovements),
+          InventoryItemDetailsLoaded(
+            summary,
+            hasStockMovements: hasMovements,
+            pendingDeletion: pending,
+          ),
         );
       }
     } catch (_) {

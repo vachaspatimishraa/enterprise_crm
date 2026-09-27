@@ -54,6 +54,31 @@ abstract final class MockPermissionCatalog {
       module: CrmModule.inventory,
       displayName: 'View Inventory',
     ),
+    MockPermissionDefinition(
+      id: CrmPermissions.inventoryCreate,
+      module: CrmModule.inventory,
+      displayName: 'Create Inventory Items',
+    ),
+    MockPermissionDefinition(
+      id: CrmPermissions.inventoryEdit,
+      module: CrmModule.inventory,
+      displayName: 'Edit Inventory Items',
+    ),
+    MockPermissionDefinition(
+      id: CrmPermissions.inventoryDelete,
+      module: CrmModule.inventory,
+      displayName: 'Delete Inventory Items',
+    ),
+    MockPermissionDefinition(
+      id: CrmPermissions.inventoryImportCsv,
+      module: CrmModule.inventory,
+      displayName: 'Import Inventory (CSV)',
+    ),
+    MockPermissionDefinition(
+      id: CrmPermissions.inventoryImportXlsx,
+      module: CrmModule.inventory,
+      displayName: 'Import Inventory (Excel)',
+    ),
     // Purchase
     MockPermissionDefinition(
       id: CrmPermissions.purchaseView,

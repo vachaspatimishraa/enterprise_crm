@@ -25,19 +25,21 @@ class CreateInventoryItemScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Pre-Cubit mutation guard: zero Cubit initialization if unauthorized.
-    if (!InventoryItemAdministrationPolicy.canManage(user)) {
+    if (!InventoryItemAdministrationPolicy.canCreate(user)) {
       return const AccessRestrictedScreen();
     }
 
     return BlocProvider<CreateInventoryItemCubit>(
       create: (_) => CreateInventoryItemCubit(repository),
-      child: const _CreateInventoryItemView(),
+      child: _CreateInventoryItemView(user: user),
     );
   }
 }
 
 class _CreateInventoryItemView extends StatefulWidget {
-  const _CreateInventoryItemView();
+  final CurrentUser user;
+
+  const _CreateInventoryItemView({required this.user});
 
   @override
   State<_CreateInventoryItemView> createState() =>
@@ -48,11 +50,13 @@ class _CreateInventoryItemViewState extends State<_CreateInventoryItemView> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _skuController = TextEditingController();
+  final _openingStockController = TextEditingController();
 
   @override
   void dispose() {
     _nameController.dispose();
     _skuController.dispose();
+    _openingStockController.dispose();
     super.dispose();
   }
 
@@ -61,6 +65,8 @@ class _CreateInventoryItemViewState extends State<_CreateInventoryItemView> {
       context.read<CreateInventoryItemCubit>().submit(
         name: _nameController.text,
         sku: _skuController.text,
+        openingStockText: _openingStockController.text,
+        performedByUserId: widget.user.id,
       );
     }
   }
@@ -165,7 +171,7 @@ class _CreateInventoryItemViewState extends State<_CreateInventoryItemView> {
                             key: const Key('create_inventory_item_sku'),
                             controller: _skuController,
                             enabled: !isSubmitting,
-                            textInputAction: TextInputAction.done,
+                            textInputAction: TextInputAction.next,
                             decoration: const InputDecoration(
                               labelText: 'SKU *',
                               hintText: 'e.g. INV-042',
@@ -178,6 +184,26 @@ class _CreateInventoryItemViewState extends State<_CreateInventoryItemView> {
                               }
                               return null;
                             },
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Opening Stock Field (optional)
+                          TextFormField(
+                            key: const Key(
+                              'create_inventory_item_opening_stock',
+                            ),
+                            controller: _openingStockController,
+                            enabled: !isSubmitting,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            textInputAction: TextInputAction.done,
+                            decoration: const InputDecoration(
+                              labelText: 'Opening Stock (optional)',
+                              hintText: 'e.g. 50',
+                              prefixIcon: Icon(Icons.add_chart_outlined),
+                              border: OutlineInputBorder(),
+                            ),
                           ),
                           const SizedBox(height: 28),
 

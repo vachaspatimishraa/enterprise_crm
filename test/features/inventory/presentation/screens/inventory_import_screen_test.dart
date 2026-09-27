@@ -18,7 +18,9 @@ class _FakeFilePicker implements InventoryImportFilePicker {
   final InventoryImportSelectedFile? file;
 
   @override
-  Future<InventoryImportSelectedFile?> pickFile() async => file;
+  Future<InventoryImportSelectedFile?> pickFile({
+    List<String>? allowedExtensions,
+  }) async => file;
 }
 
 class _FakeParser implements InventoryImportParser {
