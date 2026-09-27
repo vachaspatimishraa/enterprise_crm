@@ -32,6 +32,32 @@ class FailingEmployeeKpiDetailsRepository implements EmployeeKpiRepository {
   Future<EmployeeKpi?> getKpiById(String id) async {
     throw errorToThrow;
   }
+
+  @override
+  Future<EmployeeKpi> createKpi({
+    required String employeeId,
+    required String metricName,
+    required DateTime periodStart,
+    required DateTime periodEnd,
+    required double targetValue,
+    required double actualValue,
+    double? score,
+    String? remarks,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<EmployeeKpi> updateKpi({
+    required String id,
+    required String metricName,
+    required DateTime periodStart,
+    required DateTime periodEnd,
+    required double targetValue,
+    required double actualValue,
+    double? score,
+    bool clearScore = false,
+    String? remarks,
+    bool clearRemarks = false,
+  }) async => throw UnimplementedError();
 }
 
 void main() {

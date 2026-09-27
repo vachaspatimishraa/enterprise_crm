@@ -42,4 +42,54 @@ class MockEmployeeKpiRepository implements EmployeeKpiRepository {
   Future<EmployeeKpi?> getKpiById(String id) async {
     return _store.getKpiById(id);
   }
+
+  @override
+  Future<EmployeeKpi> createKpi({
+    required String employeeId,
+    required String metricName,
+    required DateTime periodStart,
+    required DateTime periodEnd,
+    required double targetValue,
+    required double actualValue,
+    double? score,
+    String? remarks,
+  }) async {
+    return _store.createKpi(
+      employeeId: employeeId,
+      metricName: metricName,
+      periodStart: periodStart,
+      periodEnd: periodEnd,
+      targetValue: targetValue,
+      actualValue: actualValue,
+      score: score,
+      remarks: remarks,
+    );
+  }
+
+  @override
+  Future<EmployeeKpi> updateKpi({
+    required String id,
+    required String metricName,
+    required DateTime periodStart,
+    required DateTime periodEnd,
+    required double targetValue,
+    required double actualValue,
+    double? score,
+    bool clearScore = false,
+    String? remarks,
+    bool clearRemarks = false,
+  }) async {
+    return _store.updateKpi(
+      id: id,
+      metricName: metricName,
+      periodStart: periodStart,
+      periodEnd: periodEnd,
+      targetValue: targetValue,
+      actualValue: actualValue,
+      score: score,
+      clearScore: clearScore,
+      remarks: remarks,
+      clearRemarks: clearRemarks,
+    );
+  }
 }

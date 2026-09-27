@@ -10,6 +10,7 @@ import '../../domain/repositories/employee_kpi_repository.dart';
 import '../../domain/repositories/employee_repository.dart';
 import '../bloc/employee_kpi_details_cubit.dart';
 import '../bloc/employee_kpi_details_state.dart';
+import 'edit_employee_kpi_screen.dart';
 
 /// Screen displaying the complete read-only details of an individual Employee KPI record.
 class EmployeeKpiDetailsScreen extends StatelessWidget {
@@ -45,6 +46,7 @@ class EmployeeKpiDetailsScreen extends StatelessWidget {
         child: _EmployeeKpiDetailsView(
           user: user,
           kpiId: kpiId,
+          kpiRepository: effectiveRepo,
           employeeRepository: employeeRepository,
         ),
       );
@@ -56,6 +58,7 @@ class EmployeeKpiDetailsScreen extends StatelessWidget {
       child: _EmployeeKpiDetailsView(
         user: user,
         kpiId: kpiId,
+        kpiRepository: effectiveRepo,
         employeeRepository: employeeRepository,
       ),
     );
@@ -65,11 +68,13 @@ class EmployeeKpiDetailsScreen extends StatelessWidget {
 class _EmployeeKpiDetailsView extends StatefulWidget {
   final CurrentUser user;
   final String kpiId;
+  final EmployeeKpiRepository? kpiRepository;
   final EmployeeRepository? employeeRepository;
 
   const _EmployeeKpiDetailsView({
     required this.user,
     required this.kpiId,
+    this.kpiRepository,
     this.employeeRepository,
   });
 
@@ -107,6 +112,26 @@ class _EmployeeKpiDetailsViewState extends State<_EmployeeKpiDetailsView> {
     }
   }
 
+  Future<void> _navigateToEditKpi(EmployeeKpi kpi) async {
+    final effectiveKpiRepo =
+        widget.kpiRepository ??
+        RepositoryProvider.of<EmployeeKpiRepository>(context, listen: false);
+
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => EditEmployeeKpiScreen(
+          user: widget.user,
+          kpi: kpi,
+          kpiRepository: effectiveKpiRepo,
+          employeeRepository: widget.employeeRepository,
+        ),
+      ),
+    );
+    if (result == true && mounted) {
+      context.read<EmployeeKpiDetailsCubit>().reload();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<EmployeeKpiDetailsCubit, EmployeeKpiDetailsState>(
@@ -122,6 +147,13 @@ class _EmployeeKpiDetailsViewState extends State<_EmployeeKpiDetailsView> {
             key: const Key('employee_kpi_details_app_bar'),
             title: const Text('KPI Details'),
             actions: [
+              if (widget.user.isAdmin && state.kpi != null)
+                IconButton(
+                  key: const Key('kpi_details_edit_button'),
+                  tooltip: 'Edit KPI',
+                  icon: const Icon(Icons.edit_outlined),
+                  onPressed: () => _navigateToEditKpi(state.kpi!),
+                ),
               IconButton(
                 key: const Key('kpi_details_refresh_button'),
                 tooltip: 'Refresh',

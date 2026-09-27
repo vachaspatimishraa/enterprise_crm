@@ -1,5 +1,6 @@
 import 'package:enterprise_crm/features/hr/data/mock/mock_employee_kpi_store.dart';
 import 'package:enterprise_crm/features/hr/data/repositories/mock_employee_kpi_repository.dart';
+import 'package:enterprise_crm/features/hr/domain/repositories/employee_kpi_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -131,6 +132,173 @@ void main() {
         'kpi_202',
         'kpi_301',
       });
+    });
+
+    group('Repository Mutations (Create & Update)', () {
+      test(
+        'creates a new KPI record with generated ID and UTC timestamps',
+        () async {
+          final initialCount = (await repository.getKpis()).length;
+
+          final newKpi = await repository.createKpi(
+            employeeId: 'emp_2',
+            metricName: 'On-time Inbound Processing',
+            periodStart: DateTime.utc(2026, 7, 1),
+            periodEnd: DateTime.utc(2026, 9, 30),
+            targetValue: 95.0,
+            actualValue: 97.2,
+            score: 98.0,
+            remarks: 'Performance exceeded quarterly benchmark',
+          );
+
+          expect(newKpi.id, startsWith('kpi_'));
+          expect(newKpi.employeeId, 'emp_2');
+          expect(newKpi.metricName, 'On-time Inbound Processing');
+          expect(newKpi.targetValue, 95.0);
+          expect(newKpi.actualValue, 97.2);
+          expect(newKpi.score, 98.0);
+          expect(newKpi.remarks, 'Performance exceeded quarterly benchmark');
+          expect(newKpi.createdAt, isNotNull);
+          expect(newKpi.updatedAt, isNotNull);
+
+          // Verify stored in repository
+          final updatedList = await repository.getKpis();
+          expect(updatedList.length, initialCount + 1);
+
+          final fetched = await repository.getKpiById(newKpi.id);
+          expect(fetched, isNotNull);
+          expect(fetched!.metricName, 'On-time Inbound Processing');
+
+          final emp2Kpis = await repository.getKpisForEmployee('emp_2');
+          expect(emp2Kpis.any((k) => k.id == newKpi.id), isTrue);
+        },
+      );
+
+      test(
+        'create throws EmployeeKpiException for empty metric name',
+        () async {
+          expect(
+            () => repository.createKpi(
+              employeeId: 'emp_1',
+              metricName: '   ',
+              periodStart: DateTime.utc(2026, 7, 1),
+              periodEnd: DateTime.utc(2026, 9, 30),
+              targetValue: 100.0,
+              actualValue: 80.0,
+            ),
+            throwsA(isA<EmployeeKpiException>()),
+          );
+        },
+      );
+
+      test(
+        'create throws EmployeeKpiException when periodEnd is before periodStart',
+        () async {
+          expect(
+            () => repository.createKpi(
+              employeeId: 'emp_1',
+              metricName: 'Invalid Period Metric',
+              periodStart: DateTime.utc(2026, 9, 30),
+              periodEnd: DateTime.utc(2026, 7, 1),
+              targetValue: 100.0,
+              actualValue: 80.0,
+            ),
+            throwsA(isA<EmployeeKpiException>()),
+          );
+        },
+      );
+
+      test(
+        'updates an existing KPI record preserving id and employeeId',
+        () async {
+          final updated = await repository.updateKpi(
+            id: 'kpi_101',
+            metricName: 'Updated Retention Metric',
+            periodStart: DateTime.utc(2026, 7, 1),
+            periodEnd: DateTime.utc(2026, 9, 30),
+            targetValue: 92.0,
+            actualValue: 94.0,
+            score: 96.0,
+            remarks: 'Updated remarks for retention',
+          );
+
+          expect(updated.id, 'kpi_101');
+          expect(updated.employeeId, 'emp_1'); // Immutable
+          expect(updated.metricName, 'Updated Retention Metric');
+          expect(updated.targetValue, 92.0);
+          expect(updated.actualValue, 94.0);
+          expect(updated.score, 96.0);
+          expect(updated.remarks, 'Updated remarks for retention');
+
+          // Confirm reflected in getKpiById
+          final fetched = await repository.getKpiById('kpi_101');
+          expect(fetched?.metricName, 'Updated Retention Metric');
+          expect(fetched?.targetValue, 92.0);
+        },
+      );
+
+      test('update allows clearing score and remarks', () async {
+        final updated = await repository.updateKpi(
+          id: 'kpi_101',
+          metricName: 'Employee Retention Rate',
+          periodStart: DateTime.utc(2026, 7, 1),
+          periodEnd: DateTime.utc(2026, 9, 30),
+          targetValue: 90.0,
+          actualValue: 92.5,
+          clearScore: true,
+          clearRemarks: true,
+        );
+
+        expect(updated.score, isNull);
+        expect(updated.remarks, isNull);
+
+        final fetched = await repository.getKpiById('kpi_101');
+        expect(fetched?.score, isNull);
+        expect(fetched?.remarks, isNull);
+      });
+
+      test('update throws EmployeeKpiException for nonexistent ID', () async {
+        expect(
+          () => repository.updateKpi(
+            id: 'kpi_nonexistent',
+            metricName: 'Nonexistent Metric',
+            periodStart: DateTime.utc(2026, 7, 1),
+            periodEnd: DateTime.utc(2026, 9, 30),
+            targetValue: 10.0,
+            actualValue: 10.0,
+          ),
+          throwsA(isA<EmployeeKpiException>()),
+        );
+      });
+
+      test(
+        'update throws EmployeeKpiException for empty metric name or inverted dates',
+        () async {
+          expect(
+            () => repository.updateKpi(
+              id: 'kpi_101',
+              metricName: '',
+              periodStart: DateTime.utc(2026, 7, 1),
+              periodEnd: DateTime.utc(2026, 9, 30),
+              targetValue: 10.0,
+              actualValue: 10.0,
+            ),
+            throwsA(isA<EmployeeKpiException>()),
+          );
+
+          expect(
+            () => repository.updateKpi(
+              id: 'kpi_101',
+              metricName: 'Valid Name',
+              periodStart: DateTime.utc(2026, 9, 30),
+              periodEnd: DateTime.utc(2026, 7, 1),
+              targetValue: 10.0,
+              actualValue: 10.0,
+            ),
+            throwsA(isA<EmployeeKpiException>()),
+          );
+        },
+      );
     });
   });
 }

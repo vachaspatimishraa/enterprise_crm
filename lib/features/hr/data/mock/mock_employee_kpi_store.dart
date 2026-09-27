@@ -1,4 +1,5 @@
 import '../../domain/entities/employee_kpi.dart';
+import '../../domain/repositories/employee_kpi_repository.dart';
 
 /// In-memory thread-safe mock store for employee KPI records.
 ///
@@ -169,5 +170,116 @@ class MockEmployeeKpiStore {
 
   EmployeeKpi _cloneKpi(EmployeeKpi k) {
     return k.copyWith();
+  }
+
+  /// Creates a new KPI record with auto-assigned stable ID and UTC normalized dates.
+  EmployeeKpi createKpi({
+    required String employeeId,
+    required String metricName,
+    required DateTime periodStart,
+    required DateTime periodEnd,
+    required double targetValue,
+    required double actualValue,
+    double? score,
+    String? remarks,
+  }) {
+    if (metricName.trim().isEmpty) {
+      throw const EmployeeKpiException('Metric name cannot be empty.');
+    }
+    final normalizedStart = DateTime.utc(
+      periodStart.year,
+      periodStart.month,
+      periodStart.day,
+    );
+    final normalizedEnd = DateTime.utc(
+      periodEnd.year,
+      periodEnd.month,
+      periodEnd.day,
+    );
+    if (normalizedEnd.isBefore(normalizedStart)) {
+      throw const EmployeeKpiException(
+        'Period end date cannot precede start date.',
+      );
+    }
+
+    final id =
+        'kpi_${DateTime.now().millisecondsSinceEpoch}_${_records.length + 1}';
+    final now = DateTime.now().toUtc();
+
+    final record = EmployeeKpi(
+      id: id,
+      employeeId: employeeId.trim(),
+      periodStart: normalizedStart,
+      periodEnd: normalizedEnd,
+      metricName: metricName.trim(),
+      targetValue: targetValue,
+      actualValue: actualValue,
+      score: score,
+      remarks: remarks != null && remarks.trim().isNotEmpty
+          ? remarks.trim()
+          : null,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    _records[id] = record;
+    return _cloneKpi(record);
+  }
+
+  /// Updates an existing KPI record by [id].
+  EmployeeKpi updateKpi({
+    required String id,
+    required String metricName,
+    required DateTime periodStart,
+    required DateTime periodEnd,
+    required double targetValue,
+    required double actualValue,
+    double? score,
+    bool clearScore = false,
+    String? remarks,
+    bool clearRemarks = false,
+  }) {
+    final existing = _records[id];
+    if (existing == null) {
+      throw EmployeeKpiException('KPI record with id "$id" not found.');
+    }
+    if (metricName.trim().isEmpty) {
+      throw const EmployeeKpiException('Metric name cannot be empty.');
+    }
+    final normalizedStart = DateTime.utc(
+      periodStart.year,
+      periodStart.month,
+      periodStart.day,
+    );
+    final normalizedEnd = DateTime.utc(
+      periodEnd.year,
+      periodEnd.month,
+      periodEnd.day,
+    );
+    if (normalizedEnd.isBefore(normalizedStart)) {
+      throw const EmployeeKpiException(
+        'Period end date cannot precede start date.',
+      );
+    }
+
+    final updated = existing.copyWith(
+      metricName: metricName.trim(),
+      periodStart: normalizedStart,
+      periodEnd: normalizedEnd,
+      targetValue: targetValue,
+      actualValue: actualValue,
+      score: clearScore ? null : (score ?? existing.score),
+      clearScore: clearScore,
+      remarks: clearRemarks
+          ? null
+          : (remarks != null && remarks.trim().isNotEmpty
+                ? remarks.trim()
+                : existing.remarks),
+      clearRemarks: clearRemarks,
+      updatedAt: DateTime.now().toUtc(),
+    );
+
+    _records[id] = updated;
+    return _cloneKpi(updated);
   }
 }

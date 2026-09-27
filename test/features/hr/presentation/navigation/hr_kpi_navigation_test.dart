@@ -13,6 +13,9 @@ import 'package:enterprise_crm/features/hr/data/repositories/mock_employee_kpi_r
 import 'package:enterprise_crm/features/hr/data/repositories/mock_employee_repository.dart';
 import 'package:enterprise_crm/features/hr/presentation/screens/employee_directory_screen.dart';
 import 'package:enterprise_crm/features/hr/presentation/screens/employee_kpi_list_screen.dart';
+import 'package:enterprise_crm/features/hr/presentation/screens/add_employee_kpi_screen.dart';
+import 'package:enterprise_crm/features/hr/presentation/screens/edit_employee_kpi_screen.dart';
+import 'package:enterprise_crm/features/hr/presentation/screens/employee_kpi_details_screen.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
 import 'package:enterprise_crm/features/auth/data/repositories/mock_user_lead_link_repository.dart';
 import 'package:flutter/material.dart';
@@ -158,6 +161,67 @@ void main() {
 
         expect(find.byType(AccessRestrictedScreen), findsOneWidget);
         expect(find.text('Access Restricted'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'Admin in EmployeeKpiListScreen can navigate to AddEmployeeKpiScreen and back',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: EmployeeKpiListScreen(
+              user: MockAuthTestFixtures.admin,
+              kpiRepository: kpiRepository,
+              employeeRepository: employeeRepository,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final addBtn = find.byKey(const Key('kpi_add_button'));
+        expect(addBtn, findsOneWidget);
+        await tester.tap(addBtn);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AddEmployeeKpiScreen), findsOneWidget);
+
+        final cancelBtn = find.byKey(const Key('add_kpi_cancel_button'));
+        await tester.ensureVisible(cancelBtn);
+        await tester.tap(cancelBtn);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(EmployeeKpiListScreen), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'Admin in EmployeeKpiDetailsScreen can navigate to EditEmployeeKpiScreen and back',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: EmployeeKpiDetailsScreen(
+              user: MockAuthTestFixtures.admin,
+              kpiId: 'kpi_101',
+              kpiRepository: kpiRepository,
+              employeeRepository: employeeRepository,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final editBtn = find.byKey(const Key('kpi_details_edit_button'));
+        expect(editBtn, findsOneWidget);
+        await tester.tap(editBtn);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(EditEmployeeKpiScreen), findsOneWidget);
+
+        final cancelBtn = find.byKey(const Key('edit_kpi_cancel_button'));
+        await tester.ensureVisible(cancelBtn);
+        await tester.tap(cancelBtn);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(EmployeeKpiDetailsScreen), findsOneWidget);
       },
     );
   });

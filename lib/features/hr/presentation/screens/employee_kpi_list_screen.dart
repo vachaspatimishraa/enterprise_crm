@@ -11,6 +11,7 @@ import '../../domain/repositories/employee_kpi_repository.dart';
 import '../../domain/repositories/employee_repository.dart';
 import '../bloc/employee_kpi_list_cubit.dart';
 import '../bloc/employee_kpi_list_state.dart';
+import 'add_employee_kpi_screen.dart';
 import 'employee_kpi_details_screen.dart';
 
 /// Screen displaying Employee Key Performance Indicators (KPIs).
@@ -174,6 +175,21 @@ class _EmployeeKpiListViewState extends State<_EmployeeKpiListView> {
     }
   }
 
+  Future<void> _navigateToAddKpi() async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => AddEmployeeKpiScreen(
+          user: widget.user,
+          kpiRepository: widget.kpiRepository,
+          employeeRepository: widget.employeeRepository,
+        ),
+      ),
+    );
+    if (result == true && mounted) {
+      context.read<EmployeeKpiListCubit>().reload();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -185,6 +201,13 @@ class _EmployeeKpiListViewState extends State<_EmployeeKpiListView> {
       appBar: AppBar(
         title: const Text('KPI Management'),
         actions: [
+          if (widget.user.isAdmin)
+            IconButton(
+              key: const Key('kpi_add_button'),
+              tooltip: 'Add KPI',
+              icon: const Icon(Icons.add),
+              onPressed: _navigateToAddKpi,
+            ),
           IconButton(
             key: const Key('kpi_refresh_button'),
             tooltip: 'Refresh',
@@ -193,6 +216,14 @@ class _EmployeeKpiListViewState extends State<_EmployeeKpiListView> {
           ),
         ],
       ),
+      floatingActionButton: widget.user.isAdmin
+          ? FloatingActionButton(
+              key: const Key('kpi_add_fab'),
+              tooltip: 'Add KPI',
+              onPressed: _navigateToAddKpi,
+              child: const Icon(Icons.add),
+            )
+          : null,
       body: BlocBuilder<EmployeeKpiListCubit, EmployeeKpiListState>(
         builder: (context, state) {
           return Column(
