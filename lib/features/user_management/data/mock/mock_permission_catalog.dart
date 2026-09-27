@@ -70,6 +70,11 @@ abstract final class MockPermissionCatalog {
       displayName: 'Delete Inventory Items',
     ),
     MockPermissionDefinition(
+      id: CrmPermissions.inventoryStockManage,
+      module: CrmModule.inventory,
+      displayName: 'Manage Stock Quantity',
+    ),
+    MockPermissionDefinition(
       id: CrmPermissions.inventoryImportCsv,
       module: CrmModule.inventory,
       displayName: 'Import Inventory (CSV)',

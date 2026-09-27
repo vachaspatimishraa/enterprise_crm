@@ -7,6 +7,7 @@ import 'package:enterprise_crm/features/inventory/domain/entities/stock_movement
 import 'package:enterprise_crm/features/inventory/domain/entities/stock_movement_type.dart';
 import 'package:enterprise_crm/features/inventory/domain/exceptions/inventory_exception.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/adjust_inventory_stock_input.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/adjust_inventory_stock_to_target_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/create_inventory_item_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/record_opening_stock_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/update_inventory_item_input.dart';
@@ -1078,6 +1079,267 @@ void main() {
           }
         },
       );
+    });
+
+    group('adjustStockToTarget', () {
+      late MockInventoryRepository repo;
+      late String itemId;
+      final testDate = DateTime.utc(2026, 1, 1, 9, 0);
+
+      setUp(() async {
+        repo = MockInventoryRepository(
+          items: [],
+          movements: [],
+          nowProvider: () => testDate,
+        );
+        // Create item and initialize with opening stock = 50
+        final created = await repo.createItem(
+          const CreateInventoryItemInput(name: 'Target Item', sku: 'TGT-001'),
+        );
+        itemId = created.item.id;
+        await repo.recordOpeningStock(
+          RecordOpeningStockInput(
+            itemId: itemId,
+            quantity: 50.0,
+            performedByUserId: 'user_admin',
+          ),
+        );
+      });
+
+      test('adjusts stock upward to target quantity', () async {
+        final result = await repo.adjustStockToTarget(
+          AdjustInventoryStockToTargetInput(
+            itemId: itemId,
+            targetQuantity: 80.0,
+            reason: 'Restock',
+            performedByUserId: 'user_admin',
+          ),
+        );
+        expect(result.item.quantityOnHand, 80.0);
+        expect(result.movement.quantityDelta, 30.0);
+        expect(result.movement.type, StockMovementType.adjustment);
+      });
+
+      test('adjusts stock downward to target quantity', () async {
+        final result = await repo.adjustStockToTarget(
+          AdjustInventoryStockToTargetInput(
+            itemId: itemId,
+            targetQuantity: 20.0,
+            reason: 'Damage writeoff',
+            performedByUserId: 'user_admin',
+          ),
+        );
+        expect(result.item.quantityOnHand, 20.0);
+        expect(result.movement.quantityDelta, -30.0);
+      });
+
+      test('adjusting to current balance throws InventoryStockUnchangedException', () async {
+        expect(
+          () => repo.adjustStockToTarget(
+            AdjustInventoryStockToTargetInput(
+              itemId: itemId,
+              targetQuantity: 50.0,
+              reason: 'No change',
+              performedByUserId: 'user_admin',
+            ),
+          ),
+          throwsA(isA<InventoryStockUnchangedException>()),
+        );
+      });
+
+      test('rejects uninitialized item', () async {
+        final created = await repo.createItem(
+          const CreateInventoryItemInput(
+            name: 'No Stock Item',
+            sku: 'NST-001',
+          ),
+        );
+        expect(
+          () => repo.adjustStockToTarget(
+            AdjustInventoryStockToTargetInput(
+              itemId: created.item.id,
+              targetQuantity: 10.0,
+              reason: 'Should fail',
+              performedByUserId: 'user_admin',
+            ),
+          ),
+          throwsA(isA<InventoryUninitializedStockException>()),
+        );
+      });
+
+      test('rejects negative target quantity', () async {
+        expect(
+          () => repo.adjustStockToTarget(
+            AdjustInventoryStockToTargetInput(
+              itemId: itemId,
+              targetQuantity: -1.0,
+              reason: 'Bad input',
+              performedByUserId: 'user_admin',
+            ),
+          ),
+          throwsA(isA<InventoryValidationException>()),
+        );
+      });
+
+      test('rejects blank reason', () async {
+        expect(
+          () => repo.adjustStockToTarget(
+            AdjustInventoryStockToTargetInput(
+              itemId: itemId,
+              targetQuantity: 60.0,
+              reason: '   ',
+              performedByUserId: 'user_admin',
+            ),
+          ),
+          throwsA(isA<InventoryValidationException>()),
+        );
+      });
+    });
+
+    group('canManageStock authorization enforcement', () {
+      final testDate = DateTime.utc(2026, 1, 1, 9, 0);
+
+      test('recordOpeningStock throws InventoryAuthorizationException for unauthorized user', () async {
+        final repo = MockInventoryRepository(
+          items: [],
+          movements: [],
+          nowProvider: () => testDate,
+          canManageStock: (userId) => userId == 'user_admin',
+        );
+        final created = await repo.createItem(
+          const CreateInventoryItemInput(name: 'Item A', sku: 'AUTH-001'),
+        );
+        expect(
+          () => repo.recordOpeningStock(
+            RecordOpeningStockInput(
+              itemId: created.item.id,
+              quantity: 10.0,
+              performedByUserId: 'user_standard',
+            ),
+          ),
+          throwsA(isA<InventoryAuthorizationException>()),
+        );
+      });
+
+      test('adjustStock throws InventoryAuthorizationException for unauthorized user', () async {
+        final repo = MockInventoryRepository(
+          items: [],
+          movements: [],
+          nowProvider: () => testDate,
+          canManageStock: (userId) => userId == 'user_admin',
+        );
+        final created = await repo.createItem(
+          const CreateInventoryItemInput(name: 'Item B', sku: 'AUTH-002'),
+        );
+        await repo.recordOpeningStock(
+          RecordOpeningStockInput(
+            itemId: created.item.id,
+            quantity: 10.0,
+            performedByUserId: 'user_admin',
+          ),
+        );
+        expect(
+          () => repo.adjustStock(
+            AdjustInventoryStockInput(
+              itemId: created.item.id,
+              quantityDelta: 5.0,
+              reason: 'Top up',
+              performedByUserId: 'user_standard',
+            ),
+          ),
+          throwsA(isA<InventoryAuthorizationException>()),
+        );
+      });
+
+      test('adjustStockToTarget throws InventoryAuthorizationException for unauthorized user', () async {
+        final repo = MockInventoryRepository(
+          items: [],
+          movements: [],
+          nowProvider: () => testDate,
+          canManageStock: (userId) => userId == 'user_admin',
+        );
+        final created = await repo.createItem(
+          const CreateInventoryItemInput(name: 'Item C', sku: 'AUTH-003'),
+        );
+        await repo.recordOpeningStock(
+          RecordOpeningStockInput(
+            itemId: created.item.id,
+            quantity: 10.0,
+            performedByUserId: 'user_admin',
+          ),
+        );
+        expect(
+          () => repo.adjustStockToTarget(
+            AdjustInventoryStockToTargetInput(
+              itemId: created.item.id,
+              targetQuantity: 20.0,
+              reason: 'Recount',
+              performedByUserId: 'user_standard',
+            ),
+          ),
+          throwsA(isA<InventoryAuthorizationException>()),
+        );
+      });
+
+      test('authorized admin can perform all stock mutations', () async {
+        final repo = MockInventoryRepository(
+          items: [],
+          movements: [],
+          nowProvider: () => testDate,
+          canManageStock: (userId) => userId == 'user_admin',
+        );
+        final created = await repo.createItem(
+          const CreateInventoryItemInput(name: 'Item D', sku: 'AUTH-004'),
+        );
+        final openingResult = await repo.recordOpeningStock(
+          RecordOpeningStockInput(
+            itemId: created.item.id,
+            quantity: 10.0,
+            performedByUserId: 'user_admin',
+          ),
+        );
+        expect(openingResult.item.quantityOnHand, 10.0);
+
+        final adjustResult = await repo.adjustStock(
+          AdjustInventoryStockInput(
+            itemId: created.item.id,
+            quantityDelta: 5.0,
+            reason: 'Restock',
+            performedByUserId: 'user_admin',
+          ),
+        );
+        expect(adjustResult.item.quantityOnHand, 15.0);
+
+        final targetResult = await repo.adjustStockToTarget(
+          AdjustInventoryStockToTargetInput(
+            itemId: created.item.id,
+            targetQuantity: 20.0,
+            reason: 'Recount',
+            performedByUserId: 'user_admin',
+          ),
+        );
+        expect(targetResult.item.quantityOnHand, 20.0);
+      });
+
+      test('null canManageStock callback allows all stock mutations', () async {
+        // Default behavior (no canManageStock) — no authorization restriction
+        final repo = MockInventoryRepository(
+          items: [],
+          movements: [],
+          nowProvider: () => testDate,
+        );
+        final created = await repo.createItem(
+          const CreateInventoryItemInput(name: 'Item E', sku: 'AUTH-005'),
+        );
+        final result = await repo.recordOpeningStock(
+          RecordOpeningStockInput(
+            itemId: created.item.id,
+            quantity: 5.0,
+            performedByUserId: 'any_user',
+          ),
+        );
+        expect(result.item.quantityOnHand, 5.0);
+      });
     });
   });
 }

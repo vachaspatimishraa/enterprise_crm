@@ -5,6 +5,7 @@ import '../entities/inventory_query.dart';
 import '../entities/inventory_stock_mutation_result.dart';
 import '../entities/pending_inventory_deletion.dart';
 import '../inputs/adjust_inventory_stock_input.dart';
+import '../inputs/adjust_inventory_stock_to_target_input.dart';
 import '../inputs/create_inventory_item_input.dart';
 import '../inputs/record_opening_stock_input.dart';
 import '../inputs/update_inventory_item_input.dart';
@@ -51,6 +52,14 @@ abstract interface class InventoryRepository {
   /// the mutation result with updated derived quantity.
   Future<InventoryStockMutationResult> adjustStock(
     AdjustInventoryStockInput input,
+  );
+
+  /// Adjusts stock quantity towards a target balance for an initialized item.
+  ///
+  /// Atomically calculates write-time delta against the latest derived balance.
+  /// If target equals latest balance, throws [InventoryStockUnchangedException].
+  Future<InventoryStockMutationResult> adjustStockToTarget(
+    AdjustInventoryStockToTargetInput input,
   );
 
   /// Retrieves all existing item SKUs (trimmed, lowercase) currently stored in the repository.

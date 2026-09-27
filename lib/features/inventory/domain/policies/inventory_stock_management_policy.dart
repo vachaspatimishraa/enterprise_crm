@@ -5,20 +5,24 @@ import '../../../auth/domain/policies/crm_permissions.dart';
 
 /// Centralized authorization policy for Inventory stock mutations (Opening Stock, Stock Adjustment).
 ///
-/// In INVENTORY-3:
-/// - Administrators can record opening stock and perform manual stock adjustments.
-/// - Standard users are strictly read-only (`inventory.view`).
+/// In INVENTORY-ACCESS-2:
+/// - Administrators can manage stock automatically.
+/// - Standard users require module assignment (`CrmModule.inventory`), `inventory.view`,
+///   and `inventory.stock.manage`.
 abstract final class InventoryStockManagementPolicy {
   /// Evaluates whether [user] is authorized to perform inventory stock mutations.
   ///
   /// This single decision rule governs:
-  /// - `Set Opening Stock` button visibility on Inventory Item Details.
-  /// - `Adjust Stock` button visibility on Inventory Item Details.
+  /// - `Set Opening Stock` and `Adjust Stock` / `Edit Quantity` actions on Inventory Item Details.
+  /// - Opening stock input availability on `CreateInventoryItemScreen`.
   /// - Pre-Cubit route guard on `SetOpeningStockScreen`.
-  /// - Pre-Cubit route guard on `AdjustInventoryStockScreen`.
+  /// - Pre-Cubit route guard on `AdjustInventoryStockScreen` and `EditInventoryQuantityScreen`.
   static bool canManageStock(CurrentUser user) {
-    return user.isAdmin &&
-        AccessPolicy.canAccessModule(user, CrmModule.inventory) &&
-        AccessPolicy.hasPermission(user, CrmPermissions.inventoryView);
+    if (user.isAdmin) {
+      return true;
+    }
+    return AccessPolicy.canAccessModule(user, CrmModule.inventory) &&
+        AccessPolicy.hasPermission(user, CrmPermissions.inventoryView) &&
+        AccessPolicy.hasPermission(user, CrmPermissions.inventoryStockManage);
   }
 }
