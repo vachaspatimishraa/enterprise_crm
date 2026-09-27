@@ -18,7 +18,12 @@ class CreateInventoryItemCubit extends Cubit<CreateInventoryItemState> {
   /// Validates inputs and creates an inventory item via [_repository].
   ///
   /// Double-submit guard: returns immediately if submission is already in progress.
-  Future<void> submit({required String name, required String sku}) async {
+  Future<void> submit({
+    required String name,
+    required String sku,
+    String? openingStockText,
+    String? performedByUserId,
+  }) async {
     if (state is CreateInventoryItemSubmitting) {
       return;
     }
@@ -36,11 +41,30 @@ class CreateInventoryItemCubit extends Cubit<CreateInventoryItemState> {
       return;
     }
 
+    double? parsedOpeningStock;
+    if (openingStockText != null && openingStockText.trim().isNotEmpty) {
+      final parsed = double.tryParse(openingStockText.trim());
+      if (parsed == null || !parsed.isFinite || parsed <= 0) {
+        emit(
+          const CreateInventoryItemFailure(
+            'Opening stock must be greater than zero.',
+          ),
+        );
+        return;
+      }
+      parsedOpeningStock = parsed;
+    }
+
     emit(const CreateInventoryItemSubmitting());
 
     try {
       final created = await _repository.createItem(
-        CreateInventoryItemInput(name: trimmedName, sku: trimmedSku),
+        CreateInventoryItemInput(
+          name: trimmedName,
+          sku: trimmedSku,
+          openingStock: parsedOpeningStock,
+          performedByUserId: performedByUserId,
+        ),
       );
       emit(CreateInventoryItemSuccess(created));
     } on InventoryValidationException catch (e) {

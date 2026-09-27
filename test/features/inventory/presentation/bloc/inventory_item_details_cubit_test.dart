@@ -12,6 +12,7 @@ import 'package:enterprise_crm/features/inventory/presentation/bloc/inventory_it
 import 'package:enterprise_crm/features/inventory/presentation/bloc/inventory_item_details_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_import_models.dart';
+import 'package:enterprise_crm/features/inventory/domain/entities/pending_inventory_deletion.dart';
 
 class _FailingInventoryRepository implements InventoryRepository {
   @override
@@ -59,6 +60,24 @@ class _FailingInventoryRepository implements InventoryRepository {
   @override
   Future<InventoryImportResult> importItems(InventoryImportRequest request) =>
       throw UnimplementedError();
+
+  @override
+  Future<PendingInventoryDeletion> requestItemDeletion({
+    required String itemId,
+    required String performedByUserId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> undoItemDeletion({
+    required String itemId,
+    required String performedByUserId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> finalizeExpiredDeletions() => throw UnimplementedError();
+
+  @override
+  Future<List<PendingInventoryDeletion>> getPendingDeletions() async => [];
 }
 
 void main() {

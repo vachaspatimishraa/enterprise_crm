@@ -9,6 +9,11 @@ abstract final class CrmPermissionPresentation {
     CrmPermissions.hrView: 'View HR',
     CrmPermissions.payrollView: 'View payroll',
     CrmPermissions.inventoryView: 'View inventory',
+    CrmPermissions.inventoryCreate: 'Create inventory items',
+    CrmPermissions.inventoryEdit: 'Edit inventory items',
+    CrmPermissions.inventoryDelete: 'Delete inventory items',
+    CrmPermissions.inventoryImportCsv: 'Import inventory (CSV)',
+    CrmPermissions.inventoryImportXlsx: 'Import inventory (Excel)',
     CrmPermissions.purchaseView: 'View purchases',
     CrmPermissions.vendorView: 'View vendors',
   };

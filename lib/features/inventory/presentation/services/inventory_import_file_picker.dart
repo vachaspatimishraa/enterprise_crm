@@ -29,7 +29,9 @@ class InventoryImportSelectedFile {
 
 /// Abstract interface for file selection.
 abstract interface class InventoryImportFilePicker {
-  Future<InventoryImportSelectedFile?> pickFile();
+  Future<InventoryImportSelectedFile?> pickFile({
+    List<String>? allowedExtensions,
+  });
 }
 
 /// Default implementation of [InventoryImportFilePicker] using `package:file_picker`.
@@ -37,10 +39,13 @@ class DefaultInventoryImportFilePicker implements InventoryImportFilePicker {
   const DefaultInventoryImportFilePicker();
 
   @override
-  Future<InventoryImportSelectedFile?> pickFile() async {
+  Future<InventoryImportSelectedFile?> pickFile({
+    List<String>? allowedExtensions,
+  }) async {
+    final effectiveExtensions = allowedExtensions ?? const ['csv', 'xlsx'];
     final platformFile = await FilePicker.pickFile(
       type: FileType.custom,
-      allowedExtensions: const ['csv', 'xlsx'],
+      allowedExtensions: effectiveExtensions,
     );
 
     if (platformFile == null) return null;

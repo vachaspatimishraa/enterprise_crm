@@ -5,6 +5,13 @@
 class CreateInventoryItemInput {
   final String name;
   final String sku;
+  final double? openingStock;
+  final String? performedByUserId;
 
-  const CreateInventoryItemInput({required this.name, required this.sku});
+  const CreateInventoryItemInput({
+    required this.name,
+    required this.sku,
+    this.openingStock,
+    this.performedByUserId,
+  });
 }

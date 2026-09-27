@@ -6,12 +6,16 @@ import '../../../auth/domain/entities/current_user.dart';
 import '../../../auth/domain/policies/access_policy.dart';
 import '../../../auth/domain/policies/crm_permissions.dart';
 import '../../../auth/presentation/screens/access_restricted_screen.dart';
+import '../../domain/entities/inventory_item.dart';
+import '../../domain/exceptions/inventory_exception.dart';
+import '../../domain/policies/inventory_deletion_policy.dart';
 import '../../domain/policies/inventory_item_administration_policy.dart';
 import '../../domain/policies/inventory_stock_management_policy.dart';
 import '../../domain/repositories/inventory_repository.dart';
 import '../bloc/inventory_item_details_cubit.dart';
 import '../bloc/inventory_item_details_state.dart';
 import '../utils/inventory_display_formatters.dart';
+import '../widgets/delete_inventory_item_dialog.dart';
 import 'adjust_inventory_stock_screen.dart';
 import 'edit_inventory_item_screen.dart';
 import 'set_opening_stock_screen.dart';
@@ -111,6 +115,67 @@ class _InventoryItemDetailsView extends StatelessWidget {
     }
   }
 
+  void _confirmDelete(
+    BuildContext context,
+    InventoryItem item,
+    double currentQuantity,
+  ) async {
+    final confirmed = await DeleteInventoryItemDialog.show(
+      context,
+      item: item,
+      currentQuantity: currentQuantity,
+    );
+    if (confirmed == true && context.mounted) {
+      try {
+        await repository.requestItemDeletion(
+          itemId: item.id,
+          performedByUserId: user.id,
+        );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${item.name} scheduled for permanent deletion.'),
+              action: SnackBarAction(
+                label: 'Undo',
+                onPressed: () async {
+                  try {
+                    await repository.undoItemDeletion(
+                      itemId: item.id,
+                      performedByUserId: user.id,
+                    );
+                    if (context.mounted) {
+                      context.read<InventoryItemDetailsCubit>().load(item.id);
+                    }
+                  } catch (_) {}
+                },
+              ),
+              duration: const Duration(seconds: 10),
+            ),
+          );
+          context.read<InventoryItemDetailsCubit>().load(item.id);
+        }
+      } on InventoryDeletionBlockedException catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e.message),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to delete item: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -127,16 +192,42 @@ class _InventoryItemDetailsView extends StatelessWidget {
         actions: [
           BlocBuilder<InventoryItemDetailsCubit, InventoryItemDetailsState>(
             builder: (context, state) {
-              if (InventoryItemAdministrationPolicy.canManage(user) &&
-                  state is InventoryItemDetailsLoaded) {
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8.0),
-                  child: FilledButton.icon(
-                    key: const Key('inventory_details_edit_button'),
-                    icon: const Icon(Icons.edit_outlined, size: 16),
-                    label: const Text('Edit Item'),
-                    onPressed: () => _openEdit(context, state.summary.item.id),
-                  ),
+              if (state is InventoryItemDetailsLoaded) {
+                final isPending = state.pendingDeletion != null;
+                final canEdit =
+                    !isPending &&
+                    InventoryItemAdministrationPolicy.canEdit(user);
+                final canDelete =
+                    !isPending && InventoryDeletionPolicy.canDelete(user);
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (canEdit)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: FilledButton.icon(
+                          key: const Key('inventory_details_edit_button'),
+                          icon: const Icon(Icons.edit_outlined, size: 16),
+                          label: const Text('Edit Item'),
+                          onPressed: () =>
+                              _openEdit(context, state.summary.item.id),
+                        ),
+                      ),
+                    if (canDelete)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: IconButton(
+                          key: const Key('inventory_details_delete_button'),
+                          icon: const Icon(Icons.delete_outline),
+                          tooltip: 'Delete Item',
+                          onPressed: () => _confirmDelete(
+                            context,
+                            state.summary.item,
+                            state.summary.quantityOnHand,
+                          ),
+                        ),
+                      ),
+                  ],
                 );
               }
               return const SizedBox.shrink();
@@ -261,6 +352,65 @@ class _InventoryItemDetailsView extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          if (state.pendingDeletion != null) ...[
+                            Container(
+                              key: const Key(
+                                'inventory_details_pending_deletion_banner',
+                              ),
+                              margin: const EdgeInsets.only(bottom: 16),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: colorScheme.errorContainer,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.warning_amber_rounded,
+                                    color: colorScheme.onErrorContainer,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'This item is pending permanent deletion (${state.pendingDeletion!.undoDeadline.difference(DateTime.now()).inSeconds.clamp(0, 60)}s remaining).',
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            color: colorScheme.onErrorContainer,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                  ),
+                                  if (InventoryDeletionPolicy.canUndo(
+                                    user,
+                                    initiatedByUserId: state
+                                        .pendingDeletion!
+                                        .initiatedByUserId,
+                                  ))
+                                    FilledButton.tonal(
+                                      key: const Key(
+                                        'inventory_details_undo_delete_button',
+                                      ),
+                                      onPressed: () async {
+                                        try {
+                                          await repository.undoItemDeletion(
+                                            itemId: item.id,
+                                            performedByUserId: user.id,
+                                          );
+                                          if (context.mounted) {
+                                            context
+                                                .read<
+                                                  InventoryItemDetailsCubit
+                                                >()
+                                                .load(item.id);
+                                          }
+                                        } catch (_) {}
+                                      },
+                                      child: const Text('Undo Delete'),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
                           Row(
                             children: [
                               Container(
@@ -405,9 +555,10 @@ class _InventoryItemDetailsView extends StatelessWidget {
                           ),
 
                           // Admin Stock Management Action Button
-                          if (InventoryStockManagementPolicy.canManageStock(
-                            user,
-                          )) ...[
+                          if (state.pendingDeletion == null &&
+                              InventoryStockManagementPolicy.canManageStock(
+                                user,
+                              )) ...[
                             const SizedBox(height: 16),
                             Align(
                               alignment: Alignment.centerRight,

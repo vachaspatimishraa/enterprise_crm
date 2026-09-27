@@ -9,16 +9,28 @@ import '../../../auth/domain/policies/crm_permissions.dart';
 /// - Administrators can create and edit inventory items.
 /// - Standard users are strictly read-only (`inventory.view`).
 abstract final class InventoryItemAdministrationPolicy {
-  /// Evaluates whether [user] is authorized to perform inventory item administration.
-  ///
-  /// This single decision rule governs:
-  /// - `Add Item` button visibility on the Inventory Workspace.
-  /// - `Edit Item` button visibility on the Inventory Item Details screen.
-  /// - Pre-Cubit route guard on `CreateInventoryItemScreen`.
-  /// - Pre-Cubit route guard on `EditInventoryItemScreen`.
+  /// Evaluates whether [user] is authorized to create new inventory items.
+  static bool canCreate(CurrentUser user) {
+    if (user.isAdmin) {
+      return true;
+    }
+    return AccessPolicy.canAccessModule(user, CrmModule.inventory) &&
+        AccessPolicy.hasPermission(user, CrmPermissions.inventoryView) &&
+        AccessPolicy.hasPermission(user, CrmPermissions.inventoryCreate);
+  }
+
+  /// Evaluates whether [user] is authorized to edit existing inventory items.
+  static bool canEdit(CurrentUser user) {
+    if (user.isAdmin) {
+      return true;
+    }
+    return AccessPolicy.canAccessModule(user, CrmModule.inventory) &&
+        AccessPolicy.hasPermission(user, CrmPermissions.inventoryView) &&
+        AccessPolicy.hasPermission(user, CrmPermissions.inventoryEdit);
+  }
+
+  /// Evaluates whether [user] has general inventory administration privileges.
   static bool canManage(CurrentUser user) {
-    return user.isAdmin &&
-        AccessPolicy.canAccessModule(user, CrmModule.inventory) &&
-        AccessPolicy.hasPermission(user, CrmPermissions.inventoryView);
+    return canCreate(user) || canEdit(user);
   }
 }

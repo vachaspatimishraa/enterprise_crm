@@ -29,7 +29,7 @@ class EditInventoryItemScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Pre-Cubit mutation guard: zero Cubit initialization if unauthorized.
-    if (!InventoryItemAdministrationPolicy.canManage(user)) {
+    if (!InventoryItemAdministrationPolicy.canEdit(user)) {
       return const AccessRestrictedScreen();
     }
 

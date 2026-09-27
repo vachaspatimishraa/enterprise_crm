@@ -9,6 +9,7 @@ import 'package:enterprise_crm/features/inventory/domain/entities/inventory_item
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_page.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_query.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_stock_mutation_result.dart';
+import 'package:enterprise_crm/features/inventory/domain/entities/pending_inventory_deletion.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/adjust_inventory_stock_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/create_inventory_item_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/record_opening_stock_input.dart';
@@ -103,6 +104,40 @@ class _SpyInventoryRepository implements InventoryRepository {
   ) async {
     importItemsCallCount++;
     throw UnimplementedError();
+  }
+
+  int requestItemDeletionCallCount = 0;
+  int undoItemDeletionCallCount = 0;
+  int finalizeExpiredDeletionsCallCount = 0;
+  int getPendingDeletionsCallCount = 0;
+
+  @override
+  Future<PendingInventoryDeletion> requestItemDeletion({
+    required String itemId,
+    required String performedByUserId,
+  }) async {
+    requestItemDeletionCallCount++;
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> undoItemDeletion({
+    required String itemId,
+    required String performedByUserId,
+  }) async {
+    undoItemDeletionCallCount++;
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> finalizeExpiredDeletions() async {
+    finalizeExpiredDeletionsCallCount++;
+  }
+
+  @override
+  Future<List<PendingInventoryDeletion>> getPendingDeletions() async {
+    getPendingDeletionsCallCount++;
+    return [];
   }
 }
 

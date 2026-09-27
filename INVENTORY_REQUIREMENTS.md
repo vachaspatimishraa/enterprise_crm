@@ -449,3 +449,139 @@ INVENTORY-4 implements the CSV and XLSX inventory bulk import workflow for admin
   - Category / UOM / Description / Pricing / Tax / GST / HSN / Vendor
   - New Inventory User write permissions
   - Backend integration (future backend invariant: item + opening stock movement must be atomic server-side)
+
+---
+
+## 12. INVENTORY-ACCESS-1 — Granular Permissions, Opening Stock on Create & Safe Permanent Deletion
+
+**Status:** FROZEN  
+**Date:** 2026-09-27  
+
+### 12.1 Objective & Scope
+INVENTORY-ACCESS-1 extends the Inventory module with:
+1. Admin-controlled granular Inventory permissions replacing the previous permanently read-only Standard User experience.
+2. Optional opening stock entry during Inventory item creation, executed atomically.
+3. Safe permanent Inventory item deletion featuring exact SKU confirmation, a 60-second pending-deletion Undo window, authoritative expiration, atomic ledger deletion, and cross-module reference protection.
+4. Format-specific Inventory import permissions (`inventory.import.csv` and `inventory.import.xlsx`).
+
+---
+
+### 12.2 Granular Permission Model & Users & Access Integration
+1. **Catalog Permissions:**
+   - `inventory.view`: View Inventory workspace and item details.
+   - `inventory.create`: Create new Inventory items (including optional opening stock).
+   - `inventory.edit`: Edit Inventory item Name and SKU.
+   - `inventory.delete`: Initiate and manage permanent Inventory deletion.
+   - `inventory.import.csv`: Import Inventory items from `.csv` files.
+   - `inventory.import.xlsx`: Import Inventory items from `.xlsx` workbooks.
+2. **Account Types & Role Invariants:**
+   - Account types remain strictly `Admin` and `User`. No new roles or account types.
+   - **Admin Access:** Administrators automatically possess all Inventory capabilities across the module without requiring individual permission assignments.
+   - **Standard User Access:** A Standard User requires:
+     `CrmModule.inventory` assigned
+     `+` `inventory.view`
+     `+` the specific operational permission (`inventory.create`, `inventory.edit`, `inventory.delete`, `inventory.import.csv`, `inventory.import.xlsx`).
+   - Standard Users lacking `CrmModule.inventory` or `inventory.view` are denied all Inventory access.
+   - Specific permissions are independent: `inventory.create` does not grant edit, delete, or import; `inventory.import.csv` does not grant `inventory.import.xlsx`.
+3. **Existing Stock Operations:**
+   - Standalone `Set Opening Stock` and `Adjust Stock` remain **Admin-only** for this phase. Standard users with `inventory.create` cannot perform standalone opening stock or manual adjustments on existing items.
+4. **Users & Access Management:**
+   - Integrated into the existing Admin-controlled Users & Access module (`MockPermissionCatalog`, `CrmPermissions`, and `CrmPermissionPresentation`).
+   - Admin can assign/revoke permissions dynamically, instantly updating effective access.
+
+---
+
+### 12.3 Centralized Inventory Authorization
+- All permission checks are centralized through dedicated policy classes (`InventoryItemAdministrationPolicy`, `InventoryImportPolicy`, `InventoryStockManagementPolicy`, and `InventoryDeletionPolicy`).
+- Route guards enforce pre-Cubit authorization before Cubits or state machines initialize.
+- UI elements (buttons, menus, actions) are conditionally rendered based on effective permissions.
+- Button hiding alone is never considered authorization; direct unauthorized routes render `AccessRestrictedScreen` and invoke 0 repository methods.
+
+---
+
+### 12.4 Opening Stock on Item Creation
+1. **Fields on Create Screen:**
+   - `Item Name` (Required, trimmed, non-blank)
+   - `SKU` (Required, unique, trimmed, case-insensitive comparison, non-blank)
+   - `Opening Stock` (Optional, numeric)
+2. **Validation & Semantics:**
+   - **Blank / Empty:** Creates `InventoryItem` with 0 stock movements; derived quantity is `0.0`. Item remains eligible for standalone `Set Opening Stock` by Admin.
+   - **Positive Finite Value (`> 0`):** Creates `InventoryItem` and exactly one `StockMovementType.openingStock` movement atomically.
+     - `quantityDelta`: entered positive value (`double > 0`).
+     - `performedByUserId`: authenticated `CurrentUser.id` (including authorized Standard User creators).
+     - `reason`: `null`.
+     - `createdAt`: deterministic injected clock.
+     - Derived quantity: matches the initial stock value.
+   - **Invalid Values:** `0`, `0.0`, negative numbers, non-numeric strings, NaN, Infinity are rejected with validation error ("Opening stock must be greater than zero.").
+3. **Atomicity Guarantee:**
+   - Item creation and its optional opening stock movement are atomic at the repository/service boundary. If movement creation fails, the item is rolled back / not persisted.
+
+---
+
+### 12.5 Permanent Deletion Lifecycle & Business Rules
+1. **Authorization:**
+   - Admin or Standard User with assigned Inventory module + `inventory.view` + `inventory.delete`.
+2. **Step 1: Exact SKU Confirmation Dialog:**
+   - Displays Item Name, SKU, and current derived quantity.
+   - Explains: *"This item and its complete stock history will be permanently deleted after the Undo period expires."*
+   - Requires user to type the item's exact SKU (case-sensitive match to displayed SKU) to enable the `Confirm Delete` action.
+   - Cancel action leaves all records completely untouched.
+   - Double-submit protection prevents duplicate deletion requests.
+3. **Step 2: 60-Second Pending Deletion State:**
+   - Item is marked pending deletion with metadata: `itemId`, `initiatedByUserId`, `requestedAt`, `undoDeadline = requestedAt + 60s`, `status = pending`.
+   - **Active Listing Exclusion:** Pending items are hidden from standard active inventory workspace queries (`getItems`).
+   - **Discoverability:** Pending deletions are exposed via a dedicated UI view/banner in the Inventory workspace with remaining countdown.
+   - **Mutation Prohibition:** While pending deletion, the item cannot be edited, adjusted, given opening stock, deleted again, or updated via import.
+   - **Integrity Preservation:** Item entity and all associated stock movements remain completely intact during the pending window.
+4. **Step 3: 60-Second Undo Window:**
+   - Undo is accessible throughout the 60-second window even if the user navigates away.
+   - Undo deadline is authoritative (based on injected clock / server timestamp; UI countdown is display-only).
+   - Who can undo: The original initiating user (if still authorized) or an Admin.
+   - When Undo is executed:
+     - Pending deletion is cancelled.
+     - Item is restored to the active inventory listing.
+     - Original item ID, SKU, movement history, and derived quantity are completely preserved without recreating or appending records.
+     - Repeated undo calls are safe / idempotent.
+5. **Step 4: Permanent Finalization:**
+   - After the 60-second deadline expires, permanent deletion becomes eligible for finalization.
+   - Repository/backend verifies that pending state is valid, deadline has passed, and undo was not executed.
+   - Atomically deletes the `InventoryItem` and all associated `StockMovement` records (opening stock, adjustments).
+   - Leaves NO orphan movements or partial records.
+   - Deleted item ID is permanently retired and never reused.
+   - Undo attempted after finalization fails cleanly.
+6. **Step 5: Cross-Module Reference Protection:**
+   - Before entering pending deletion and before finalization, repository checks for external business references (e.g., Purchase orders, Dispatch records).
+   - If active external references exist, deletion is blocked with a safe explanation, and the item and movements are fully preserved.
+
+---
+
+### 12.6 Import Format-Specific Permissions
+- CSV Import requires: `CrmModule.inventory` + `inventory.view` + `inventory.import.csv` (or Admin).
+- XLSX Import requires: `CrmModule.inventory` + `inventory.view` + `inventory.import.xlsx` (or Admin).
+- A CSV-only user attempting XLSX import or direct route navigation is blocked at both UI and file-picker/parser boundaries.
+- A user with import permission but without `inventory.create` can perform import of their authorized format (import and create permissions are decoupled).
+- Existing INVENTORY-4 import invariants remain strictly intact (create-only, row atomicity, SKU duplicate rejection, opening stock creates `openingStock` movement with `reason = null` and `CurrentUser.id` actor).
+
+---
+
+### 12.7 Mock Architecture & Backend Reliability Boundary
+- **Mock Implementation:**
+  - Uses an injected deterministic clock (`_nowProvider`) for deadline calculation and movement timestamps.
+  - Stores pending deletion records separately from active items.
+  - Supports manual/testable finalization reconciliation (`finalizeExpiredDeletions`).
+  - Enforces atomic removal of item and movements on finalization.
+- **Production Backend Invariant (Future):**
+  - Durable scheduling, background worker expiration, cross-process concurrency safety, and transaction atomicity are server-side responsibilities.
+  - Audit receipt on deletion: Minimal event receipt (`deletedItemId`, `initiatedByUserId`, `finalizedAt`, `numberOfMovementsDeleted`) recommended; no movement ledger contents retained.
+
+---
+
+### 12.8 Explicitly Deferred Features
+- Stock Movement History / Audit UI (scheduled for INVENTORY-5).
+- Inventory Export (CSV / XLSX).
+- Multiple warehouses / locations / rack / bin tracking.
+- Category / UOM / Description / Pricing / Tax / GST / HSN / Vendor relationships.
+- Purchase and Dispatch transaction integration.
+- Standalone stock adjustment permissions for Standard Users (Adjust Stock remains Admin-only).
+- Production backend API integration.
+

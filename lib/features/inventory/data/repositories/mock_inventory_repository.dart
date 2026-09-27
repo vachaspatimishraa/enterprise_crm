@@ -7,6 +7,7 @@ import '../../domain/entities/inventory_page.dart';
 import '../../domain/entities/inventory_query.dart';
 import '../../domain/entities/inventory_sort.dart';
 import '../../domain/entities/inventory_stock_mutation_result.dart';
+import '../../domain/entities/pending_inventory_deletion.dart';
 import '../../domain/entities/stock_movement.dart';
 import '../../domain/entities/stock_movement_type.dart';
 import '../../domain/exceptions/inventory_exception.dart';
@@ -21,24 +22,29 @@ import '../mock/mock_inventory_seed_data.dart';
 ///
 /// Current stock quantity is dynamically derived from [StockMovement] deltas.
 /// Enforces case-insensitive trimmed SKU uniqueness, atomic non-negative stock validation,
-/// and append-only stock movement ledger persistence.
+/// append-only stock movement ledger persistence, and 60-second safe permanent deletion.
 class MockInventoryRepository implements InventoryRepository {
   final List<InventoryItem> _items;
   final List<StockMovement> _movements;
   final DateTime Function() _nowProvider;
   final bool Function(String sku)? _simulateMovementFailure;
+  final bool Function(String itemId)? _hasExternalReference;
+  final Map<String, PendingInventoryDeletion> _pendingDeletions = {};
+  final Set<String> _retiredItemIds = {};
 
   MockInventoryRepository({
     List<InventoryItem>? items,
     List<StockMovement>? movements,
     DateTime Function()? nowProvider,
     bool Function(String sku)? simulateMovementFailure,
+    bool Function(String itemId)? hasExternalReference,
   }) : _items = List.of(items ?? MockInventorySeedData.createDefaultItems()),
        _movements = List.of(
          movements ?? MockInventorySeedData.createDefaultMovements(),
        ),
        _nowProvider = nowProvider ?? DateTime.now,
-       _simulateMovementFailure = simulateMovementFailure {
+       _simulateMovementFailure = simulateMovementFailure,
+       _hasExternalReference = hasExternalReference {
     _validateInvariants();
   }
 
@@ -82,10 +88,44 @@ class MockInventoryRepository implements InventoryRepository {
     int candidateNumber = maxNumber + 1;
     while (true) {
       final candidateId = 'item_${candidateNumber.toString().padLeft(3, '0')}';
-      if (!_items.any((item) => item.id == candidateId)) {
+      if (!_items.any((item) => item.id == candidateId) &&
+          !_retiredItemIds.contains(candidateId)) {
         return candidateId;
       }
       candidateNumber++;
+    }
+  }
+
+  bool _isPendingDeletion(String itemId) {
+    final pending = _pendingDeletions[itemId];
+    return pending != null && pending.isPendingAt(_nowProvider());
+  }
+
+  void _purgeExpiredDeletionsInternal() {
+    final now = _nowProvider();
+    final expiredIds = <String>[];
+    for (final entry in _pendingDeletions.entries) {
+      if (entry.value.isExpiredAt(now)) {
+        expiredIds.add(entry.key);
+      }
+    }
+    for (final id in expiredIds) {
+      _finalizeSingleItem(id);
+    }
+  }
+
+  void _finalizeSingleItem(String itemId) {
+    if (_hasExternalReference != null && _hasExternalReference(itemId)) {
+      return;
+    }
+    _items.removeWhere((item) => item.id == itemId);
+    _movements.removeWhere((movement) => movement.inventoryItemId == itemId);
+    _retiredItemIds.add(itemId);
+    final pending = _pendingDeletions[itemId];
+    if (pending != null) {
+      _pendingDeletions[itemId] = pending.copyWith(
+        status: PendingDeletionStatus.finalized,
+      );
     }
   }
 
@@ -114,8 +154,11 @@ class MockInventoryRepository implements InventoryRepository {
 
   @override
   Future<InventoryPage> getItems(InventoryQuery query) async {
-    // 1. Search (name + SKU, trimmed, case-insensitive substring)
-    Iterable<InventoryItem> filtered = _items;
+    _purgeExpiredDeletionsInternal();
+    // 1. Search (name + SKU, trimmed, case-insensitive substring), excluding pending deletions
+    Iterable<InventoryItem> filtered = _items.where(
+      (item) => !_isPendingDeletion(item.id),
+    );
     if (query.searchText != null && query.searchText!.trim().isNotEmpty) {
       final term = query.searchText!.trim().toLowerCase();
       filtered = filtered.where((item) {
@@ -194,6 +237,7 @@ class MockInventoryRepository implements InventoryRepository {
 
   @override
   Future<InventoryItemSummary?> getItemById(String id) async {
+    _purgeExpiredDeletionsInternal();
     final matching = _items.where((item) => item.id == id);
     if (matching.isEmpty) {
       return null;
@@ -209,6 +253,7 @@ class MockInventoryRepository implements InventoryRepository {
   Future<InventoryItemSummary> createItem(
     CreateInventoryItemInput input,
   ) async {
+    _purgeExpiredDeletionsInternal();
     final trimmedName = input.name.trim();
     final trimmedSku = input.sku.trim();
 
@@ -231,9 +276,39 @@ class MockInventoryRepository implements InventoryRepository {
     final id = _generateNextDeterministicId();
     final newItem = InventoryItem(id: id, name: trimmedName, sku: trimmedSku);
 
-    _items.add(newItem);
+    if (input.openingStock != null) {
+      if (!input.openingStock!.isFinite || input.openingStock! <= 0) {
+        throw const InventoryValidationException(
+          'Opening stock must be greater than zero.',
+        );
+      }
+      final trimmedActor = input.performedByUserId?.trim() ?? '';
+      if (trimmedActor.isEmpty) {
+        throw const InventoryValidationException('User ID cannot be blank.');
+      }
 
-    // Invariant: Do NOT create any StockMovement; quantityOnHand is derived as 0.0.
+      if (_simulateMovementFailure != null &&
+          _simulateMovementFailure(trimmedSku)) {
+        throw Exception('Simulated movement creation failure');
+      }
+
+      final movementId = _generateNextDeterministicMovementId();
+      final movement = StockMovement(
+        id: movementId,
+        inventoryItemId: id,
+        type: StockMovementType.openingStock,
+        quantityDelta: input.openingStock!,
+        createdAt: _nowProvider(),
+        performedByUserId: trimmedActor,
+        reason: null,
+      );
+
+      _items.add(newItem);
+      _movements.add(movement);
+    } else {
+      _items.add(newItem);
+    }
+
     return InventoryItemSummary(
       item: newItem,
       quantityOnHand: _deriveQuantityOnHand(id),
@@ -244,6 +319,12 @@ class MockInventoryRepository implements InventoryRepository {
   Future<InventoryItemSummary> updateItem(
     UpdateInventoryItemInput input,
   ) async {
+    _purgeExpiredDeletionsInternal();
+    if (_isPendingDeletion(input.id)) {
+      throw const InventoryDeletionConflictException(
+        'Cannot edit an item that is pending deletion.',
+      );
+    }
     final trimmedName = input.name.trim();
     final trimmedSku = input.sku.trim();
 
@@ -304,6 +385,12 @@ class MockInventoryRepository implements InventoryRepository {
   Future<InventoryStockMutationResult> recordOpeningStock(
     RecordOpeningStockInput input,
   ) async {
+    _purgeExpiredDeletionsInternal();
+    if (_isPendingDeletion(input.itemId)) {
+      throw const InventoryDeletionConflictException(
+        'Cannot record opening stock for an item that is pending deletion.',
+      );
+    }
     final matchingItem = _items.where((i) => i.id == input.itemId).firstOrNull;
     if (matchingItem == null) {
       throw InventoryItemNotFoundException(
@@ -357,6 +444,12 @@ class MockInventoryRepository implements InventoryRepository {
   Future<InventoryStockMutationResult> adjustStock(
     AdjustInventoryStockInput input,
   ) async {
+    _purgeExpiredDeletionsInternal();
+    if (_isPendingDeletion(input.itemId)) {
+      throw const InventoryDeletionConflictException(
+        'Cannot adjust stock for an item that is pending deletion.',
+      );
+    }
     final matchingItem = _items.where((i) => i.id == input.itemId).firstOrNull;
     if (matchingItem == null) {
       throw InventoryItemNotFoundException(
@@ -589,5 +682,73 @@ class MockInventoryRepository implements InventoryRepository {
       importedSummaries: List.unmodifiable(importedSummaries),
       failures: List.unmodifiable(failures),
     );
+  }
+
+  @override
+  Future<PendingInventoryDeletion> requestItemDeletion({
+    required String itemId,
+    required String performedByUserId,
+  }) async {
+    _purgeExpiredDeletionsInternal();
+    final matching = _items.where((item) => item.id == itemId);
+    if (matching.isEmpty) {
+      throw const InventoryItemNotFoundException('Inventory item not found.');
+    }
+    final item = matching.first;
+    if (_isPendingDeletion(itemId)) {
+      throw const InventoryDeletionConflictException(
+        'Item is already pending deletion.',
+      );
+    }
+    if (_hasExternalReference != null && _hasExternalReference(itemId)) {
+      throw const InventoryDeletionBlockedException(
+        'Item deletion is blocked because it is referenced by external records.',
+      );
+    }
+    final requestedAt = _nowProvider();
+    final undoDeadline = requestedAt.add(const Duration(seconds: 60));
+    final pending = PendingInventoryDeletion(
+      itemId: itemId,
+      itemName: item.name,
+      itemSku: item.sku,
+      initiatedByUserId: performedByUserId,
+      requestedAt: requestedAt,
+      undoDeadline: undoDeadline,
+      status: PendingDeletionStatus.pending,
+    );
+    _pendingDeletions[itemId] = pending;
+    return pending;
+  }
+
+  @override
+  Future<void> undoItemDeletion({
+    required String itemId,
+    required String performedByUserId,
+  }) async {
+    final pending = _pendingDeletions[itemId];
+    if (pending == null || pending.status != PendingDeletionStatus.pending) {
+      throw const InventoryItemNotFoundException(
+        'No active pending deletion found for this item.',
+      );
+    }
+    if (!_nowProvider().isBefore(pending.undoDeadline)) {
+      _finalizeSingleItem(itemId);
+      throw const InventoryDeletionConflictException(
+        'The undo deadline for this deletion has expired.',
+      );
+    }
+    _pendingDeletions.remove(itemId);
+  }
+
+  @override
+  Future<void> finalizeExpiredDeletions() async {
+    _purgeExpiredDeletionsInternal();
+  }
+
+  @override
+  Future<List<PendingInventoryDeletion>> getPendingDeletions() async {
+    _purgeExpiredDeletionsInternal();
+    final now = _nowProvider();
+    return _pendingDeletions.values.where((p) => p.isPendingAt(now)).toList();
   }
 }

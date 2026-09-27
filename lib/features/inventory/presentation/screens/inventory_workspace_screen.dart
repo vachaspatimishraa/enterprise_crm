@@ -8,6 +8,8 @@ import '../../../auth/domain/policies/crm_permissions.dart';
 import '../../../auth/presentation/screens/access_restricted_screen.dart';
 import '../../domain/entities/inventory_item_summary.dart';
 import '../../domain/entities/inventory_sort.dart';
+import '../../domain/entities/pending_inventory_deletion.dart';
+import '../../domain/policies/inventory_deletion_policy.dart';
 import '../../domain/policies/inventory_import_policy.dart';
 import '../../domain/policies/inventory_item_administration_policy.dart';
 import '../../domain/repositories/inventory_repository.dart';
@@ -64,11 +66,59 @@ class _InventoryWorkspaceView extends StatefulWidget {
 
 class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
   final TextEditingController _searchController = TextEditingController();
+  List<PendingInventoryDeletion> _pendingDeletions = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPendingDeletions();
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadPendingDeletions() async {
+    try {
+      final pending = await widget.repository.getPendingDeletions();
+      if (mounted) {
+        setState(() {
+          _pendingDeletions = pending;
+        });
+      }
+    } catch (_) {
+      // Graceful fallback
+    }
+  }
+
+  Future<void> _undoPendingDeletion(String itemId) async {
+    try {
+      await widget.repository.undoItemDeletion(
+        itemId: itemId,
+        performedByUserId: widget.user.id,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Item deletion undone successfully.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      await _loadPendingDeletions();
+      if (mounted) {
+        context.read<InventoryCubit>().refresh();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   void _openCreateItem(BuildContext context) async {
@@ -82,6 +132,7 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
       ),
     );
     if (created == true && mounted) {
+      _loadPendingDeletions();
       cubit.refresh();
     }
   }
@@ -97,6 +148,7 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
       ),
     );
     if (imported == true && mounted) {
+      _loadPendingDeletions();
       cubit.refresh();
     }
   }
@@ -113,6 +165,7 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
       ),
     );
     if (mounted) {
+      _loadPendingDeletions();
       cubit.refresh();
     }
   }
@@ -132,7 +185,10 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
             key: const Key('inventory_refresh_button'),
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
-            onPressed: () => context.read<InventoryCubit>().refresh(),
+            onPressed: () {
+              _loadPendingDeletions();
+              context.read<InventoryCubit>().refresh();
+            },
           ),
         ],
       ),
@@ -140,6 +196,10 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
         builder: (context, state) {
           return Column(
             children: [
+              // Pending Deletions Banner if any
+              if (_pendingDeletions.isNotEmpty)
+                _buildPendingDeletionsBanner(context),
+
               // Search and Sort Control Bar
               _buildControlBar(context, state),
               const Divider(height: 1),
@@ -161,6 +221,79 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildPendingDeletionsBanner(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      key: const Key('inventory_workspace_pending_deletions_banner'),
+      margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      padding: const EdgeInsets.all(12.0),
+      decoration: BoxDecoration(
+        color: colorScheme.errorContainer.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: colorScheme.error.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.hourglass_top, size: 20, color: colorScheme.error),
+              const SizedBox(width: 8),
+              Text(
+                'Pending Deletions (${_pendingDeletions.length})',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.error,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ..._pendingDeletions.map((pending) {
+            final now = DateTime.now();
+            final remainingSeconds = pending.undoDeadline.isAfter(now)
+                ? pending.undoDeadline.difference(now).inSeconds
+                : 0;
+            final canUndo = InventoryDeletionPolicy.canUndo(
+              widget.user,
+              initiatedByUserId: pending.initiatedByUserId,
+            );
+
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${pending.itemName} (${pending.itemSku}) - Undo expires in ${remainingSeconds}s',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                  if (canUndo)
+                    TextButton.icon(
+                      key: Key(
+                        'pending_deletion_undo_button_${pending.itemId}',
+                      ),
+                      icon: const Icon(Icons.undo, size: 16),
+                      label: const Text('Undo'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () => _undoPendingDeletion(pending.itemId),
+                    ),
+                ],
+              ),
+            );
+          }),
+        ],
       ),
     );
   }
@@ -238,7 +371,7 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
             ),
           );
 
-          final canManage = InventoryItemAdministrationPolicy.canManage(
+          final canCreate = InventoryItemAdministrationPolicy.canCreate(
             widget.user,
           );
           final canImport = InventoryImportPolicy.canImport(widget.user);
@@ -280,7 +413,7 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
                             icon: const Icon(Icons.upload_file, size: 18),
                             label: const Text('Import'),
                           ),
-                        if (canManage)
+                        if (canCreate)
                           FilledButton.icon(
                             key: const Key(
                               'inventory_workspace_add_item_button',
@@ -311,7 +444,7 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
                   label: const Text('Import'),
                 ),
               ],
-              if (canManage) ...[
+              if (canCreate) ...[
                 const SizedBox(width: 12),
                 FilledButton.icon(
                   key: const Key('inventory_workspace_add_item_button'),

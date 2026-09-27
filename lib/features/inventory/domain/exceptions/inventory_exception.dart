@@ -48,3 +48,19 @@ class InventoryUninitializedStockException extends InventoryException {
         'Stock must be initialized before manual adjustments can be applied.',
   ]);
 }
+
+/// Thrown when an inventory item deletion is blocked due to external business references.
+class InventoryDeletionBlockedException extends InventoryException {
+  const InventoryDeletionBlockedException([
+    super.message =
+        'Item deletion is blocked because it is referenced by external records.',
+  ]);
+}
+
+/// Thrown when an item is already pending deletion or invalid deletion operation is attempted.
+class InventoryDeletionConflictException extends InventoryException {
+  const InventoryDeletionConflictException([
+    super.message =
+        'The requested deletion operation conflicts with the current item state.',
+  ]);
+}

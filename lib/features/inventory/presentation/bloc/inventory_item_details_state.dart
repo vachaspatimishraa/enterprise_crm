@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../../domain/entities/inventory_item_summary.dart';
+import '../../domain/entities/pending_inventory_deletion.dart';
 
 /// States emitted by [InventoryItemDetailsCubit].
 @immutable
@@ -18,10 +19,12 @@ final class InventoryItemDetailsLoading extends InventoryItemDetailsState {
 final class InventoryItemDetailsLoaded extends InventoryItemDetailsState {
   final InventoryItemSummary summary;
   final bool hasStockMovements;
+  final PendingInventoryDeletion? pendingDeletion;
 
   const InventoryItemDetailsLoaded(
     this.summary, {
     this.hasStockMovements = false,
+    this.pendingDeletion,
   });
 
   @override
@@ -30,10 +33,11 @@ final class InventoryItemDetailsLoaded extends InventoryItemDetailsState {
       other is InventoryItemDetailsLoaded &&
           runtimeType == other.runtimeType &&
           summary == other.summary &&
-          hasStockMovements == other.hasStockMovements;
+          hasStockMovements == other.hasStockMovements &&
+          pendingDeletion == other.pendingDeletion;
 
   @override
-  int get hashCode => Object.hash(summary, hasStockMovements);
+  int get hashCode => Object.hash(summary, hasStockMovements, pendingDeletion);
 }
 
 final class InventoryItemDetailsNotFound extends InventoryItemDetailsState {

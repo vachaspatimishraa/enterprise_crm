@@ -10,10 +10,28 @@ import '../../../auth/domain/policies/crm_permissions.dart';
 /// - Standard users are strictly denied.
 /// - Requires assignment to `CrmModule.inventory` and operational `inventory.view`.
 abstract final class InventoryImportPolicy {
-  /// Evaluates whether [user] is authorized to perform inventory bulk import.
+  /// Evaluates whether [user] is authorized to import inventory via CSV.
+  static bool canImportCsv(CurrentUser user) {
+    if (user.isAdmin) {
+      return true;
+    }
+    return AccessPolicy.canAccessModule(user, CrmModule.inventory) &&
+        AccessPolicy.hasPermission(user, CrmPermissions.inventoryView) &&
+        AccessPolicy.hasPermission(user, CrmPermissions.inventoryImportCsv);
+  }
+
+  /// Evaluates whether [user] is authorized to import inventory via Excel (XLSX).
+  static bool canImportXlsx(CurrentUser user) {
+    if (user.isAdmin) {
+      return true;
+    }
+    return AccessPolicy.canAccessModule(user, CrmModule.inventory) &&
+        AccessPolicy.hasPermission(user, CrmPermissions.inventoryView) &&
+        AccessPolicy.hasPermission(user, CrmPermissions.inventoryImportXlsx);
+  }
+
+  /// Evaluates whether [user] is authorized to perform any inventory bulk import.
   static bool canImport(CurrentUser user) {
-    return user.isAdmin &&
-        AccessPolicy.canAccessModule(user, CrmModule.inventory) &&
-        AccessPolicy.hasPermission(user, CrmPermissions.inventoryView);
+    return canImportCsv(user) || canImportXlsx(user);
   }
 }

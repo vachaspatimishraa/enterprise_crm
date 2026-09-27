@@ -18,6 +18,11 @@ abstract final class CrmPermissions {
 
   // Inventory
   static const String inventoryView = 'inventory.view';
+  static const String inventoryCreate = 'inventory.create';
+  static const String inventoryEdit = 'inventory.edit';
+  static const String inventoryDelete = 'inventory.delete';
+  static const String inventoryImportCsv = 'inventory.import.csv';
+  static const String inventoryImportXlsx = 'inventory.import.xlsx';
 
   // Purchase
   static const String purchaseView = 'purchase.view';
@@ -33,6 +38,11 @@ abstract final class CrmPermissions {
     hrView: CrmModule.hrPayroll,
     payrollView: CrmModule.hrPayroll,
     inventoryView: CrmModule.inventory,
+    inventoryCreate: CrmModule.inventory,
+    inventoryEdit: CrmModule.inventory,
+    inventoryDelete: CrmModule.inventory,
+    inventoryImportCsv: CrmModule.inventory,
+    inventoryImportXlsx: CrmModule.inventory,
     purchaseView: CrmModule.purchase,
     vendorView: CrmModule.vendorManagement,
   };
