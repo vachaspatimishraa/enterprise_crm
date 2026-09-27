@@ -582,6 +582,84 @@ INVENTORY-ACCESS-1 extends the Inventory module with:
 - Multiple warehouses / locations / rack / bin tracking.
 - Category / UOM / Description / Pricing / Tax / GST / HSN / Vendor relationships.
 - Purchase and Dispatch transaction integration.
-- Standalone stock adjustment permissions for Standard Users (Adjust Stock remains Admin-only).
 - Production backend API integration.
+
+---
+
+# 13. INVENTORY-ACCESS-2 — Stock Quantity Permissions & Atomic Target-Based Adjustment
+
+**Date:** 2026-09-27  
+**Status:** REQUIREMENTS FROZEN
+
+## 13.1 Canonical Stock Management Permission
+- **Permission Identifier:** `inventory.stock.manage`
+- **Constant:** `CrmPermissions.inventoryStockManage`
+- **Owning Module:** `CrmModule.inventory`
+- **Presentation Display Name:** `Manage Stock Quantity`
+- **Description:** `Allows setting opening stock and adjusting the quantity of existing Inventory items.`
+- **Users & Access Integration:**
+  - Admin navigates to `Admin` -> `Users & Access` -> `Edit User` -> `Inventory Permissions`.
+  - Displays checkbox: `[ ] Manage Stock Quantity`.
+  - Persisted through standard `UpdateManagedUserInput` and validated via `MockPermissionCatalog`.
+  - Master Administrator retains full access automatically.
+  - Effective authorization must be rechecked at mutation time; revoking permission blocks subsequent writes immediately even if screen remains open.
+
+## 13.2 Updated Inventory Permission Matrix
+| Permission | Scope & Capability |
+|---|---|
+| `inventory.view` | View Inventory workspace, item list, item details, and derived stock quantities. |
+| `inventory.create` | Create new Inventory items (Item Name, SKU). Does NOT authorize setting initial stock unless combined with `inventory.stock.manage`. |
+| `inventory.edit` | Edit Item Name and SKU of existing items. Does NOT authorize quantity changes. |
+| `inventory.stock.manage` | Set Opening Stock on uninitialized items and adjust quantity on existing items. Authorizes nonblank opening stock on item creation and file import. |
+| `inventory.delete` | Initiate confirmed deletion dialog with exact SKU entry and 60-second Undo window. |
+| `inventory.import.csv` | Import inventory items from CSV files. |
+| `inventory.import.xlsx` | Import inventory items from Excel (XLSX) files. |
+
+- **Admin Account:** Possesses full, unrestricted access to all operations automatically.
+- **Standard Users:** Must have module assignment `CrmModule.inventory` + `inventory.view` + specific operational permission for each action.
+
+## 13.3 Opening Stock on Create Item (Authorization Rules)
+- **Admin:** May supply optional positive opening stock.
+- **Standard User with Create Only (`inventory.create` without `inventory.stock.manage`):**
+  - May create Item Name and SKU.
+  - Opening stock input field is hidden or disabled in UI.
+  - Repository strictly rejects any non-null `openingStock` input if the actor lacks `inventory.stock.manage`, throwing `InventoryAuthorizationException`.
+- **Standard User with Create + Stock Management (`inventory.create` + `inventory.stock.manage`):**
+  - May enter optional positive opening stock.
+- **Atomicity & History:**
+  - Blank input creates item with 0 movements (derived quantity `0.0`).
+  - Positive finite value creates item and 1 `openingStock` movement atomically.
+
+## 13.4 Target-Based Quantity Adjustment Workflow
+- **Screen Access:** `AdjustInventoryStockScreen` is accessible to Admin and Standard Users with `CrmModule.inventory` + `inventory.view` + `inventory.stock.manage`.
+- **Ledger Invariant:** Inventory quantities are NEVER directly overwritten. All balance changes are computed via `SUM(StockMovement.quantityDelta)`.
+- **Target Quantity Semantics:**
+  - Authorized user inputs `targetQuantity` and a mandatory trimmed `reason`.
+  - Target quantity must be numeric, finite, and `>= 0`. Negative target quantities are prohibited.
+  - If `targetQuantity == currentDerivedBalance`, no movement is appended. A user-friendly message is returned: `"The stock quantity is already at this value."`
+- **Write-Time Atomic Delta Calculation (Concurrency / Stale Balance Protection):**
+  - Client UI displays current quantity and pre-calculates an adjustment preview delta (`target - displayedQuantity`).
+  - Repository/service method executes an atomic mutation:
+    1. Fetches authoritative latest movement history and calculates latest derived balance.
+    2. Calculates write-time delta: `delta = targetQuantity - latestBalance`.
+    3. If `latestBalance + delta < 0`, operation is rejected.
+    4. If `delta == 0.0`, returns current derived quantity without appending a movement.
+    5. Appends a single signed `StockMovementType.adjustment` movement with `quantityDelta = delta`, `reason`, `performedByUserId = CurrentUser.id`, and injected timestamp.
+    6. Returns the updated authoritative balance.
+- **Uninitialized vs Initialized Items:**
+  - Uninitialized items (0 movements) require `Set Opening Stock` (`quantity > 0`).
+  - Initialized items (1+ movements, even if balance is `0.0`) must use `Adjust Stock`.
+
+## 13.5 Inventory File Import Authorization Update
+- CSV Import requires: `inventory.import.csv` + `inventory.view` + `CrmModule.inventory`.
+- XLSX Import requires: `inventory.import.xlsx` + `inventory.view` + `CrmModule.inventory`.
+- Importing nonblank Opening Stock additionally requires: `inventory.stock.manage`.
+- **User Without Stock Management:**
+  - Name and SKU are parsed and imported normally.
+  - Blank or unmapped Opening Stock is permitted.
+  - Rows with nonblank supplied opening stock are rejected with row-level error: `"Stock Management permission (inventory.stock.manage) required to import initial quantity."`
+  - Values are never silently discarded.
+- **User With Stock Management (or Admin):**
+  - Authorized to import positive opening stock rows, creating atomic `openingStock` movements.
+
 
