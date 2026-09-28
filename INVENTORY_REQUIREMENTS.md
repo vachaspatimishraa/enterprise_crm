@@ -1,8 +1,8 @@
 # INVENTORY-0 — Inventory Requirements Audit & Architecture Preparation Report (Corrected)
 
-**Date:** 2026-09-21  
-**Project:** Enterprise CRM (`d:\projects\enterprise_crm`)  
-**Status:** AUDIT COMPLETE / AWAITING BUSINESS FREEZE  
+**Date:** 2026-09-21
+**Project:** Enterprise CRM (`d:\projects\enterprise_crm`)
+**Status:** AUDIT COMPLETE / AWAITING BUSINESS FREEZE
 
 ---
 
@@ -454,8 +454,8 @@ INVENTORY-4 implements the CSV and XLSX inventory bulk import workflow for admin
 
 ## 12. INVENTORY-ACCESS-1 — Granular Permissions, Opening Stock on Create & Safe Permanent Deletion
 
-**Status:** FROZEN  
-**Date:** 2026-09-27  
+**Status:** FROZEN
+**Date:** 2026-09-27
 
 ### 12.1 Objective & Scope
 INVENTORY-ACCESS-1 extends the Inventory module with:
@@ -588,7 +588,7 @@ INVENTORY-ACCESS-1 extends the Inventory module with:
 
 # 13. INVENTORY-ACCESS-2 — Stock Quantity Permissions & Atomic Target-Based Adjustment
 
-**Date:** 2026-09-27  
+**Date:** 2026-09-27
 **Status:** REQUIREMENTS FROZEN
 
 ## 13.1 Canonical Stock Management Permission
@@ -662,4 +662,246 @@ INVENTORY-ACCESS-1 extends the Inventory module with:
 - **User With Stock Management (or Admin):**
   - Authorized to import positive opening stock rows, creating atomic `openingStock` movements.
 
+# 14. INVENTORY-5 — STOCK MOVEMENT HISTORY
 
+**Date:** 2026-09-28
+**Status:** APPROVED / FROZEN
+**Owner:** Vachaspati Mishra
+
+## 14.1 Objective & Scope
+INVENTORY-5 defines the frozen requirements and technical contracts for viewing the immutable, historical audit ledger of stock movements for individual Inventory items.
+
+Stock Movement History is strictly read-only. It exposes the authoritative movement ledger that backs current derived stock balances without ever introducing a secondary stock source of truth or permitting historical record modification.
+
+## 14.2 Confirmed Existing Repository & Domain Facts
+1. **Single Source of Truth:**
+   Current stock quantity on hand is strictly derived:
+   $$\text{Current Quantity} = \sum \text{StockMovement.quantityDelta}$$
+   `InventoryItem` stores only intrinsic identity fields (`id`, `name`, `sku`). It contains no stored quantity field.
+2. **Existing Domain Entities:**
+   - `StockMovement`: Contains `id` (String), `inventoryItemId` (String), `type` (`StockMovementType`), `quantityDelta` (`double`), `createdAt` (`DateTime`), `performedByUserId` (`String?`), and `reason` (`String?`).
+   - `StockMovementType`: Exactly two enum values exist: `openingStock` and `adjustment`. No other types (`purchase`, `dispatch`, `damage`, `transfer`, etc.) exist in the domain.
+3. **Existing Field Semantics & Nullability:**
+   - Seed data / legacy movements: `performedByUserId = null`, `reason = null`, `createdAt = DateTime.utc(2026, 1, 1, 9, 0)`.
+   - `openingStock`: Created with positive finite `quantityDelta`, nonblank `performedByUserId`, and `reason = null`.
+   - `adjustment`: Created with signed non-zero `quantityDelta`, nonblank `performedByUserId`, and nonblank `reason`.
+   - Timestamps: Injected via `_nowProvider` in `MockInventoryRepository`.
+4. **Current Repository API Limitations:**
+   - The only movement-related read method on `InventoryRepository` is `Future<bool> hasStockMovements(String itemId);`.
+   - `InventoryRepository` currently has **NO** method to query, list, count, filter, or paginate `StockMovement` records.
+   - Movements are stored internally in `MockInventoryRepository._movements` as an append-only list.
+5. **Deletion Lifecycle Facts:**
+   - During 60-second pending deletion (`requestItemDeletion`), the item and its movements remain intact in `_items` and `_movements`. Mutations are blocked with `InventoryDeletionConflictException`.
+   - On `undoItemDeletion`, pending deletion is canceled and all original movements remain completely intact.
+   - On `finalizeExpiredDeletions`, the item and all its associated movements are atomically removed from `_items` and `_movements`. No historical movements are retained after finalization.
+6. **Shared Repository Invariant:**
+   `InventoryRepository` is an app-scoped singleton passed through `CrmApp` to `AdminDashboardScreen` and `UserDashboardScreen`, and injected into `InventoryWorkspaceScreen` and `InventoryItemDetailsScreen`.
+
+## 14.3 Approved Business Requirements & Decisions
+
+### 14.3.1 Approved Business Decision 1 — Historical Running Balance
+- **Mandatory Running Balance:** Each historical movement entry displayed in the audit ledger must show the authoritative resulting cumulative balance immediately following that movement.
+- **Authoritative Ledger Calculation:**
+  - Running balances must be calculated from the complete authoritative movement ledger for the selected item.
+  - Calculation iterates chronologically forward from the genesis movement starting at zero ($0.0 \rightarrow + \text{delta}_1 \rightarrow + \text{delta}_2 \rightarrow \dots$).
+  - Each movement record is associated with its immediate resulting cumulative balance.
+  - The derived current quantity must remain the terminal value of this same ledger calculation.
+  - Never introduce a separate stored quantity column or secondary source of truth.
+- **Display Ordering vs Calculation Ordering:**
+  - Movement records are displayed **newest first** (`createdAt DESC`) in the UI.
+  - Reversing the order for display must **NOT** invert or alter the chronologically computed historical balances.
+- **Filter Invariant:**
+  - Historical running balances must **NOT** change when the user applies a movement-type filter.
+  - Hiding a movement (e.g. hiding Opening Stock) filters which rows are rendered on screen, but does not alter the historical running balances associated with the remaining visible movements.
+  - Example:
+    | Movement | Delta | Resulting Balance |
+    |---|---:|---:|
+    | Opening Stock | +50 | 50 |
+    | Adjustment | +20 | 70 |
+    | Adjustment | -10 | 60 |
+    | Adjustment | +15 | 75 |
+    If the user filters to show only "Adjustment", the balance after the first adjustment remains 70 (not 20), because historical calculations reflect the complete ledger.
+
+### 14.3.2 Chronological Ordering Contract & Deterministic Sequencing
+- `createdAt` is the primary ordering attribute.
+- **Secondary Sequencing Contract:**
+  - Timestamps alone may collide if multiple movements occur in rapid succession or are batch-seeded at the same timestamp (e.g. `2026-01-01 09:00:00`).
+  - **Stock History must not fabricate chronological ordering from arbitrary movement IDs.**
+  - The implementation must use an authoritative repository-guaranteed sequence or another documented stable ordering mechanism.
+  - For the mock implementation, internal insertion order may be considered only if the repository explicitly guarantees that it corresponds to movement creation order.
+  - For production backend integration, the corresponding sequence must be supplied or guaranteed by the backend.
+  - This sequencing contract is recorded as a mandatory technical constraint for INVENTORY-5.2.
+
+### 14.3.3 Approved Business Decision 2 — Actor Display & Safe Fallbacks
+- Display the recorded actor identifier directly from `StockMovement.performedByUserId`.
+  - Examples: `Performed By: usr_admin`, `Performed By: sales_01`.
+- **Legacy Null Actor Fallback:**
+  - For legacy or seeded records where `performedByUserId` is null, display: `Not recorded`.
+- **Prohibitions:**
+  - Do not create a dependency on `UserManagementRepository` merely to resolve actor names.
+  - Do not invent historical display names or replace recorded User IDs with guessed names.
+- **Movement Reason Fallback:**
+  - For adjustments: display the recorded non-null trimmed reason.
+  - For null or empty reasons (e.g. Opening Stock or legacy entries), display: `—` (em-dash).
+  - Preserve the distinction between a genuine recorded value and unavailable legacy data.
+
+### 14.3.4 Approved Business Decision 3 — Pending Deletion History
+- Stock History remains accessible in read-only mode throughout the existing 60-second pending-deletion window.
+- **Active Item:** Authorized users can view the item's complete movement history.
+- **Pending Deletion:**
+  - The item and its movement ledger remain intact.
+  - Authorized users can inspect the complete original movement history.
+  - All existing stock mutation restrictions remain enforced (mutations throw `InventoryDeletionConflictException`).
+  - Do not enable editing, adjustment, or movement deletion through the History screen.
+- **Successful Undo:**
+  - The original item and movement ledger remain unchanged.
+  - The History screen continues to display the original records without loss.
+  - Do not recreate movements or reconstruct historical data from snapshots.
+- **Final Permanent Deletion:**
+  - After the 60-second window expires and `finalizeExpiredDeletions` is executed, the item and all associated stock movements are permanently and atomically removed.
+  - History retrieval for finalized items must return an item-not-found outcome.
+  - Deleted movement records must not be exposed.
+  - No secondary archive mechanism.
+
+### 14.3.5 Approved Business Decision 4 — Movement Type Filtering
+- The Stock History UI must provide exactly these initial filter options:
+  - `All Movements` (Default)
+  - `Opening Stock`
+  - `Adjustment`
+- The filter applies strictly to which records are rendered on screen.
+- Filtering must never modify movements or alter running balance calculations.
+- Do not introduce speculative types such as Purchase, Dispatch, Return, Transfer, Reservation, or Damage.
+- Filter UI implementation is scheduled for INVENTORY-5.3.
+
+### 14.3.6 Authorization Requirements
+- History access uses the existing Inventory viewing policy:
+  - **Administrator:** Full, unrestricted access to view history for any item.
+  - **Standard User:** Requires `CrmModule.inventory` assignment + `inventory.view` permission.
+- History access does **NOT** require:
+  - `inventory.create`
+  - `inventory.edit`
+  - `inventory.stock.manage`
+  - `inventory.delete`
+  - `inventory.import.csv`
+  - `inventory.import.xlsx`
+- Stock History is a pure read-only feature.
+- Unauthorized users attempting navigation are redirected to `AccessRestrictedScreen`.
+- Do not introduce a separate Stock History permission without explicit approval.
+
+### 14.3.7 Required Display Information
+- Inventory item name.
+- SKU.
+- Current quantity on hand.
+- Movement type (`Opening Stock` | `Stock Adjustment`).
+- Signed quantity delta (e.g. `+50`, `+25`, `-10`).
+- Running balance immediately after movement (e.g. `Balance After: 75`).
+- Creation date and time (standard formatted timestamp).
+- Recorded actor ID (`performedByUserId` or `Not recorded`).
+- Movement reason (recorded string or `—`).
+
+**Illustrative Display Example:**
+```text
+Wireless Mouse
+SKU: INV-001
+
+Current Quantity: 75
+
+--------------------------------
+Adjustment                  +25
+Balance After:               75
+
+Reason:
+Physical stock count correction
+
+Performed By:
+usr_admin
+
+Date and Time:
+2026-09-28 10:30 AM
+--------------------------------
+Opening Stock               +50
+Balance After:               50
+
+Reason:
+—
+
+Performed By:
+Not recorded
+
+Date and Time:
+2026-09-20 09:00 AM
+--------------------------------
+```
+
+### 14.3.8 UI and Navigation Requirements (for INVENTORY-5.3)
+- Navigation Flow:
+  $$\text{Inventory Workspace} \longrightarrow \text{Inventory Item Details} \longrightarrow \text{Stock Movement History}$$
+- Shared app-scoped `InventoryRepository` instance used throughout. Do not instantiate a separate `MockInventoryRepository`.
+- Planned UI States:
+  - **Loading:** Progress indicator during fetch.
+  - **Empty History:** Clear message for items with 0 movements.
+  - **Successful History:** Chronological timeline/cards with signed deltas and running balances.
+  - **Item Not Found:** Safe fallback if item does not exist.
+  - **Pending Deletion:** Informative notice indicating item is pending deletion; history remains viewable in read-only mode.
+  - **Permanently Deleted:** Item not found error state.
+  - **Error:** Actionable error state with retry.
+- Responsive Breakpoints:
+  - 320 × 568
+  - 360 × 640
+  - 768 × 1024
+  - 1200 × 800
+- Light and Dark themes supported.
+- Movement direction communicated through explicit text and signed indicators (`+`, `-`), never through color alone.
+
+## 14.4 Technical Contracts & Preparation (for INVENTORY-5.2)
+
+### 14.4.1 Repository Contract Preparation
+- A dedicated read-only retrieval method will be added to `InventoryRepository`:
+  ```dart
+  Future<List<StockMovementRecord>> getStockMovements(String itemId);
+  ```
+- **Read Projection (`StockMovementRecord`):**
+  - Encapsulates the immutable `StockMovement` and the authoritative `runningBalance: double`.
+  - Prohibits mutation of historical records.
+- **Contract Rules:**
+  - Item-scoped retrieval.
+  - Complete authoritative movement sequencing.
+  - Historical running-balance calculation.
+  - Immutable result records.
+  - Safe behavior for missing items (e.g. throws `InventoryItemNotFoundException`).
+  - Pending-deletion items return full movement history.
+  - Permanently deleted items return item-not-found.
+  - No mutation through the history contract.
+
+### 14.4.2 State Management
+- `StockMovementHistoryCubit` managing `StockMovementHistoryState` (`Initial`, `Loading`, `Loaded`, `Empty`, `NotFound`, `Failure`).
+
+## 14.5 Backend Boundary
+- The instructor owns production backend integration.
+- Do not invent:
+  - REST endpoints.
+  - JSON wire formats.
+  - HTTP authentication headers.
+  - Database schema / table definitions.
+  - Foreign-key relationships.
+  - Backend movement sequence identifiers.
+  - Server pagination protocols.
+- The backend must eventually provide consistent, authorized movement retrieval with a reliable chronological sequence.
+- Historical running balance calculations must remain mathematically correct across the entire movement ledger even if server-side pagination or filtering is introduced.
+
+## 14.6 Explicitly Deferred Features
+The following features are strictly deferred and out of scope for INVENTORY-5:
+1. Editing an existing movement.
+2. Deleting an individual movement.
+3. Modifying historical reasons.
+4. Changing movement actors.
+5. Changing recorded timestamps.
+6. Direct quantity replacement.
+7. Inventory Export (CSV/XLSX export of movements).
+8. Purchase/Dispatch stock integration.
+9. Returns or transfers.
+10. New stock movement types.
+11. Warehouse/location tracking.
+12. Actor display-name lookup via UserManagementRepository.
+13. Cross-item analytical reports.
+14. Backend API implementation.
