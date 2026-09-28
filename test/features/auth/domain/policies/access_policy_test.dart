@@ -84,6 +84,7 @@ void main() {
         CrmPermissions.inventoryCreate,
         CrmPermissions.inventoryEdit,
         CrmPermissions.inventoryDelete,
+        CrmPermissions.inventoryStockManage,
         CrmPermissions.inventoryImportCsv,
         CrmPermissions.inventoryImportXlsx,
       });
@@ -94,8 +95,8 @@ void main() {
       );
     });
 
-    test('allKnown contains exactly 13 permissions', () {
-      expect(CrmPermissions.allKnown.length, 13);
+    test('allKnown contains exactly 14 permissions', () {
+      expect(CrmPermissions.allKnown.length, 14);
     });
 
     test('CrmPermissionPresentation returns human-readable labels', () {

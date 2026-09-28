@@ -5,6 +5,7 @@ import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dar
 import 'package:enterprise_crm/features/inventory/domain/policies/inventory_deletion_policy.dart';
 import 'package:enterprise_crm/features/inventory/domain/policies/inventory_import_policy.dart';
 import 'package:enterprise_crm/features/inventory/domain/policies/inventory_item_administration_policy.dart';
+import 'package:enterprise_crm/features/inventory/domain/policies/inventory_stock_management_policy.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -254,6 +255,86 @@ void main() {
           expect(InventoryImportPolicy.canImportCsv(xlsxImportUser), isFalse);
           expect(
             InventoryItemAdministrationPolicy.canCreate(xlsxImportUser),
+            isFalse,
+          );
+        },
+      );
+    });
+
+    group('INVENTORY-ACCESS-2: Stock Management Policy', () {
+      const stockManagerUser = CurrentUser(
+        id: 'user_stock_manager',
+        displayName: 'Stock Manager',
+        accountType: AccountType.user,
+        modules: {CrmModule.inventory},
+        permissions: {
+          CrmPermissions.inventoryView,
+          CrmPermissions.inventoryStockManage,
+        },
+      );
+
+      const stockManagerWithoutModule = CurrentUser(
+        id: 'user_stock_no_mod',
+        displayName: 'Stock No Module',
+        accountType: AccountType.user,
+        modules: {CrmModule.leadManagement},
+        permissions: {
+          CrmPermissions.inventoryView,
+          CrmPermissions.inventoryStockManage,
+        },
+      );
+
+      test(
+        'Admin can manage Inventory stock without requiring an individually assigned permission',
+        () {
+          expect(
+            InventoryStockManagementPolicy.canManageStock(adminUser),
+            isTrue,
+          );
+        },
+      );
+
+      test(
+        'Authorized Standard User with module + view + stock.manage can manage stock',
+        () {
+          expect(
+            InventoryStockManagementPolicy.canManageStock(stockManagerUser),
+            isTrue,
+          );
+        },
+      );
+
+      test(
+        'Unauthorized Standard User with only module + view cannot manage stock',
+        () {
+          expect(
+            InventoryStockManagementPolicy.canManageStock(viewOnlyUser),
+            isFalse,
+          );
+        },
+      );
+
+      test(
+        'Permission independence: inventory.edit or inventory.create does not grant stock management',
+        () {
+          expect(
+            InventoryStockManagementPolicy.canManageStock(editOnlyUser),
+            isFalse,
+          );
+          expect(
+            InventoryStockManagementPolicy.canManageStock(createOnlyUser),
+            isFalse,
+          );
+        },
+      );
+
+      test(
+        'Module dependency: Standard User without Inventory module cannot manage stock even with permission',
+        () {
+          expect(
+            InventoryStockManagementPolicy.canManageStock(
+              stockManagerWithoutModule,
+            ),
             isFalse,
           );
         },
