@@ -8,6 +8,7 @@ import '../../domain/entities/inventory_query.dart';
 import '../../domain/entities/inventory_sort.dart';
 import '../../domain/entities/inventory_stock_mutation_result.dart';
 import '../../domain/entities/pending_inventory_deletion.dart';
+import '../../domain/entities/stock_movement_record.dart';
 import '../../domain/entities/stock_movement.dart';
 import '../../domain/entities/stock_movement_type.dart';
 import '../../domain/exceptions/inventory_exception.dart';
@@ -859,5 +860,56 @@ class MockInventoryRepository implements InventoryRepository {
     _purgeExpiredDeletionsInternal();
     final now = _nowProvider();
     return _pendingDeletions.values.where((p) => p.isPendingAt(now)).toList();
+  }
+
+  @override
+  Future<List<StockMovementRecord>> getStockMovements(String itemId) async {
+    _purgeExpiredDeletionsInternal();
+
+    final itemExists = _items.any((item) => item.id == itemId);
+    if (!itemExists) {
+      throw InventoryItemNotFoundException(
+        'Inventory item with ID "$itemId" not found.',
+      );
+    }
+
+    // 1. Extract item movements paired with their original ledger index for
+    // deterministic secondary sequencing if timestamps are identical.
+    final itemIndexedMovements = <({StockMovement movement, int index})>[];
+    for (var i = 0; i < _movements.length; i++) {
+      final m = _movements[i];
+      if (m.inventoryItemId == itemId) {
+        itemIndexedMovements.add((movement: m, index: i));
+      }
+    }
+
+    if (itemIndexedMovements.isEmpty) {
+      return const <StockMovementRecord>[];
+    }
+
+    // 2. Authoritative chronological ordering:
+    // Primary: createdAt ascending (earliest to latest)
+    // Secondary: original ledger insertion index ascending
+    itemIndexedMovements.sort((a, b) {
+      final timeCompare = a.movement.createdAt.compareTo(b.movement.createdAt);
+      if (timeCompare != 0) return timeCompare;
+      return a.index.compareTo(b.index);
+    });
+
+    // 3. Calculate running balance chronologically forward from genesis (0.0)
+    var runningBalance = 0.0;
+    final chronologicalRecords = <StockMovementRecord>[];
+    for (final entry in itemIndexedMovements) {
+      runningBalance += entry.movement.quantityDelta;
+      chronologicalRecords.add(
+        StockMovementRecord(
+          movement: entry.movement,
+          runningBalance: runningBalance,
+        ),
+      );
+    }
+
+    // 4. Return newest first (reversed) as an unmodifiable list
+    return List.unmodifiable(chronologicalRecords.reversed);
   }
 }
