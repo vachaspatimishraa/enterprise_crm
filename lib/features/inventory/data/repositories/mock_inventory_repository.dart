@@ -12,6 +12,7 @@ import '../../domain/entities/stock_movement.dart';
 import '../../domain/entities/stock_movement_type.dart';
 import '../../domain/exceptions/inventory_exception.dart';
 import '../../domain/inputs/adjust_inventory_stock_input.dart';
+import '../../domain/inputs/adjust_inventory_stock_to_target_input.dart';
 import '../../domain/inputs/create_inventory_item_input.dart';
 import '../../domain/inputs/record_opening_stock_input.dart';
 import '../../domain/inputs/update_inventory_item_input.dart';
@@ -29,6 +30,7 @@ class MockInventoryRepository implements InventoryRepository {
   final DateTime Function() _nowProvider;
   final bool Function(String sku)? _simulateMovementFailure;
   final bool Function(String itemId)? _hasExternalReference;
+  final bool Function(String userId)? _canManageStock;
   final Map<String, PendingInventoryDeletion> _pendingDeletions = {};
   final Set<String> _retiredItemIds = {};
 
@@ -38,13 +40,15 @@ class MockInventoryRepository implements InventoryRepository {
     DateTime Function()? nowProvider,
     bool Function(String sku)? simulateMovementFailure,
     bool Function(String itemId)? hasExternalReference,
+    bool Function(String userId)? canManageStock,
   }) : _items = List.of(items ?? MockInventorySeedData.createDefaultItems()),
        _movements = List.of(
          movements ?? MockInventorySeedData.createDefaultMovements(),
        ),
        _nowProvider = nowProvider ?? DateTime.now,
        _simulateMovementFailure = simulateMovementFailure,
-       _hasExternalReference = hasExternalReference {
+       _hasExternalReference = hasExternalReference,
+       _canManageStock = canManageStock {
     _validateInvariants();
   }
 
@@ -277,12 +281,17 @@ class MockInventoryRepository implements InventoryRepository {
     final newItem = InventoryItem(id: id, name: trimmedName, sku: trimmedSku);
 
     if (input.openingStock != null) {
+      final trimmedActor = input.performedByUserId?.trim() ?? '';
+      if (_canManageStock != null && !_canManageStock(trimmedActor)) {
+        throw const InventoryAuthorizationException(
+          'You do not have permission to set opening stock.',
+        );
+      }
       if (!input.openingStock!.isFinite || input.openingStock! <= 0) {
         throw const InventoryValidationException(
           'Opening stock must be greater than zero.',
         );
       }
-      final trimmedActor = input.performedByUserId?.trim() ?? '';
       if (trimmedActor.isEmpty) {
         throw const InventoryValidationException('User ID cannot be blank.');
       }
@@ -403,6 +412,12 @@ class MockInventoryRepository implements InventoryRepository {
       throw const InventoryValidationException('User ID cannot be blank.');
     }
 
+    if (_canManageStock != null && !_canManageStock(trimmedActor)) {
+      throw const InventoryAuthorizationException(
+        'User does not have permission to set opening stock.',
+      );
+    }
+
     if (!input.quantity.isFinite || input.quantity <= 0) {
       throw const InventoryValidationException(
         'Opening quantity must be a finite number greater than zero.',
@@ -462,6 +477,12 @@ class MockInventoryRepository implements InventoryRepository {
       throw const InventoryValidationException('User ID cannot be blank.');
     }
 
+    if (_canManageStock != null && !_canManageStock(trimmedActor)) {
+      throw const InventoryAuthorizationException(
+        'User does not have permission to adjust stock.',
+      );
+    }
+
     if (!input.quantityDelta.isFinite || input.quantityDelta == 0) {
       throw const InventoryValidationException(
         'Adjustment quantity must be a non-zero finite number.',
@@ -499,6 +520,94 @@ class MockInventoryRepository implements InventoryRepository {
       inventoryItemId: input.itemId,
       type: StockMovementType.adjustment,
       quantityDelta: input.quantityDelta,
+      createdAt: _nowProvider(),
+      performedByUserId: trimmedActor,
+      reason: trimmedReason,
+    );
+
+    _movements.add(movement);
+
+    return InventoryStockMutationResult(
+      movement: movement,
+      item: InventoryItemSummary(
+        item: matchingItem,
+        quantityOnHand: _deriveQuantityOnHand(input.itemId),
+      ),
+    );
+  }
+
+  @override
+  Future<InventoryStockMutationResult> adjustStockToTarget(
+    AdjustInventoryStockToTargetInput input,
+  ) async {
+    _purgeExpiredDeletionsInternal();
+    if (_isPendingDeletion(input.itemId)) {
+      throw const InventoryDeletionConflictException(
+        'Cannot adjust stock for an item that is pending deletion.',
+      );
+    }
+    final matchingItem = _items.where((i) => i.id == input.itemId).firstOrNull;
+    if (matchingItem == null) {
+      throw InventoryItemNotFoundException(
+        'Inventory item with ID "${input.itemId}" not found.',
+      );
+    }
+
+    final trimmedActor = input.performedByUserId.trim();
+    if (trimmedActor.isEmpty) {
+      throw const InventoryValidationException('User ID cannot be blank.');
+    }
+
+    if (_canManageStock != null && !_canManageStock(trimmedActor)) {
+      throw const InventoryAuthorizationException(
+        'User does not have permission to adjust stock.',
+      );
+    }
+
+    if (!input.targetQuantity.isFinite || input.targetQuantity < 0) {
+      throw const InventoryValidationException(
+        'Target quantity must be a finite number greater than or equal to zero.',
+      );
+    }
+
+    final trimmedReason = input.reason.trim();
+    if (trimmedReason.isEmpty) {
+      throw const InventoryValidationException(
+        'Adjustment reason cannot be blank.',
+      );
+    }
+
+    final hasExistingMovements = _movements.any(
+      (m) => m.inventoryItemId == input.itemId,
+    );
+    if (!hasExistingMovements) {
+      throw const InventoryUninitializedStockException(
+        'Stock must be initialized before manual adjustments can be applied.',
+      );
+    }
+
+    // Atomic write-time calculation against current authoritative movement balance
+    final latestBalance = _deriveQuantityOnHand(input.itemId);
+    final delta = input.targetQuantity - latestBalance;
+
+    if (delta == 0.0) {
+      throw const InventoryStockUnchangedException(
+        'The stock quantity is already at this value.',
+      );
+    }
+
+    if (latestBalance + delta < 0) {
+      throw InventoryNegativeStockException(
+        'Adjustment would result in negative stock ($latestBalance -> ${latestBalance + delta}).',
+      );
+    }
+
+    final id = _generateNextDeterministicMovementId();
+    final movement = StockMovement(
+      id: id,
+      inventoryItemId: input.itemId,
+      type: StockMovementType.adjustment,
+      quantityDelta: delta,
       createdAt: _nowProvider(),
       performedByUserId: trimmedActor,
       reason: trimmedReason,

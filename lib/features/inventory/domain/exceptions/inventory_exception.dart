@@ -64,3 +64,19 @@ class InventoryDeletionConflictException extends InventoryException {
         'The requested deletion operation conflicts with the current item state.',
   ]);
 }
+
+/// Thrown when an inventory operation is rejected due to insufficient permissions.
+class InventoryAuthorizationException extends InventoryException {
+  const InventoryAuthorizationException([
+    super.message =
+        'You do not have permission to perform this inventory action.',
+  ]);
+}
+
+/// Thrown when an adjustment target quantity equals the current derived balance.
+class InventoryStockUnchangedException extends InventoryException {
+  const InventoryStockUnchangedException([
+    super.message = 'The stock quantity is already at this value.',
+  ]);
+}
+

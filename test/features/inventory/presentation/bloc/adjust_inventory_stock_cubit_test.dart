@@ -10,6 +10,7 @@ import 'package:enterprise_crm/features/inventory/domain/entities/stock_movement
 import 'package:enterprise_crm/features/inventory/domain/entities/stock_movement_type.dart';
 import 'package:enterprise_crm/features/inventory/domain/exceptions/inventory_exception.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/adjust_inventory_stock_input.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/adjust_inventory_stock_to_target_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/create_inventory_item_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/record_opening_stock_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/update_inventory_item_input.dart';
@@ -27,13 +28,19 @@ class _CustomInventoryRepository implements InventoryRepository {
     AdjustInventoryStockInput,
   )?
   onAdjustStock;
+  final Future<InventoryStockMutationResult> Function(
+    AdjustInventoryStockToTargetInput,
+  )?
+  onAdjustStockToTarget;
 
   int adjustStockCalls = 0;
+  int adjustStockToTargetCalls = 0;
 
   _CustomInventoryRepository({
     this.onGetItemById,
     this.onHasStockMovements,
     this.onAdjustStock,
+    this.onAdjustStockToTarget,
   });
 
   @override
@@ -72,6 +79,15 @@ class _CustomInventoryRepository implements InventoryRepository {
     adjustStockCalls++;
     if (onAdjustStock != null) return onAdjustStock!(input);
     throw Exception('Default adjust failure');
+  }
+
+  @override
+  Future<InventoryStockMutationResult> adjustStockToTarget(
+    AdjustInventoryStockToTargetInput input,
+  ) {
+    adjustStockToTargetCalls++;
+    if (onAdjustStockToTarget != null) return onAdjustStockToTarget!(input);
+    throw Exception('Default adjustToTarget failure');
   }
 
   @override
@@ -574,6 +590,209 @@ void main() {
 
       await Future.wait([firstCall, secondCall]);
       expect(customRepo.adjustStockCalls, 1);
+    });
+  });
+
+  group('AdjustInventoryStockCubit — submitToTarget', () {
+    final sampleItem = InventoryItem(
+      id: 'item_001',
+      name: 'Initialized Item',
+      sku: 'SKU-001',
+    );
+    final sampleSummary = InventoryItemSummary(
+      item: sampleItem,
+      quantityOnHand: 50.0,
+    );
+
+    test('submitToTarget rejects negative target quantity', () async {
+      final customRepo = _CustomInventoryRepository();
+      final cubit = AdjustInventoryStockCubit(customRepo);
+
+      await cubit.submitToTarget(
+        itemId: 'item_001',
+        targetQuantity: -1.0,
+        reason: 'Cycle count',
+        performedByUserId: 'user_admin',
+      );
+
+      expect(customRepo.adjustStockToTargetCalls, 0);
+      expect(
+        cubit.state,
+        isA<AdjustInventoryStockFailure>().having(
+          (s) => s.message,
+          'message',
+          contains('Target quantity must be zero or greater'),
+        ),
+      );
+    });
+
+    test('submitToTarget rejects blank reason', () async {
+      final customRepo = _CustomInventoryRepository();
+      final cubit = AdjustInventoryStockCubit(customRepo);
+
+      await cubit.submitToTarget(
+        itemId: 'item_001',
+        targetQuantity: 100.0,
+        reason: '   ',
+        performedByUserId: 'user_admin',
+      );
+
+      expect(customRepo.adjustStockToTargetCalls, 0);
+      expect(
+        cubit.state,
+        isA<AdjustInventoryStockFailure>().having(
+          (s) => s.message,
+          'message',
+          contains('Reason is required'),
+        ),
+      );
+    });
+
+    test('submitToTarget rejects blank user ID', () async {
+      final customRepo = _CustomInventoryRepository();
+      final cubit = AdjustInventoryStockCubit(customRepo);
+
+      await cubit.submitToTarget(
+        itemId: 'item_001',
+        targetQuantity: 100.0,
+        reason: 'Cycle count',
+        performedByUserId: '   ',
+      );
+
+      expect(customRepo.adjustStockToTargetCalls, 0);
+      expect(
+        cubit.state,
+        isA<AdjustInventoryStockFailure>().having(
+          (s) => s.message,
+          'message',
+          contains('User ID cannot be blank'),
+        ),
+      );
+    });
+
+    test('submitToTarget success emits Submitting then Success', () async {
+      final movement = StockMovement(
+        id: 'mov_200',
+        inventoryItemId: 'item_001',
+        type: StockMovementType.adjustment,
+        quantityDelta: 50.0,
+        createdAt: DateTime.utc(2026, 1, 1),
+        performedByUserId: 'user_admin',
+        reason: 'Cycle count correction',
+      );
+      final updatedSummary = InventoryItemSummary(
+        item: sampleItem,
+        quantityOnHand: 100.0,
+      );
+
+      AdjustInventoryStockToTargetInput? capturedInput;
+      final customRepo = _CustomInventoryRepository(
+        onGetItemById: (id) async => sampleSummary,
+        onHasStockMovements: (id) async => true,
+        onAdjustStockToTarget: (input) async {
+          capturedInput = input;
+          return InventoryStockMutationResult(
+            movement: movement,
+            item: updatedSummary,
+          );
+        },
+      );
+
+      final cubit = AdjustInventoryStockCubit(customRepo);
+      await cubit.load('item_001');
+
+      expectLater(
+        cubit.stream,
+        emitsInOrder([
+          isA<AdjustInventoryStockSubmitting>(),
+          isA<AdjustInventoryStockSuccess>().having(
+            (s) => s.result.item.quantityOnHand,
+            'quantityOnHand',
+            100.0,
+          ),
+        ]),
+      );
+
+      await cubit.submitToTarget(
+        itemId: 'item_001',
+        targetQuantity: 100.0,
+        reason: '  Cycle count correction  ',
+        performedByUserId: 'user_admin_01',
+      );
+
+      expect(capturedInput?.targetQuantity, 100.0);
+      expect(capturedInput?.reason, 'Cycle count correction');
+      expect(capturedInput?.performedByUserId, 'user_admin_01');
+    });
+
+    test('submitToTarget maps InventoryStockUnchangedException', () async {
+      final customRepo = _CustomInventoryRepository(
+        onGetItemById: (id) async => sampleSummary,
+        onHasStockMovements: (id) async => true,
+        onAdjustStockToTarget: (input) =>
+            throw const InventoryStockUnchangedException('No change'),
+      );
+      final cubit = AdjustInventoryStockCubit(customRepo);
+      await cubit.load('item_001');
+
+      await cubit.submitToTarget(
+        itemId: 'item_001',
+        targetQuantity: 50.0,
+        reason: 'Cycle count',
+        performedByUserId: 'user_admin',
+      );
+
+      expect(
+        cubit.state,
+        isA<AdjustInventoryStockFailure>().having(
+          (s) => s.message,
+          'message',
+          'Stock is already at that quantity.',
+        ),
+      );
+    });
+
+    test('submitToTarget double-submit prevention', () async {
+      final completer = Completer<InventoryStockMutationResult>();
+      final customRepo = _CustomInventoryRepository(
+        onGetItemById: (id) async => sampleSummary,
+        onHasStockMovements: (id) async => true,
+        onAdjustStockToTarget: (input) => completer.future,
+      );
+
+      final cubit = AdjustInventoryStockCubit(customRepo);
+      await cubit.load('item_001');
+
+      final firstCall = cubit.submitToTarget(
+        itemId: 'item_001',
+        targetQuantity: 80.0,
+        reason: 'Recount',
+        performedByUserId: 'user_admin',
+      );
+      final secondCall = cubit.submitToTarget(
+        itemId: 'item_001',
+        targetQuantity: 80.0,
+        reason: 'Recount',
+        performedByUserId: 'user_admin',
+      );
+
+      completer.complete(
+        InventoryStockMutationResult(
+          movement: StockMovement(
+            id: 'mov_2',
+            inventoryItemId: 'item_001',
+            type: StockMovementType.adjustment,
+            quantityDelta: 30.0,
+            createdAt: DateTime.utc(2026, 1, 1),
+            performedByUserId: 'user_admin',
+            reason: 'Recount',
+          ),
+          item: sampleSummary,
+        ),
+      );
+
+      await Future.wait([firstCall, secondCall]);
+      expect(customRepo.adjustStockToTargetCalls, 1);
     });
   });
 }

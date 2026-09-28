@@ -12,6 +12,7 @@ import 'package:enterprise_crm/features/inventory/domain/entities/inventory_quer
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_stock_mutation_result.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/pending_inventory_deletion.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/adjust_inventory_stock_input.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/adjust_inventory_stock_to_target_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/create_inventory_item_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/record_opening_stock_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/update_inventory_item_input.dart';
@@ -54,6 +55,11 @@ class _StrictZeroCallRepository implements InventoryRepository {
   @override
   Future<InventoryStockMutationResult> adjustStock(
     AdjustInventoryStockInput input,
+  ) => throw AssertionError('Zero calls expected');
+
+  @override
+  Future<InventoryStockMutationResult> adjustStockToTarget(
+    AdjustInventoryStockToTargetInput input,
   ) => throw AssertionError('Zero calls expected');
 
   @override

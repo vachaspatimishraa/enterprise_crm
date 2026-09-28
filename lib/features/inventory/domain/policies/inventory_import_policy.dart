@@ -34,4 +34,16 @@ abstract final class InventoryImportPolicy {
   static bool canImport(CurrentUser user) {
     return canImportCsv(user) || canImportXlsx(user);
   }
+
+  /// Evaluates whether [user] is authorized to import items with nonblank opening stock.
+  ///
+  /// Standard users require `CrmModule.inventory`, `inventory.view`, and `inventory.stock.manage`.
+  static bool canImportWithStock(CurrentUser user) {
+    if (user.isAdmin) {
+      return true;
+    }
+    return AccessPolicy.canAccessModule(user, CrmModule.inventory) &&
+        AccessPolicy.hasPermission(user, CrmPermissions.inventoryView) &&
+        AccessPolicy.hasPermission(user, CrmPermissions.inventoryStockManage);
+  }
 }

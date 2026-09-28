@@ -12,6 +12,7 @@ abstract final class CrmPermissionPresentation {
     CrmPermissions.inventoryCreate: 'Create inventory items',
     CrmPermissions.inventoryEdit: 'Edit inventory items',
     CrmPermissions.inventoryDelete: 'Delete inventory items',
+    CrmPermissions.inventoryStockManage: 'Manage Stock Quantity',
     CrmPermissions.inventoryImportCsv: 'Import inventory (CSV)',
     CrmPermissions.inventoryImportXlsx: 'Import inventory (Excel)',
     CrmPermissions.purchaseView: 'View purchases',

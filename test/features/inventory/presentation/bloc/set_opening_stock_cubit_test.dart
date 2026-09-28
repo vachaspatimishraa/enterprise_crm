@@ -10,6 +10,7 @@ import 'package:enterprise_crm/features/inventory/domain/entities/stock_movement
 import 'package:enterprise_crm/features/inventory/domain/entities/stock_movement_type.dart';
 import 'package:enterprise_crm/features/inventory/domain/exceptions/inventory_exception.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/adjust_inventory_stock_input.dart';
+import 'package:enterprise_crm/features/inventory/domain/inputs/adjust_inventory_stock_to_target_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/create_inventory_item_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/record_opening_stock_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/update_inventory_item_input.dart';
@@ -70,6 +71,11 @@ class _CustomInventoryRepository implements InventoryRepository {
   @override
   Future<InventoryStockMutationResult> adjustStock(
     AdjustInventoryStockInput input,
+  ) => throw UnimplementedError();
+
+  @override
+  Future<InventoryStockMutationResult> adjustStockToTarget(
+    AdjustInventoryStockToTargetInput input,
   ) => throw UnimplementedError();
 
   @override
