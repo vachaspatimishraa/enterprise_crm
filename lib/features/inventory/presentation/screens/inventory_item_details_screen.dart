@@ -7,6 +7,7 @@ import '../../../auth/domain/policies/access_policy.dart';
 import '../../../auth/domain/policies/crm_permissions.dart';
 import '../../../auth/presentation/screens/access_restricted_screen.dart';
 import '../../domain/entities/inventory_item.dart';
+import '../../domain/entities/inventory_item_summary.dart';
 import '../../domain/exceptions/inventory_exception.dart';
 import '../../domain/policies/inventory_deletion_policy.dart';
 import '../../domain/policies/inventory_item_administration_policy.dart';
@@ -19,6 +20,7 @@ import '../widgets/delete_inventory_item_dialog.dart';
 import 'adjust_inventory_stock_screen.dart';
 import 'edit_inventory_item_screen.dart';
 import 'set_opening_stock_screen.dart';
+import 'stock_movement_history_screen.dart';
 
 /// Read-only item details screen for a specific inventory product.
 ///
@@ -115,6 +117,23 @@ class _InventoryItemDetailsView extends StatelessWidget {
     }
   }
 
+  void _openStockHistory(
+    BuildContext context,
+    String itemId, {
+    InventoryItemSummary? summary,
+  }) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StockMovementHistoryScreen(
+          user: user,
+          repository: repository,
+          itemId: itemId,
+          itemSummary: summary,
+        ),
+      ),
+    );
+  }
+
   void _confirmDelete(
     BuildContext context,
     InventoryItem item,
@@ -202,6 +221,16 @@ class _InventoryItemDetailsView extends StatelessWidget {
                 return Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    IconButton(
+                      key: const Key('inventory_details_stock_history_button'),
+                      icon: const Icon(Icons.history),
+                      tooltip: 'Stock History',
+                      onPressed: () => _openStockHistory(
+                        context,
+                        state.summary.item.id,
+                        summary: state.summary,
+                      ),
+                    ),
                     if (canEdit)
                       Padding(
                         padding: const EdgeInsets.only(right: 8.0),
@@ -551,6 +580,23 @@ class _InventoryItemDetailsView extends StatelessWidget {
                                   ],
                                 );
                               },
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              key: const Key(
+                                'inventory_details_view_history_button',
+                              ),
+                              icon: const Icon(Icons.history, size: 18),
+                              label: const Text('View Stock History'),
+                              onPressed: () => _openStockHistory(
+                                context,
+                                item.id,
+                                summary: summary,
+                              ),
                             ),
                           ),
 
