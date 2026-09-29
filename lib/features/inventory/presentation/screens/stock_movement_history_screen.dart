@@ -14,6 +14,9 @@ import '../bloc/stock_movement_history_cubit.dart';
 import '../bloc/stock_movement_history_state.dart';
 import '../utils/inventory_display_formatters.dart';
 
+/// Available local filter options for stock movement history presentation.
+enum StockMovementFilter { all, openingStock, adjustment }
+
 /// Screen presenting the read-only chronological stock movement history and running balances.
 ///
 /// Protected by pre-Cubit authorization check (Admin or `inventory.view` on `CrmModule.inventory`).
@@ -61,7 +64,7 @@ class StockMovementHistoryScreen extends StatelessWidget {
   }
 }
 
-class _StockMovementHistoryView extends StatelessWidget {
+class _StockMovementHistoryView extends StatefulWidget {
   final CurrentUser user;
   final InventoryRepository repository;
   final String itemId;
@@ -73,6 +76,14 @@ class _StockMovementHistoryView extends StatelessWidget {
     required this.itemId,
     this.initialSummary,
   });
+
+  @override
+  State<_StockMovementHistoryView> createState() =>
+      _StockMovementHistoryViewState();
+}
+
+class _StockMovementHistoryViewState extends State<_StockMovementHistoryView> {
+  StockMovementFilter _selectedFilter = StockMovementFilter.all;
 
   @override
   Widget build(BuildContext context) {
@@ -127,7 +138,7 @@ class _StockMovementHistoryView extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'The item with ID "$itemId" does not exist in inventory.',
+                      'The item with ID "${widget.itemId}" does not exist in inventory.',
                       key: const Key('stock_history_not_found_message'),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
@@ -187,15 +198,15 @@ class _StockMovementHistoryView extends StatelessWidget {
           // State is empty or loaded. Dynamically retrieve item metadata if not passed.
           return FutureBuilder<InventoryItemSummary?>(
             future:
-                initialSummary != null
-                    ? Future.value(initialSummary)
-                    : repository.getItemById(itemId),
+                widget.initialSummary != null
+                    ? Future.value(widget.initialSummary)
+                    : widget.repository.getItemById(widget.itemId),
             builder: (context, snapshot) {
-              final summary = snapshot.data ?? initialSummary;
-              final itemName = summary?.item.name ?? 'Item $itemId';
+              final summary = snapshot.data ?? widget.initialSummary;
+              final itemName = summary?.item.name ?? 'Item ${widget.itemId}';
               final itemSku = summary?.item.sku ?? '—';
 
-              // Authoritative current balance dynamically derived from the latest ledger movement:
+              // Authoritative current balance dynamically derived from the latest ledger movement, independent of filter:
               final double currentQuantity;
               if (state is StockMovementHistoryLoaded) {
                 currentQuantity =
@@ -204,6 +215,37 @@ class _StockMovementHistoryView extends StatelessWidget {
                         : (summary?.quantityOnHand ?? 0.0);
               } else {
                 currentQuantity = summary?.quantityOnHand ?? 0.0;
+              }
+
+              final isLoaded = state is StockMovementHistoryLoaded;
+              final List<StockMovementRecord> visibleRecords;
+              if (isLoaded) {
+                final completeRecords =
+                    state.records;
+                switch (_selectedFilter) {
+                  case StockMovementFilter.all:
+                    visibleRecords = completeRecords;
+                  case StockMovementFilter.openingStock:
+                    visibleRecords =
+                        completeRecords
+                            .where(
+                              (r) =>
+                                  r.movement.type ==
+                                  StockMovementType.openingStock,
+                            )
+                            .toList();
+                  case StockMovementFilter.adjustment:
+                    visibleRecords =
+                        completeRecords
+                            .where(
+                              (r) =>
+                                  r.movement.type ==
+                                  StockMovementType.adjustment,
+                            )
+                            .toList();
+                }
+              } else {
+                visibleRecords = const [];
               }
 
               return Center(
@@ -222,15 +264,60 @@ class _StockMovementHistoryView extends StatelessWidget {
                           itemSku: itemSku,
                           currentQuantity: currentQuantity,
                         ),
-                        const SizedBox(height: 16),
+                        if (isLoaded) ...[
+                          const SizedBox(height: 12),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: SegmentedButton<StockMovementFilter>(
+                              key: const Key(
+                                'stock_history_filter_segmented_button',
+                              ),
+                              showSelectedIcon: false,
+                              segments: const [
+                                ButtonSegment(
+                                  value: StockMovementFilter.all,
+                                  label: Text(
+                                    'All Movements',
+                                    key: Key('stock_history_filter_all'),
+                                  ),
+                                ),
+                                ButtonSegment(
+                                  value: StockMovementFilter.openingStock,
+                                  label: Text(
+                                    'Opening Stock',
+                                    key: Key(
+                                      'stock_history_filter_opening_stock',
+                                    ),
+                                  ),
+                                ),
+                                ButtonSegment(
+                                  value: StockMovementFilter.adjustment,
+                                  label: Text(
+                                    'Adjustment',
+                                    key: Key('stock_history_filter_adjustment'),
+                                  ),
+                                ),
+                              ],
+                              selected: {_selectedFilter},
+                              onSelectionChanged: (newSelection) {
+                                setState(() {
+                                  _selectedFilter = newSelection.first;
+                                });
+                              },
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
                         Expanded(
                           child:
-                              state is StockMovementHistoryEmpty
+                              !isLoaded
                                   ? const _StockHistoryEmptyView()
+                                  : visibleRecords.isEmpty
+                                  ? _StockHistoryFilterEmptyView(
+                                    filter: _selectedFilter,
+                                  )
                                   : _StockHistoryListView(
-                                    records:
-                                        (state as StockMovementHistoryLoaded)
-                                            .records,
+                                    records: visibleRecords,
                                   ),
                         ),
                       ],
@@ -389,6 +476,59 @@ class _StockHistoryEmptyView extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Movements will appear here once opening stock or adjustments are recorded.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.outline,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StockHistoryFilterEmptyView extends StatelessWidget {
+  final StockMovementFilter filter;
+
+  const _StockHistoryFilterEmptyView({required this.filter});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final message = switch (filter) {
+      StockMovementFilter.openingStock => 'No opening stock movements found.',
+      StockMovementFilter.adjustment => 'No adjustment movements found.',
+      StockMovementFilter.all => 'No stock movements recorded yet.',
+    };
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 32.0, horizontal: 24.0),
+        child: Column(
+          key: const Key('stock_history_filter_empty_view'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.filter_list_off,
+              size: 48,
+              color: colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              key: const Key('stock_history_filter_empty_message'),
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Switch to "All Movements" or choose a different filter to view other records.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colorScheme.outline,
               ),

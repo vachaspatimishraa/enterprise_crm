@@ -30,6 +30,17 @@ class _FailingInventoryRepository extends MockInventoryRepository {
   }
 }
 
+class _SpyInventoryRepository extends MockInventoryRepository {
+  int getStockMovementsCalls = 0;
+  _SpyInventoryRepository({super.items, super.movements});
+
+  @override
+  Future<List<StockMovementRecord>> getStockMovements(String itemId) {
+    getStockMovementsCalls++;
+    return super.getStockMovements(itemId);
+  }
+}
+
 void main() {
   group('StockMovementHistoryScreen Widget Tests', () {
     final adminUser = CurrentUser(
@@ -129,6 +140,9 @@ void main() {
       expect(find.byKey(const Key('stock_history_item_current_quantity')), findsOneWidget);
       expect(find.text('35'), findsOneWidget);
 
+      // Filter control
+      expect(find.byKey(const Key('stock_history_filter_segmented_button')), findsOneWidget);
+
       // List of movements (newest first: mov_2 then mov_1)
       expect(find.byKey(const Key('stock_history_list')), findsOneWidget);
       expect(find.byKey(const Key('stock_movement_card_mov_2')), findsOneWidget);
@@ -136,7 +150,7 @@ void main() {
 
       // Verify mov_2 (Adjustment)
       expect(find.byKey(const Key('movement_type_mov_2')), findsOneWidget);
-      expect(find.text('Adjustment'), findsOneWidget);
+      expect((tester.widget(find.byKey(const Key('movement_type_mov_2'))) as Text).data, 'Adjustment');
       expect(find.text('-15'), findsOneWidget);
       expect(find.text('Balance: 35'), findsOneWidget);
       expect(find.text('usr_admin'), findsOneWidget);
@@ -144,7 +158,7 @@ void main() {
 
       // Verify mov_1 (Opening Stock, null actor, null reason)
       expect(find.byKey(const Key('movement_type_mov_1')), findsOneWidget);
-      expect(find.text('Opening Stock'), findsOneWidget);
+      expect((tester.widget(find.byKey(const Key('movement_type_mov_1'))) as Text).data, 'Opening Stock');
       expect(find.text('+50'), findsOneWidget);
       expect(find.text('Balance: 50'), findsOneWidget);
       expect(find.text('Not recorded'), findsOneWidget);
@@ -173,6 +187,7 @@ void main() {
 
       expect(find.byKey(const Key('stock_history_empty_view')), findsOneWidget);
       expect(find.text('No stock movements recorded yet.'), findsOneWidget);
+      expect(find.byKey(const Key('stock_history_filter_segmented_button')), findsNothing);
     });
 
     testWidgets('not found state displays informative view and back button pops navigator', (tester) async {
@@ -326,7 +341,270 @@ void main() {
       expect(find.byKey(const Key('stock_movement_card_mov_pnd')), findsOneWidget);
     });
 
-    testWidgets('renders cleanly without overflow across responsive screen sizes', (tester) async {
+    group('INVENTORY-5.3B Movement Type Filtering Tests', () {
+      final multiMovementItem = InventoryItem(
+        id: 'item_multi',
+        name: 'Multi Movement Item',
+        sku: 'MM-001',
+      );
+      final multiMovements = [
+        StockMovement(
+          id: 'mov_open',
+          inventoryItemId: 'item_multi',
+          type: StockMovementType.openingStock,
+          quantityDelta: 50.0,
+          createdAt: DateTime.utc(2026, 1, 1, 10, 0),
+          performedByUserId: 'usr_admin',
+          reason: 'Initial intake',
+        ),
+        StockMovement(
+          id: 'mov_adj_1',
+          inventoryItemId: 'item_multi',
+          type: StockMovementType.adjustment,
+          quantityDelta: 20.0,
+          createdAt: DateTime.utc(2026, 1, 2, 11, 0),
+          performedByUserId: 'usr_admin',
+          reason: 'Stock received',
+        ),
+        StockMovement(
+          id: 'mov_adj_2',
+          inventoryItemId: 'item_multi',
+          type: StockMovementType.adjustment,
+          quantityDelta: -10.0,
+          createdAt: DateTime.utc(2026, 1, 3, 12, 0),
+          performedByUserId: 'usr_manager',
+          reason: 'Physical loss',
+        ),
+      ];
+
+      testWidgets(
+        'All Movements filter is selected by default and renders all movements newest-first',
+        (tester) async {
+          final repo = MockInventoryRepository(
+            items: [multiMovementItem],
+            movements: multiMovements,
+          );
+
+          await tester.pumpWidget(
+            MaterialApp(
+              home: StockMovementHistoryScreen(
+                user: authorizedViewer,
+                repository: repo,
+                itemId: 'item_multi',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // Header quantity = 50 + 20 - 10 = 60
+          expect(find.text('60'), findsOneWidget);
+
+          // All 3 movements visible in newest-first order
+          expect(find.byKey(const Key('stock_movement_card_mov_adj_2')), findsOneWidget);
+          expect(find.byKey(const Key('stock_movement_card_mov_adj_1')), findsOneWidget);
+          expect(find.byKey(const Key('stock_movement_card_mov_open')), findsOneWidget);
+
+          // Check running balance invariant on all cards
+          expect(find.text('Balance: 60'), findsOneWidget); // mov_adj_2
+          expect(find.text('Balance: 70'), findsOneWidget); // mov_adj_1
+          expect(find.text('Balance: 50'), findsOneWidget); // mov_open
+        },
+      );
+
+      testWidgets(
+        'Opening Stock filter displays only openingStock and preserves running balance & header quantity',
+        (tester) async {
+          final repo = _SpyInventoryRepository(
+            items: [multiMovementItem],
+            movements: multiMovements,
+          );
+
+          await tester.pumpWidget(
+            MaterialApp(
+              home: StockMovementHistoryScreen(
+                user: authorizedViewer,
+                repository: repo,
+                itemId: 'item_multi',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(repo.getStockMovementsCalls, 1);
+
+          // Select Opening Stock filter
+          await tester.tap(find.byKey(const Key('stock_history_filter_opening_stock')));
+          await tester.pumpAndSettle();
+
+          // Repository is NOT called again (local filtering)
+          expect(repo.getStockMovementsCalls, 1);
+
+          // Header quantity remains authoritative current quantity (60), NOT opening stock quantity (50)
+          expect(find.text('60'), findsOneWidget);
+
+          // Only opening stock card is visible
+          expect(find.byKey(const Key('stock_movement_card_mov_open')), findsOneWidget);
+          expect(find.byKey(const Key('stock_movement_card_mov_adj_1')), findsNothing);
+          expect(find.byKey(const Key('stock_movement_card_mov_adj_2')), findsNothing);
+
+          // Running balance of opening stock card remains unchanged (50)
+          expect(find.text('Balance: 50'), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'Adjustment filter displays only adjustment movements newest-first with unchanged running balances',
+        (tester) async {
+          final repo = _SpyInventoryRepository(
+            items: [multiMovementItem],
+            movements: multiMovements,
+          );
+
+          await tester.pumpWidget(
+            MaterialApp(
+              home: StockMovementHistoryScreen(
+                user: authorizedViewer,
+                repository: repo,
+                itemId: 'item_multi',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // Select Adjustment filter
+          await tester.tap(find.byKey(const Key('stock_history_filter_adjustment')));
+          await tester.pumpAndSettle();
+
+          // Zero additional repository calls
+          expect(repo.getStockMovementsCalls, 1);
+
+          // Header quantity remains authoritative current balance (60)
+          expect(find.text('60'), findsOneWidget);
+
+          // Adjustment cards are visible newest-first
+          expect(find.byKey(const Key('stock_movement_card_mov_adj_2')), findsOneWidget);
+          expect(find.byKey(const Key('stock_movement_card_mov_adj_1')), findsOneWidget);
+          expect(find.byKey(const Key('stock_movement_card_mov_open')), findsNothing);
+
+          // Individual authoritative balances preserved (60 and 70)
+          expect(find.text('Balance: 60'), findsOneWidget);
+          expect(find.text('Balance: 70'), findsOneWidget);
+
+          // Switching back to All Movements restores all records
+          await tester.tap(find.byKey(const Key('stock_history_filter_all')));
+          await tester.pumpAndSettle();
+
+          expect(find.byKey(const Key('stock_movement_card_mov_adj_2')), findsOneWidget);
+          expect(find.byKey(const Key('stock_movement_card_mov_adj_1')), findsOneWidget);
+          expect(find.byKey(const Key('stock_movement_card_mov_open')), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'filter-specific empty state displays when selected filter has no matches and allows switching back',
+        (tester) async {
+          final singleOpenItem = InventoryItem(
+            id: 'item_open_only',
+            name: 'Opening Stock Only Item',
+            sku: 'OPEN-001',
+          );
+          final openOnlyMovements = [
+            StockMovement(
+              id: 'mov_single_open',
+              inventoryItemId: 'item_open_only',
+              type: StockMovementType.openingStock,
+              quantityDelta: 25.0,
+              createdAt: DateTime.utc(2026, 1, 1, 10, 0),
+            ),
+          ];
+
+          final repo = MockInventoryRepository(
+            items: [singleOpenItem],
+            movements: openOnlyMovements,
+          );
+
+          await tester.pumpWidget(
+            MaterialApp(
+              home: StockMovementHistoryScreen(
+                user: authorizedViewer,
+                repository: repo,
+                itemId: 'item_open_only',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // Header shows 25
+          expect(find.text('25'), findsOneWidget);
+          expect(find.byKey(const Key('stock_movement_card_mov_single_open')), findsOneWidget);
+
+          // Select Adjustment filter -> no adjustment movements exist
+          await tester.tap(find.byKey(const Key('stock_history_filter_adjustment')));
+          await tester.pumpAndSettle();
+
+          // Header still shows current balance 25
+          expect(find.text('25'), findsOneWidget);
+          expect(find.byKey(const Key('stock_history_header_card')), findsOneWidget);
+          expect(find.byKey(const Key('stock_history_filter_segmented_button')), findsOneWidget);
+
+          // Filter-specific empty view
+          expect(find.byKey(const Key('stock_history_filter_empty_view')), findsOneWidget);
+          expect(find.text('No adjustment movements found.'), findsOneWidget);
+          expect(find.byKey(const Key('stock_movement_card_mov_single_open')), findsNothing);
+
+          // Switch back to All Movements -> restores opening stock movement
+          await tester.tap(find.byKey(const Key('stock_history_filter_all')));
+          await tester.pumpAndSettle();
+
+          expect(find.byKey(const Key('stock_history_filter_empty_view')), findsNothing);
+          expect(find.byKey(const Key('stock_movement_card_mov_single_open')), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'filter-specific empty state for missing opening stock',
+        (tester) async {
+          final adjOnlyItem = InventoryItem(
+            id: 'item_adj_only',
+            name: 'Adjustment Only Item',
+            sku: 'ADJ-001',
+          );
+          final adjOnlyMovements = [
+            StockMovement(
+              id: 'mov_single_adj',
+              inventoryItemId: 'item_adj_only',
+              type: StockMovementType.adjustment,
+              quantityDelta: 10.0,
+              createdAt: DateTime.utc(2026, 1, 1, 10, 0),
+            ),
+          ];
+
+          final repo = MockInventoryRepository(
+            items: [adjOnlyItem],
+            movements: adjOnlyMovements,
+          );
+
+          await tester.pumpWidget(
+            MaterialApp(
+              home: StockMovementHistoryScreen(
+                user: authorizedViewer,
+                repository: repo,
+                itemId: 'item_adj_only',
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // Select Opening Stock filter -> no opening stock exists
+          await tester.tap(find.byKey(const Key('stock_history_filter_opening_stock')));
+          await tester.pumpAndSettle();
+
+          expect(find.byKey(const Key('stock_history_filter_empty_view')), findsOneWidget);
+          expect(find.text('No opening stock movements found.'), findsOneWidget);
+        },
+      );
+    });
+
+    testWidgets('renders cleanly without overflow across responsive screen sizes and dark theme with filter active', (tester) async {
       final item = InventoryItem(id: 'item_resp', name: 'Responsive Test Item with a Long Product Name', sku: 'RESP-LONG-SKU-99999');
       final movements = [
         StockMovement(
@@ -352,10 +630,10 @@ void main() {
       final repo = MockInventoryRepository(items: [item], movements: movements);
 
       const testSizes = [
-        Size(320, 640),   // Compact mobile
-        Size(360, 800),   // Standard mobile
+        Size(320, 568),   // Compact mobile
+        Size(360, 640),   // Standard mobile
         Size(768, 1024),  // Tablet
-        Size(1200, 900),  // Desktop
+        Size(1200, 800),  // Desktop
       ];
 
       for (final size in testSizes) {
@@ -366,23 +644,39 @@ void main() {
           tester.view.resetDevicePixelRatio();
         });
 
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: ThemeData.light(),
-            darkTheme: ThemeData.dark(),
-            themeMode: ThemeMode.light,
-            home: StockMovementHistoryScreen(
-              user: adminUser,
-              repository: repo,
-              itemId: 'item_resp',
+        for (final isDark in [false, true]) {
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: ThemeData.light(),
+              darkTheme: ThemeData.dark(),
+              themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
+              home: StockMovementHistoryScreen(
+                user: adminUser,
+                repository: repo,
+                itemId: 'item_resp',
+              ),
             ),
-          ),
-        );
-        await tester.pumpAndSettle();
+          );
+          await tester.pumpAndSettle();
 
-        expect(find.byKey(const Key('stock_history_header_card')), findsOneWidget);
-        expect(find.byKey(const Key('stock_history_list')), findsOneWidget);
-        expect(tester.takeException(), isNull);
+          expect(find.byKey(const Key('stock_history_header_card')), findsOneWidget);
+          expect(find.byKey(const Key('stock_history_filter_segmented_button')), findsOneWidget);
+          expect(find.byKey(const Key('stock_history_list')), findsOneWidget);
+          expect(tester.takeException(), isNull);
+
+          // Test scrolling and switching filter under compact/dark view
+          await tester.ensureVisible(find.byKey(const Key('stock_history_filter_adjustment')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('stock_history_filter_adjustment')));
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+
+          await tester.ensureVisible(find.byKey(const Key('stock_history_filter_all')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const Key('stock_history_filter_all')));
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+        }
       }
     });
   });
