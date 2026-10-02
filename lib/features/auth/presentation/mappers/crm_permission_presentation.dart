@@ -15,6 +15,8 @@ abstract final class CrmPermissionPresentation {
     CrmPermissions.inventoryStockManage: 'Manage Stock Quantity',
     CrmPermissions.inventoryImportCsv: 'Import inventory (CSV)',
     CrmPermissions.inventoryImportXlsx: 'Import inventory (Excel)',
+    CrmPermissions.inventoryExportCsv: 'Export inventory (CSV)',
+    CrmPermissions.inventoryExportXlsx: 'Export inventory (Excel)',
     CrmPermissions.purchaseView: 'View purchases',
     CrmPermissions.vendorView: 'View vendors',
   };

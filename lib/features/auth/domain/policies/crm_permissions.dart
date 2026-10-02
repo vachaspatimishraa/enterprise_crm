@@ -24,6 +24,8 @@ abstract final class CrmPermissions {
   static const String inventoryStockManage = 'inventory.stock.manage';
   static const String inventoryImportCsv = 'inventory.import.csv';
   static const String inventoryImportXlsx = 'inventory.import.xlsx';
+  static const String inventoryExportCsv = 'inventory.export.csv';
+  static const String inventoryExportXlsx = 'inventory.export.xlsx';
 
   // Purchase
   static const String purchaseView = 'purchase.view';
@@ -45,6 +47,8 @@ abstract final class CrmPermissions {
     inventoryStockManage: CrmModule.inventory,
     inventoryImportCsv: CrmModule.inventory,
     inventoryImportXlsx: CrmModule.inventory,
+    inventoryExportCsv: CrmModule.inventory,
+    inventoryExportXlsx: CrmModule.inventory,
     purchaseView: CrmModule.purchase,
     vendorView: CrmModule.vendorManagement,
   };

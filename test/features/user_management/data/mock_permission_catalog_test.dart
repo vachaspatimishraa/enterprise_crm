@@ -21,6 +21,14 @@ void main() {
           isTrue,
         );
         expect(
+          MockPermissionCatalog.isValidPermission('inventory.export.csv'),
+          isTrue,
+        );
+        expect(
+          MockPermissionCatalog.isValidPermission('inventory.export.xlsx'),
+          isTrue,
+        );
+        expect(
           MockPermissionCatalog.isValidPermission('purchase.view'),
           isTrue,
         );
@@ -144,6 +152,21 @@ void main() {
           ),
         ),
       );
+    });
+    test('inventory export permissions map to inventory module', () {
+      expect(
+        MockPermissionCatalog.getModuleForPermission('inventory.export.csv'),
+        CrmModule.inventory,
+      );
+      expect(
+        MockPermissionCatalog.getModuleForPermission('inventory.export.xlsx'),
+        CrmModule.inventory,
+      );
+      final inventoryPerms = MockPermissionCatalog.getPermissionsForModule(CrmModule.inventory);
+      expect(inventoryPerms.contains('inventory.export.csv'), isTrue);
+      expect(inventoryPerms.contains('inventory.export.xlsx'), isTrue);
+      expect(inventoryPerms.contains('inventory.import.csv'), isTrue);
+      expect(inventoryPerms.contains('inventory.import.xlsx'), isTrue);
     });
   });
 }

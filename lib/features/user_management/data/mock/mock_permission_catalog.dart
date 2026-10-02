@@ -84,6 +84,16 @@ abstract final class MockPermissionCatalog {
       module: CrmModule.inventory,
       displayName: 'Import Inventory (Excel)',
     ),
+    MockPermissionDefinition(
+      id: CrmPermissions.inventoryExportCsv,
+      module: CrmModule.inventory,
+      displayName: 'Export Inventory (CSV)',
+    ),
+    MockPermissionDefinition(
+      id: CrmPermissions.inventoryExportXlsx,
+      module: CrmModule.inventory,
+      displayName: 'Export Inventory (Excel)',
+    ),
     // Purchase
     MockPermissionDefinition(
       id: CrmPermissions.purchaseView,
