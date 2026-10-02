@@ -35,6 +35,7 @@ class InventoryExportDataLoader {
     final seenIds = <String>{};
     var currentPage = 1;
     var hasNext = true;
+    int? expectedTotalItems;
     const maxPages = 10000;
 
     try {
@@ -47,21 +48,66 @@ class InventoryExportDataLoader {
 
         final pageData = await _repository.getItems(query);
 
+        // Validate page contract metadata
+        if (pageData.currentPage != currentPage) {
+          throw InventoryExportDataLoaderException(
+            'Inconsistent pagination state: Expected page $currentPage but received ${pageData.currentPage}.',
+          );
+        }
+
+        // Validate totalItems consistency across pages
+        if (expectedTotalItems == null) {
+          expectedTotalItems = pageData.totalItems;
+          if (expectedTotalItems < 0) {
+            throw InventoryExportDataLoaderException(
+              'Inconsistent pagination state: Negative totalItems ($expectedTotalItems).',
+            );
+          }
+        } else if (pageData.totalItems != expectedTotalItems) {
+          throw InventoryExportDataLoaderException(
+            'Inconsistent pagination state: totalItems changed from $expectedTotalItems to ${pageData.totalItems} during pagination.',
+          );
+        }
+
+        // Check for empty page with hasNext == true
         if (pageData.items.isEmpty && pageData.hasNext) {
           throw const InventoryExportDataLoaderException(
             'Inconsistent pagination state: Page returned empty list while claiming next page exists.',
           );
         }
 
+        // Check for pageSize boundary violation (more items than requested)
+        if (pageData.items.length > batchSize) {
+          throw InventoryExportDataLoaderException(
+            'Inconsistent pagination state: Page returned ${pageData.items.length} items exceeding requested batchSize $batchSize.',
+          );
+        }
+
         for (final summary in pageData.items) {
-          if (!seenIds.contains(summary.item.id)) {
-            seenIds.add(summary.item.id);
-            allSummaries.add(summary);
+          if (seenIds.contains(summary.item.id)) {
+            throw InventoryExportDataLoaderException(
+              'Duplicate inventory item encountered during export: "${summary.item.name}" (ID: ${summary.item.id}, SKU: ${summary.item.sku}).',
+            );
           }
+          seenIds.add(summary.item.id);
+          allSummaries.add(summary);
         }
 
         hasNext = pageData.hasNext;
         currentPage++;
+      }
+
+      if (currentPage > maxPages && hasNext) {
+        throw const InventoryExportDataLoaderException(
+          'Pagination safety limit exceeded: Too many pages encountered during export.',
+        );
+      }
+
+      // Verify completeness against reported totalItems
+      if (expectedTotalItems != null && allSummaries.length != expectedTotalItems) {
+        throw InventoryExportDataLoaderException(
+          'Inconsistent dataset completeness: Retrieved ${allSummaries.length} items but repository reported totalItems = $expectedTotalItems.',
+        );
       }
     } on InventoryExportDataLoaderException {
       rethrow;
