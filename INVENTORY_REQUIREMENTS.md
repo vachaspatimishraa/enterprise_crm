@@ -905,3 +905,181 @@ The following features are strictly deferred and out of scope for INVENTORY-5:
 12. Actor display-name lookup via UserManagementRepository.
 13. Cross-item analytical reports.
 14. Backend API implementation.
+
+
+---
+
+
+---
+
+---
+
+# 15. INVENTORY-6 — CSV/XLSX INVENTORY EXPORT
+
+**Status:** PROPOSED — AWAITING OWNER APPROVAL
+**Feature:** Inventory CSV/XLSX Export
+**Target Platform:** Flutter Android and Flutter Web
+**Architecture:** Flutter + BLoC/Cubit + Repository Pattern
+
+---
+
+## 15.1 Feature Objective
+The Inventory Export feature allows authorized CRM users to extract authoritative Inventory data from the repository into downloadable CSV and XLSX files. Exports provide structured reporting for physical stock counts, auditing, and offline data analysis across Flutter Web and Mobile platforms.
+
+---
+
+## 15.2 Confirmed Existing Architecture
+1. **Core Domain Entities:**
+   - `InventoryItem`: Holds intrinsic item identity (`id`, `name`, `sku`).
+   - `InventoryItemSummary`: Read projection combining `InventoryItem` with derived `quantityOnHand: double`.
+   - `InventoryQuery`: Supports searching (`searchText`), sorting (`InventorySort`), and pagination (`page`, `pageSize`).
+   - `InventoryPage`: Contains `items: List<InventoryItemSummary>`, `currentPage`, `pageSize`, `totalItems`, `hasNext`.
+2. **Repository Contract (`InventoryRepository`):**
+   - Read methods: `getItems(InventoryQuery query)`, `getItemById(String id)`, `getExistingSkus()`.
+   - Mutating & ledger methods: `createItem`, `updateItem`, `recordOpeningStock`, `adjustStock`, `adjustStockToTarget`, `importItems`, `requestItemDeletion`, `undoItemDeletion`, `finalizeExpiredDeletions`, `getStockMovements`.
+   - Data source of truth: Implemented by `MockInventoryRepository`.
+3. **Existing Dependencies (`pubspec.yaml`):**
+   - `csv: ^8.0.0` (Provides `ListToCsvConverter`, `CsvToListConverter`).
+   - `excel: ^4.0.6` (Provides `Excel.createExcel()`, sheet table generation, byte serialization).
+   - `file_picker: ^13.0.0` (Provides platform file dialogs).
+
+---
+
+## 15.3 Proposed Export Data Columns
+Initial export scope includes exactly three authoritative columns:
+
+| Column Header | Source Field | Type | Example |
+|---|---|---|---|
+| `Item Name` | `InventoryItemSummary.item.name` | String | `Wireless Mouse` |
+| `SKU` | `InventoryItemSummary.item.sku` | String | `INV-001` |
+| `Current Quantity` | `InventoryItemSummary.quantityOnHand` | Numeric | `75` |
+
+**Field Exclusion Rules:**
+- Exclude speculative backend or unscope fields (e.g. purchase price, selling price, supplier, warehouse location, tax rate, UOM, category, product description).
+
+---
+
+## 15.4 Proposed CSV Format
+- **Encoding:** UTF-8 text encoding without byte order mark.
+- **Delimiter:** Standard comma separation (`,`).
+- **Quoting:** Fields containing commas, quotation marks, or newlines must be enclosed in double quotes (`"`).
+- **Escaping:** Embedded double quotation marks must be escaped with double double-quotes (`""`).
+- **Header Row:** `Item Name,SKU,Current Quantity`.
+- **Line Endings:** Standard CRLF (`
+`) or LF (`
+`) line breaks.
+
+---
+
+## 15.5 Proposed XLSX Format
+- **Workbook Structure:** Single worksheet named `Inventory`.
+- **Header Row (Row 1):** Cell A1: `Item Name`, Cell B1: `SKU`, Cell C1: `Current Quantity`.
+- **Cell Typing:**
+  - `Item Name`: Text cell (`TextCellValue`).
+  - `SKU`: Text cell (`TextCellValue`).
+  - `Current Quantity`: Numeric cell (`DoubleCellValue` or `IntCellValue`).
+- **Binary Output:** Encoded to `Uint8List` using `excel.encode()`.
+
+---
+
+## 15.6 Quantity Source-of-Truth Rules
+1. **Single Source of Truth:** Current quantity must be derived directly from `InventoryItemSummary.quantityOnHand` (which sums `StockMovement.quantityDelta` across the movement ledger).
+2. **Prohibitions:**
+   - Never store a static quantity field on `InventoryItem`.
+   - Never calculate quantity by summing only visible or paged Stock History records.
+   - Never apply UI currency or localized rounding formatting to raw export quantities.
+
+---
+
+## 15.7 Export Permissions Architecture
+Export capabilities require explicit permission checks evaluated against `CurrentUser`:
+
+### Administrator
+- Full, unrestricted access to export Inventory data in CSV and XLSX formats.
+
+### Standard User Requirements
+- CSV Export requires: `CrmModule.inventory` assignment + `inventory.view` + `inventory.export.csv`.
+- XLSX Export requires: `CrmModule.inventory` assignment + `inventory.view` + `inventory.export.xlsx`.
+
+### Proposed Permission Constants (To be added in future phase):
+- `CrmPermissions.inventoryExportCsv = 'inventory.export.csv'`
+- `CrmPermissions.inventoryExportXlsx = 'inventory.export.xlsx'`
+
+**Permission Separation Rules:**
+- `inventory.export.csv` does **NOT** grant XLSX export.
+- `inventory.import.csv` / `inventory.import.xlsx` do **NOT** grant export permissions.
+- `inventory.stock.manage` does **NOT** grant export permissions.
+
+---
+
+## 15.8 Excel & CSV Security (Formula Injection Prevention)
+Spreadsheet applications (Excel, Google Sheets) execute cells starting with formula trigger characters (`=`, `+`, `-`, `@`).
+1. **CSV Neutralization Strategy:**
+   - Any string cell beginning with `=`, `+`, `-`, or `@` (after leading whitespace trimming) must be prefixed with a single quote (`'`) or neutralized to prevent formula execution upon opening.
+2. **XLSX Cell Strategy:**
+   - String values must be explicitly written using `TextCellValue` (not `FormulaCellValue`).
+
+---
+
+## 15.9 Dataset Completeness & Pagination
+1. **Complete Data Export (Option A):** Complete exports must retrieve all matching authorized items across all pages, not just the first page (e.g. 250 items total across 20-item pages).
+2. **Repository Retrieval:** The repository must provide an unpaginated query or retrieve all pages iteratively to ensure 100% dataset completeness.
+
+---
+
+## 15.10 Deletion Lifecycle Behavior
+1. **Active Items:** Included in export.
+2. **Pending Deletion Items:** Excluded from export (matches `getItems()` listing filter `!_isPendingDeletion(item.id)`).
+3. **Restored Items (Undo):** Re-included in export once restored.
+4. **Finalized / Deleted Items:** Permanently excluded.
+
+---
+
+## 15.11 Platform File Handling & Architecture
+Proposed clean architectural separation:
+UI Trigger -> ExportCubit -> InventoryRepository -> ExportFormatter (CSV/XLSX) -> Platform Saver (Web/Android)
+
+- Web platform uses browser blob/download helper.
+- Android platform uses `file_picker` or platform save dialog.
+- Shared Dart logic must **never** import `dart:io` directly to maintain Web compatibility.
+
+---
+
+## 15.12 UI & UX Requirements
+- **Entry Point:** Inventory Workspace action bar / toolbar.
+- **States:** `Initial`, `Exporting` (loading indicator), `Success` (download triggered notice), `Failure` (actionable error message), `Restricted` (access denied).
+- **Responsive Layout:** Adaptive design supporting viewports from 320x568 to 1200x800.
+- **Theme Support:** Light and Dark themes following Material 3 guidelines.
+
+---
+
+## 15.13 Test Matrix Plan
+- **Formatters:** CSV escaping, UTF-8 encoding, XLSX cell types, formula injection neutralization, decimal precision.
+- **Cubit / Logic:** Complete item fetch, authorization guards, error handling, state transitions.
+- **Security:** Neutralization of formula triggers (`=`, `+`, `-`, `@`).
+
+---
+
+## 15.14 Open Decisions Awaiting Approval
+
+| Decision | Proposed Default | Options & Architectural Impact |
+|---|---|---|
+| **1. Export Formats** | CSV and XLSX | Option A: CSV & XLSX. Option B: CSV only. Option C: XLSX only. |
+| **2. Export Columns** | `Item Name`, `SKU`, `Current Quantity` | Option A: Core 3 columns. Option B: Add item ID. |
+| **3. Dataset Scope** | All authorized active items (Option A) | Option A: Export all. Option B: Active workspace search/filter. Option C: User choice. |
+| **4. Export Permissions** | `inventory.export.csv` & `inventory.export.xlsx` | Option A: Separate permissions. Option B: Shared `inventory.export`. |
+| **5. Item Ordering** | `Item Name` asc, then `SKU` asc | Option A: Name/SKU asc. Option B: Workspace sort order. |
+| **6. Empty Inventory** | Header-only file | Option A: Header-only file. Option B: Disable export button with notice. |
+| **7. Movement History** | Excluded | Item export only; History export strictly excluded in INVENTORY-6. |
+| **8. Pending Deletion** | Excluded | Exclude pending deletion items (matches listing). |
+| **9. Import Round-Trip** | Reporting-oriented | No automatic round-trip/upsert guarantee. |
+
+---
+
+## 15.15 Explicitly Deferred Features
+1. Exporting Stock Movement History records.
+2. Direct spreadsheet editing or re-import upserting.
+3. Custom column selection or layout customization.
+4. Scheduled background email exports.
+5. PDF export formatting.
+6. Backend REST export streaming endpoints.
