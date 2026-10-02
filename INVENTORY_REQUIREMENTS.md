@@ -914,9 +914,11 @@ The following features are strictly deferred and out of scope for INVENTORY-5:
 
 ---
 
+---
+
 # 15. INVENTORY-6 — CSV/XLSX INVENTORY EXPORT
 
-**Status:** PROPOSED — AWAITING OWNER APPROVAL
+**Status:** APPROVED & FROZEN
 **Feature:** Inventory CSV/XLSX Export
 **Target Platform:** Flutter Android and Flutter Web
 **Architecture:** Flutter + BLoC/Cubit + Repository Pattern
@@ -945,21 +947,21 @@ The Inventory Export feature allows authorized CRM users to extract authoritativ
 
 ---
 
-## 15.3 Proposed Export Data Columns
-Initial export scope includes exactly three authoritative columns:
+## 15.3 Approved Export Data Columns
+The Inventory Export feature exports exactly three authoritative columns:
 
-| Column Header | Source Field | Type | Example |
-|---|---|---|---|
-| `Item Name` | `InventoryItemSummary.item.name` | String | `Wireless Mouse` |
-| `SKU` | `InventoryItemSummary.item.sku` | String | `INV-001` |
-| `Current Quantity` | `InventoryItemSummary.quantityOnHand` | Numeric | `75` |
+| Position | Column Header | Source Field | Type | Example |
+|---|---|---|---|---|
+| 1 | `Item Name` | `InventoryItemSummary.item.name` | String | `Wireless Mouse` |
+| 2 | `SKU` | `InventoryItemSummary.item.sku` | String | `INV-001` |
+| 3 | `Current Quantity` | `InventoryItemSummary.quantityOnHand` | Numeric | `75` |
 
 **Field Exclusion Rules:**
-- Exclude speculative backend or unscope fields (e.g. purchase price, selling price, supplier, warehouse location, tax rate, UOM, category, product description).
+- Exclude speculative backend or unscope fields (e.g. internal Item ID, purchase price, selling price, supplier, warehouse location, tax rate, UOM, category, product description, stock valuation).
 
 ---
 
-## 15.4 Proposed CSV Format
+## 15.4 Approved CSV Format Technical Requirements
 - **Encoding:** UTF-8 text encoding without byte order mark.
 - **Delimiter:** Standard comma separation (`,`).
 - **Quoting:** Fields containing commas, quotation marks, or newlines must be enclosed in double quotes (`"`).
@@ -971,7 +973,7 @@ Initial export scope includes exactly three authoritative columns:
 
 ---
 
-## 15.5 Proposed XLSX Format
+## 15.5 Approved XLSX Format Technical Requirements
 - **Workbook Structure:** Single worksheet named `Inventory`.
 - **Header Row (Row 1):** Cell A1: `Item Name`, Cell B1: `SKU`, Cell C1: `Current Quantity`.
 - **Cell Typing:**
@@ -991,7 +993,7 @@ Initial export scope includes exactly three authoritative columns:
 
 ---
 
-## 15.7 Export Permissions Architecture
+## 15.7 Approved Export Permissions Architecture
 Export capabilities require explicit permission checks evaluated against `CurrentUser`:
 
 ### Administrator
@@ -1001,14 +1003,16 @@ Export capabilities require explicit permission checks evaluated against `Curren
 - CSV Export requires: `CrmModule.inventory` assignment + `inventory.view` + `inventory.export.csv`.
 - XLSX Export requires: `CrmModule.inventory` assignment + `inventory.view` + `inventory.export.xlsx`.
 
-### Proposed Permission Constants (To be added in future phase):
-- `CrmPermissions.inventoryExportCsv = 'inventory.export.csv'`
-- `CrmPermissions.inventoryExportXlsx = 'inventory.export.xlsx'`
+### Approved Permission Keys (To be added to `CrmPermissions` in future implementation phase):
+- `inventory.export.csv`
+- `inventory.export.xlsx`
 
 **Permission Separation Rules:**
 - `inventory.export.csv` does **NOT** grant XLSX export.
+- `inventory.export.xlsx` does **NOT** grant CSV export.
 - `inventory.import.csv` / `inventory.import.xlsx` do **NOT** grant export permissions.
 - `inventory.stock.manage` does **NOT** grant export permissions.
+- `inventory.create` or `inventory.edit` alone does **NOT** grant export access.
 
 ---
 
@@ -1021,9 +1025,9 @@ Spreadsheet applications (Excel, Google Sheets) execute cells starting with form
 
 ---
 
-## 15.9 Dataset Completeness & Pagination
-1. **Complete Data Export (Option A):** Complete exports must retrieve all matching authorized items across all pages, not just the first page (e.g. 250 items total across 20-item pages).
-2. **Repository Retrieval:** The repository must provide an unpaginated query or retrieve all pages iteratively to ensure 100% dataset completeness.
+## 15.9 Dataset Completeness & Pagination Requirements
+1. **Complete Data Export:** Exports must retrieve all matching authorized items across all pages, not just the first page (e.g. 250 items total across 20-item pages).
+2. **Repository Retrieval:** The future implementation must retrieve every eligible record across the entire authorized dataset without accidental single-page truncation.
 
 ---
 
@@ -1036,7 +1040,7 @@ Spreadsheet applications (Excel, Google Sheets) execute cells starting with form
 ---
 
 ## 15.11 Platform File Handling & Architecture
-Proposed clean architectural separation:
+Approved clean architectural separation:
 UI Trigger -> ExportCubit -> InventoryRepository -> ExportFormatter (CSV/XLSX) -> Platform Saver (Web/Android)
 
 - Web platform uses browser blob/download helper.
@@ -1060,19 +1064,22 @@ UI Trigger -> ExportCubit -> InventoryRepository -> ExportFormatter (CSV/XLSX) -
 
 ---
 
-## 15.14 Open Decisions Awaiting Approval
+## 15.14 Approved and Frozen Business Decisions
 
-| Decision | Proposed Default | Options & Architectural Impact |
+**Approved by:** Vachaspati Mishra
+**Status:** Frozen for INVENTORY-6 implementation
+
+| # | Decision | Approved Rule |
 |---|---|---|
-| **1. Export Formats** | CSV and XLSX | Option A: CSV & XLSX. Option B: CSV only. Option C: XLSX only. |
-| **2. Export Columns** | `Item Name`, `SKU`, `Current Quantity` | Option A: Core 3 columns. Option B: Add item ID. |
-| **3. Dataset Scope** | All authorized active items (Option A) | Option A: Export all. Option B: Active workspace search/filter. Option C: User choice. |
-| **4. Export Permissions** | `inventory.export.csv` & `inventory.export.xlsx` | Option A: Separate permissions. Option B: Shared `inventory.export`. |
-| **5. Item Ordering** | `Item Name` asc, then `SKU` asc | Option A: Name/SKU asc. Option B: Workspace sort order. |
-| **6. Empty Inventory** | Header-only file | Option A: Header-only file. Option B: Disable export button with notice. |
-| **7. Movement History** | Excluded | Item export only; History export strictly excluded in INVENTORY-6. |
-| **8. Pending Deletion** | Excluded | Exclude pending deletion items (matches listing). |
-| **9. Import Round-Trip** | Reporting-oriented | No automatic round-trip/upsert guarantee. |
+| 1 | **Export Formats** | Exactly two initial export formats: CSV and XLSX. |
+| 2 | **Export Columns** | Exactly three columns: `Item Name`, `SKU`, `Current Quantity`. |
+| 3 | **Dataset Scope** | All authorized, active Inventory items (complete dataset across all pages). |
+| 4 | **Export Permissions** | Separate granular permissions: `inventory.export.csv` and `inventory.export.xlsx`. |
+| 5 | **Item Ordering** | Deterministic sorting by `Item Name` ascending, then `SKU` ascending as tie-breaker. |
+| 6 | **Empty Dataset** | Authorized empty export generates a valid file containing column headers only. |
+| 7 | **Movement History** | Stock Movement History export is strictly excluded from INVENTORY-6 scope. |
+| 8 | **Pending Deletion** | Items in 60-second pending-deletion window are excluded (matches active listing). |
+| 9 | **Import Compatibility** | Reporting-oriented export; no automatic round-trip or import upsert guarantee. |
 
 ---
 
