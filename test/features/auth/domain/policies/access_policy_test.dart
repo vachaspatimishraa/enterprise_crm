@@ -87,6 +87,8 @@ void main() {
         CrmPermissions.inventoryStockManage,
         CrmPermissions.inventoryImportCsv,
         CrmPermissions.inventoryImportXlsx,
+        CrmPermissions.inventoryExportCsv,
+        CrmPermissions.inventoryExportXlsx,
       });
       expect(CrmPermissions.permissionsFor(CrmModule.dispatch), isEmpty);
       expect(
@@ -95,8 +97,8 @@ void main() {
       );
     });
 
-    test('allKnown contains exactly 14 permissions', () {
-      expect(CrmPermissions.allKnown.length, 14);
+    test('allKnown contains exactly 16 permissions', () {
+      expect(CrmPermissions.allKnown.length, 16);
     });
 
     test('CrmPermissionPresentation returns human-readable labels', () {
