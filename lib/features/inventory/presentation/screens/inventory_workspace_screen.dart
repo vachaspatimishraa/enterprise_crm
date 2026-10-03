@@ -174,6 +174,10 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
   }
 
   CurrentUser? _watchCurrentUser(BuildContext context) {
+    try {
+      context.watch<AuthCubit?>();
+    } catch (_) {}
+
     if (widget.currentUserProvider != null) {
       try {
         return widget.currentUserProvider!();
@@ -182,7 +186,7 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
       }
     }
     try {
-      final authCubit = context.watch<AuthCubit?>();
+      final authCubit = context.read<AuthCubit?>();
       if (authCubit != null) {
         final authState = authCubit.state;
         if (authState is AuthAuthenticated) {

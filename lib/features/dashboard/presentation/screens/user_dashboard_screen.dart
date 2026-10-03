@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../auth/domain/entities/crm_module.dart';
+import '../../../auth/presentation/bloc/auth_cubit.dart';
+import '../../../auth/presentation/bloc/auth_state.dart';
 import '../../../auth/domain/entities/current_user.dart';
 import '../../../auth/domain/repositories/user_lead_link_repository.dart';
 import '../../../calling/domain/repositories/lead_call_activity_repository.dart';
@@ -63,12 +66,35 @@ class UserDashboardScreen extends StatelessWidget {
         ),
       );
     } else if (module == CrmModule.inventory) {
+      AuthCubit? authCubit;
+      try {
+        authCubit = context.read<AuthCubit?>();
+      } catch (_) {}
+
+      CurrentUser? currentInventoryUser() {
+        if (authCubit == null || authCubit.isClosed) {
+          return null;
+        }
+        final state = authCubit.state;
+        return state is AuthAuthenticated ? state.user : null;
+      }
+
+      Widget screen = InventoryWorkspaceScreen(
+        user: user,
+        repository: inventoryRepository,
+        currentUserProvider: currentInventoryUser,
+      );
+
+      if (authCubit != null) {
+        screen = BlocProvider<AuthCubit>.value(
+          value: authCubit,
+          child: screen,
+        );
+      }
+
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => InventoryWorkspaceScreen(
-            user: user,
-            repository: inventoryRepository,
-          ),
+          builder: (_) => screen,
         ),
       );
     } else {
