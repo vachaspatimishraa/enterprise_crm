@@ -17,6 +17,8 @@ import '../bloc/inventory_cubit.dart';
 import '../bloc/inventory_state.dart';
 import '../utils/inventory_display_formatters.dart';
 import '../widgets/inventory_pagination_controls.dart';
+import '../../domain/policies/inventory_export_policy.dart';
+import '../widgets/inventory_export_dialog.dart';
 import 'create_inventory_item_screen.dart';
 import 'inventory_import_screen.dart';
 import 'inventory_item_details_screen.dart';
@@ -135,6 +137,14 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
       _loadPendingDeletions();
       cubit.refresh();
     }
+  }
+
+  void _openExport(BuildContext context) {
+    showInventoryExportDialog(
+      context: context,
+      user: widget.user,
+      repository: widget.repository,
+    );
   }
 
   void _openImport(BuildContext context) async {
@@ -375,6 +385,7 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
             widget.user,
           );
           final canImport = InventoryImportPolicy.canImport(widget.user);
+          final canExport = InventoryExportPolicy.canExport(widget.user);
 
           if (isCompact) {
             return Column(
@@ -406,6 +417,13 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
+                        if (canExport)
+                          OutlinedButton.icon(
+                            key: const Key('inventory_workspace_export_button'),
+                            onPressed: () => _openExport(context),
+                            icon: const Icon(Icons.download_outlined, size: 18),
+                            label: const Text('Export'),
+                          ),
                         if (canImport)
                           OutlinedButton.icon(
                             key: const Key('inventory_workspace_import_button'),
@@ -435,6 +453,15 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
               Expanded(child: searchWidget),
               const SizedBox(width: 16),
               sortWidget,
+              if (canExport) ...[
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  key: const Key('inventory_workspace_export_button'),
+                  onPressed: () => _openExport(context),
+                  icon: const Icon(Icons.download_outlined, size: 18),
+                  label: const Text('Export'),
+                ),
+              ],
               if (canImport) ...[
                 const SizedBox(width: 12),
                 OutlinedButton.icon(

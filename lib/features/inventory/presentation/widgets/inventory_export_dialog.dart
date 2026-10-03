@@ -1,0 +1,366 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../../../auth/domain/entities/current_user.dart';
+import '../../domain/entities/inventory_export_artifact.dart';
+import '../../domain/policies/inventory_export_policy.dart';
+import '../../domain/repositories/inventory_repository.dart';
+import '../bloc/inventory_export_cubit.dart';
+import '../bloc/inventory_export_state.dart';
+import '../services/inventory_export_data_loader.dart';
+import '../services/inventory_export_file_delivery_service.dart';
+import '../services/inventory_export_service.dart';
+
+/// Opens the inventory export modal dialog.
+Future<bool?> showInventoryExportDialog({
+  required BuildContext context,
+  required CurrentUser user,
+  required InventoryRepository repository,
+  InventoryExportCubit? cubit,
+  InventoryExportFileDeliveryService? fileDeliveryService,
+}) {
+  return showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => InventoryExportDialog(
+      user: user,
+      repository: repository,
+      cubit: cubit,
+      fileDeliveryService: fileDeliveryService,
+    ),
+  );
+}
+
+/// Reusable modal dialog for configuring, preparing, and delivering inventory exports.
+class InventoryExportDialog extends StatefulWidget {
+  final CurrentUser user;
+  final InventoryRepository repository;
+  final InventoryExportCubit? cubit;
+  final InventoryExportFileDeliveryService? fileDeliveryService;
+
+  const InventoryExportDialog({
+    super.key,
+    required this.user,
+    required this.repository,
+    this.cubit,
+    this.fileDeliveryService,
+  });
+
+  @override
+  State<InventoryExportDialog> createState() => _InventoryExportDialogState();
+}
+
+class _InventoryExportDialogState extends State<InventoryExportDialog> {
+  late final InventoryExportCubit _cubit;
+  late final InventoryExportFileDeliveryService _fileDeliveryService;
+  late final bool _isExternalCubit;
+
+  InventoryExportFormat? _selectedFormat;
+  bool _isDelivering = false;
+  String? _deliveryFeedback;
+  bool _isDeliverySuccess = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _isExternalCubit = widget.cubit != null;
+    if (_isExternalCubit) {
+      _cubit = widget.cubit!;
+    } else {
+      final dataLoader = InventoryExportDataLoader(widget.repository);
+      final exportService = InventoryExportService(dataLoader: dataLoader);
+      _cubit = InventoryExportCubit(
+        exportService: exportService,
+        currentUser: widget.user,
+      );
+    }
+
+    _fileDeliveryService = widget.fileDeliveryService ??
+        InventoryExportFileDeliveryService();
+
+    final canCsv = InventoryExportPolicy.canExportCsv(widget.user);
+    final canXlsx = InventoryExportPolicy.canExportXlsx(widget.user);
+
+    if (canCsv) {
+      _selectedFormat = InventoryExportFormat.csv;
+    } else if (canXlsx) {
+      _selectedFormat = InventoryExportFormat.xlsx;
+    }
+  }
+
+  @override
+  void dispose() {
+    if (!_isExternalCubit) {
+      _cubit.close();
+    }
+    super.dispose();
+  }
+
+  Future<void> _handleDelivery(InventoryExportArtifact artifact) async {
+    if (_isDelivering) return;
+
+    setState(() {
+      _isDelivering = true;
+      _deliveryFeedback = null;
+    });
+
+    final result = await _fileDeliveryService.deliverArtifact(
+      artifact: artifact,
+      currentUserProvider: () => widget.user,
+      boundUserId: widget.user.id,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _isDelivering = false;
+      if (result.isSaved) {
+        _isDeliverySuccess = true;
+        _deliveryFeedback = 'Inventory exported successfully.';
+      } else if (result.isDownloadInitiated) {
+        _isDeliverySuccess = true;
+        _deliveryFeedback = 'Inventory download started.';
+      } else if (result.isCancelled) {
+        _isDeliverySuccess = false;
+        _deliveryFeedback = 'File save was cancelled.';
+      } else if (result.isRestricted) {
+        _isDeliverySuccess = false;
+        _deliveryFeedback = result.message ??
+            "You don't have permission to export inventory in this format.";
+      } else {
+        _isDeliverySuccess = false;
+        _deliveryFeedback = result.message ??
+            'Unable to export inventory. Please try again.';
+      }
+    });
+
+      }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocProvider.value(
+      value: _cubit,
+      child: BlocConsumer<InventoryExportCubit, InventoryExportState>(
+        listener: (context, state) {
+          if (state is InventoryExportPrepared) {
+            _handleDelivery(state.artifact);
+          }
+        },
+        builder: (context, state) {
+          final theme = Theme.of(context);
+          final colorScheme = theme.colorScheme;
+
+          final canCsv = InventoryExportPolicy.canExportCsv(widget.user);
+          final canXlsx = InventoryExportPolicy.canExportXlsx(widget.user);
+
+          final isBusy = state is InventoryExportPreparing || _isDelivering;
+
+          return PopScope(
+            canPop: !isBusy,
+            child: AlertDialog(
+              key: const Key('inventory_export_dialog'),
+              title: Row(
+                children: [
+                  Icon(
+                    Icons.download_outlined,
+                    size: 22,
+                    color: colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Export Inventory',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: SingleChildScrollView(
+                  child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Export all authorized active items. Exactly three columns (Item Name, SKU, Current Quantity) will be exported.',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Format',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    RadioGroup<InventoryExportFormat>(
+                      groupValue: _selectedFormat,
+                      onChanged: (format) {
+                        if (!isBusy && format != null) {
+                          setState(() {
+                            _selectedFormat = format;
+                            _deliveryFeedback = null;
+                          });
+                        }
+                      },
+                      child: Column(
+                        children: [
+                          RadioListTile<InventoryExportFormat>(
+                            key: const Key('inventory_export_format_csv'),
+                            value: InventoryExportFormat.csv,
+                            title: const Text('CSV (.csv)'),
+                            subtitle: const Text('Spreadsheet-compatible text file.'),
+                            enabled: !isBusy && canCsv,
+                            dense: true,
+                            visualDensity: VisualDensity.compact,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          RadioListTile<InventoryExportFormat>(
+                            key: const Key('inventory_export_format_xlsx'),
+                            value: InventoryExportFormat.xlsx,
+                            title: const Text('Excel (.xlsx)'),
+                            subtitle: const Text('Excel workbook with numeric stock quantities.'),
+                            enabled: !isBusy && canXlsx,
+                            dense: true,
+                            visualDensity: VisualDensity.compact,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    if (state is InventoryExportPreparing || _isDelivering) ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              key: Key('inventory_export_loading_indicator'),
+                              strokeWidth: 2,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _isDelivering
+                                  ? 'Saving export file...'
+                                  : 'Preparing inventory export...',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+
+                    if (state is InventoryExportRestricted) ...[
+                      const SizedBox(height: 12),
+                      _buildFeedbackBox(
+                        context,
+                        key: const Key('inventory_export_dialog_restricted'),
+                        icon: Icons.lock_outline,
+                        message: state.message,
+                        isError: true,
+                      ),
+                    ],
+
+                    if (state is InventoryExportFailure) ...[
+                      const SizedBox(height: 12),
+                      _buildFeedbackBox(
+                        context,
+                        key: const Key('inventory_export_dialog_failure'),
+                        icon: Icons.error_outline,
+                        message: state.message,
+                        isError: true,
+                      ),
+                    ],
+
+                    if (_deliveryFeedback != null) ...[
+                      const SizedBox(height: 12),
+                      _buildFeedbackBox(
+                        context,
+                        key: const Key('inventory_export_dialog_delivery_feedback'),
+                        icon: _isDeliverySuccess ? Icons.check_circle_outline : Icons.info_outline,
+                        message: _deliveryFeedback!,
+                        isError: !_isDeliverySuccess,
+                      ),
+                    ],
+                  ],
+                ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  key: const Key('inventory_export_dialog_cancel_button'),
+                  onPressed: isBusy ? null : () => Navigator.of(context).pop(false),
+                  child: Text(_isDeliverySuccess ? 'Close' : 'Cancel'),
+                ),
+                FilledButton(
+                  key: const Key('inventory_export_dialog_submit_button'),
+                  onPressed: (isBusy || _selectedFormat == null)
+                      ? null
+                      : () {
+                          setState(() {
+                            _deliveryFeedback = null;
+                          });
+                          _cubit.export(_selectedFormat!);
+                        },
+                  child: isBusy
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Export'),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildFeedbackBox(
+    BuildContext context, {
+    required Key key,
+    required IconData icon,
+    required String message,
+    required bool isError,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final bgColor = isError ? colorScheme.errorContainer : colorScheme.primaryContainer;
+    final fgColor = isError ? colorScheme.onErrorContainer : colorScheme.onPrimaryContainer;
+
+    return Container(
+      key: key,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: fgColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(color: fgColor, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
