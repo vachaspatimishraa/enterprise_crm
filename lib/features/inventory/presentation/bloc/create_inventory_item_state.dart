@@ -1,3 +1,5 @@
+import '../../domain/entities/custom_field_definition.dart';
+import '../../domain/entities/inventory_catalogs.dart';
 import '../../domain/entities/inventory_item_summary.dart';
 
 /// States for [CreateInventoryItemCubit].
@@ -7,7 +9,15 @@ sealed class CreateInventoryItemState {
 
 /// Initial form state ready for user input.
 class CreateInventoryItemInitial extends CreateInventoryItemState {
-  const CreateInventoryItemInitial();
+  final List<CustomFieldDefinition> customFieldDefinitions;
+  final InventoryCatalogs? _catalogs;
+
+  InventoryCatalogs get catalogs => _catalogs ?? InventoryCatalogs();
+
+  const CreateInventoryItemInitial({
+    this.customFieldDefinitions = const [],
+    InventoryCatalogs? catalogs,
+  }) : _catalogs = catalogs;
 }
 
 /// In-flight submission state (disables form controls).
