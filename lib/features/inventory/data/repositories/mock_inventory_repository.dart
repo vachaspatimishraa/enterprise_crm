@@ -19,6 +19,10 @@ import '../../domain/inputs/record_opening_stock_input.dart';
 import '../../domain/inputs/update_inventory_item_input.dart';
 import '../../domain/repositories/inventory_repository.dart';
 import '../mock/mock_inventory_seed_data.dart';
+import '../../domain/entities/custom_field_definition.dart';
+import '../../domain/entities/inventory_catalogs.dart';
+import '../../domain/validation/inventory_validation.dart';
+
 
 /// In-memory mock implementation of [InventoryRepository].
 ///
@@ -34,6 +38,8 @@ class MockInventoryRepository implements InventoryRepository {
   final bool Function(String userId)? _canManageStock;
   final Map<String, PendingInventoryDeletion> _pendingDeletions = {};
   final Set<String> _retiredItemIds = {};
+  final List<CustomFieldDefinition> _customFieldDefinitions;
+  final InventoryCatalogs _catalogs;
 
   MockInventoryRepository({
     List<InventoryItem>? items,
@@ -42,6 +48,8 @@ class MockInventoryRepository implements InventoryRepository {
     bool Function(String sku)? simulateMovementFailure,
     bool Function(String itemId)? hasExternalReference,
     bool Function(String userId)? canManageStock,
+    InventoryCatalogs? catalogs,
+    List<CustomFieldDefinition>? customFieldDefinitions,
   }) : _items = List.of(items ?? MockInventorySeedData.createDefaultItems()),
        _movements = List.of(
          movements ?? MockInventorySeedData.createDefaultMovements(),
@@ -49,7 +57,9 @@ class MockInventoryRepository implements InventoryRepository {
        _nowProvider = nowProvider ?? DateTime.now,
        _simulateMovementFailure = simulateMovementFailure,
        _hasExternalReference = hasExternalReference,
-       _canManageStock = canManageStock {
+       _canManageStock = canManageStock,
+       _catalogs = catalogs ?? InventoryCatalogs(),
+       _customFieldDefinitions = List.of(customFieldDefinitions ?? const []) {
     _validateInvariants();
   }
 
@@ -240,6 +250,88 @@ class MockInventoryRepository implements InventoryRepository {
     );
   }
 
+
+  /// Access to the configurable category, unit, and warehouse catalogs.
+  InventoryCatalogs get catalogs => _catalogs;
+
+  /// Retrieves all registered custom field definitions.
+  Future<List<CustomFieldDefinition>> getCustomFieldDefinitions() async {
+    return List.unmodifiable(_customFieldDefinitions);
+  }
+
+  /// Retrieves a registered custom field definition by its machine [key], or null if not found.
+  Future<CustomFieldDefinition?> getCustomFieldDefinitionByKey(String key) async {
+    final normalized = key.trim().toLowerCase();
+    final matches = _customFieldDefinitions.where(
+      (d) => d.key.toLowerCase() == normalized,
+    );
+    return matches.isEmpty ? null : matches.first;
+  }
+
+  /// Saves or updates a custom field definition.
+  Future<CustomFieldDefinition> saveCustomFieldDefinition(
+    CustomFieldDefinition definition,
+  ) async {
+    final existingIndex = _customFieldDefinitions.indexWhere(
+      (d) =>
+          d.id == definition.id ||
+          d.key.toLowerCase() == definition.key.toLowerCase(),
+    );
+    if (existingIndex >= 0) {
+      final existing = _customFieldDefinitions[existingIndex];
+      if (existing.id != definition.id &&
+          existing.key.toLowerCase() == definition.key.toLowerCase()) {
+        throw InventoryValidationException(
+          'A custom field with key "${definition.key}" already exists.',
+        );
+      }
+      _customFieldDefinitions[existingIndex] = definition;
+    } else {
+      _customFieldDefinitions.add(definition);
+    }
+    return definition;
+  }
+
+  /// Deletes a custom field definition by [id].
+  Future<void> deleteCustomFieldDefinition(String id) async {
+    _customFieldDefinitions.removeWhere((d) => d.id == id);
+  }
+
+  /// Validates and normalizes custom field values against registered definitions.
+  Map<String, dynamic> _validateAndNormalizeCustomFields(
+    Map<String, dynamic> customFields,
+  ) {
+    final normalized = <String, dynamic>{};
+
+    for (final entry in customFields.entries) {
+      final key = entry.key.trim().toLowerCase();
+      final def = _customFieldDefinitions.firstWhere(
+        (d) => d.key.toLowerCase() == key,
+        orElse: () => throw InventoryValidationException(
+          'Unknown custom field key "${entry.key}".',
+        ),
+      );
+      final validated = def.validateValue(entry.value);
+      if (validated != null) {
+        normalized[def.key] = validated;
+      }
+    }
+
+    for (final def in _customFieldDefinitions) {
+      if (!normalized.containsKey(def.key)) {
+        if (def.defaultValue != null && def.defaultValue!.isNotEmpty) {
+          normalized[def.key] = def.validateValue(def.defaultValue);
+        } else if (def.isRequired) {
+          throw InventoryValidationException(
+            'Custom field "${def.label}" is required.',
+          );
+        }
+      }
+    }
+
+    return Map.unmodifiable(normalized);
+  }
+
   @override
   Future<InventoryItemSummary?> getItemById(String id) async {
     _purgeExpiredDeletionsInternal();
@@ -259,15 +351,31 @@ class MockInventoryRepository implements InventoryRepository {
     CreateInventoryItemInput input,
   ) async {
     _purgeExpiredDeletionsInternal();
-    final trimmedName = input.name.trim();
-    final trimmedSku = input.sku.trim();
-
-    if (trimmedName.isEmpty) {
-      throw const InventoryValidationException('Item name cannot be blank.');
-    }
-    if (trimmedSku.isEmpty) {
-      throw const InventoryValidationException('Item SKU cannot be blank.');
-    }
+    final trimmedName = InventoryValidation.validateName(input.name);
+    final trimmedSku = InventoryValidation.validateSku(input.sku);
+    final trimmedCategory = InventoryValidation.validateCategory(
+      input.category,
+      _catalogs,
+    );
+    final trimmedUnit = InventoryValidation.validateUnit(
+      input.unit,
+      _catalogs,
+    );
+    final trimmedWarehouse = InventoryValidation.validateWarehouse(
+      input.warehouse,
+      _catalogs,
+    );
+    final validatedBarcode = InventoryValidation.validateBarcode(input.barcode);
+    final validatedUnitCost = InventoryValidation.validateUnitCost(input.unitCostInr);
+    final validatedSellingPrice = InventoryValidation.validateSellingPrice(input.sellingPriceInr);
+    final validatedReorderLevel = InventoryValidation.validateReorderLevel(input.reorderLevel);
+    final validatedMaxStock = InventoryValidation.validateMaxStock(
+      input.maxStock,
+      validatedReorderLevel,
+    );
+    final validatedGst = InventoryValidation.validateGstPercent(input.gstPercent);
+    final validatedNotes = InventoryValidation.validateNotes(input.notes);
+    final validatedCustomFields = _validateAndNormalizeCustomFields(input.customFields);
 
     final normalizedCandidateSku = trimmedSku.toLowerCase();
     if (_items.any(
@@ -279,7 +387,29 @@ class MockInventoryRepository implements InventoryRepository {
     }
 
     final id = _generateNextDeterministicId();
-    final newItem = InventoryItem(id: id, name: trimmedName, sku: trimmedSku);
+    final newItem = InventoryItem(
+      id: id,
+      name: trimmedName,
+      sku: trimmedSku,
+      category: trimmedCategory,
+      brand: input.brand?.trim(),
+      unit: trimmedUnit,
+      barcode: validatedBarcode,
+      warehouse: trimmedWarehouse,
+      binLocation: input.binLocation?.trim(),
+      supplier: input.supplier?.trim(),
+      unitCostInr: validatedUnitCost,
+      sellingPriceInr: validatedSellingPrice,
+      reorderLevel: validatedReorderLevel,
+      maxStock: validatedMaxStock,
+      gstPercent: validatedGst,
+      batchNumber: input.batchNumber?.trim(),
+      expiryDate: input.expiryDate,
+      lastRestockedDate: input.lastRestockedDate,
+      isActive: input.isActive,
+      notes: validatedNotes,
+      customFields: validatedCustomFields,
+    );
 
     if (input.openingStock != null) {
       final trimmedActor = input.performedByUserId?.trim() ?? '';
@@ -335,15 +465,8 @@ class MockInventoryRepository implements InventoryRepository {
         'Cannot edit an item that is pending deletion.',
       );
     }
-    final trimmedName = input.name.trim();
-    final trimmedSku = input.sku.trim();
-
-    if (trimmedName.isEmpty) {
-      throw const InventoryValidationException('Item name cannot be blank.');
-    }
-    if (trimmedSku.isEmpty) {
-      throw const InventoryValidationException('Item SKU cannot be blank.');
-    }
+    final trimmedName = InventoryValidation.validateName(input.name);
+    final trimmedSku = InventoryValidation.validateSku(input.sku);
 
     final existingIndex = _items.indexWhere((item) => item.id == input.id);
     if (existingIndex == -1) {
@@ -351,6 +474,7 @@ class MockInventoryRepository implements InventoryRepository {
         'Inventory item with ID "${input.id}" not found.',
       );
     }
+    final existingItem = _items[existingIndex];
 
     final normalizedCandidateSku = trimmedSku.toLowerCase();
     final hasDuplicateOtherSku = _items.any(
@@ -365,10 +489,126 @@ class MockInventoryRepository implements InventoryRepository {
       );
     }
 
-    final updatedItem = InventoryItem(
-      id: input.id,
+    final updatedCategory = input.category != null
+        ? InventoryValidation.validateCategory(input.category!, _catalogs)
+        : existingItem.category;
+    final updatedUnit = input.unit != null
+        ? InventoryValidation.validateUnit(input.unit!, _catalogs)
+        : existingItem.unit;
+    final updatedWarehouse = input.warehouse != null
+        ? InventoryValidation.validateWarehouse(input.warehouse!, _catalogs)
+        : existingItem.warehouse;
+
+    final updatedBrand = input.clearBrand
+        ? null
+        : (input.brand != null ? input.brand!.trim() : existingItem.brand);
+
+    final updatedBarcode = input.clearBarcode
+        ? null
+        : (input.barcode != null
+            ? InventoryValidation.validateBarcode(input.barcode)
+            : existingItem.barcode);
+
+    final updatedBinLocation = input.clearBinLocation
+        ? null
+        : (input.binLocation != null
+            ? input.binLocation!.trim()
+            : existingItem.binLocation);
+
+    final updatedSupplier = input.clearSupplier
+        ? null
+        : (input.supplier != null
+            ? input.supplier!.trim()
+            : existingItem.supplier);
+
+    final updatedUnitCost = input.clearUnitCostInr
+        ? null
+        : (input.unitCostInr != null
+            ? InventoryValidation.validateUnitCost(input.unitCostInr)
+            : existingItem.unitCostInr);
+
+    final updatedSellingPrice = input.clearSellingPriceInr
+        ? null
+        : (input.sellingPriceInr != null
+            ? InventoryValidation.validateSellingPrice(input.sellingPriceInr)
+            : existingItem.sellingPriceInr);
+
+    final updatedReorderLevel = input.clearReorderLevel
+        ? null
+        : (input.reorderLevel != null
+            ? InventoryValidation.validateReorderLevel(input.reorderLevel)
+            : existingItem.reorderLevel);
+
+    final updatedMaxStock = input.clearMaxStock
+        ? null
+        : (input.maxStock != null
+            ? InventoryValidation.validateMaxStock(input.maxStock, updatedReorderLevel)
+            : InventoryValidation.validateMaxStock(existingItem.maxStock, updatedReorderLevel));
+
+    final updatedGst = input.clearGstPercent
+        ? null
+        : (input.gstPercent != null
+            ? InventoryValidation.validateGstPercent(input.gstPercent)
+            : existingItem.gstPercent);
+
+    final updatedBatchNumber = input.clearBatchNumber
+        ? null
+        : (input.batchNumber != null
+            ? input.batchNumber!.trim()
+            : existingItem.batchNumber);
+
+    final updatedExpiryDate = input.clearExpiryDate
+        ? null
+        : (input.expiryDate ?? existingItem.expiryDate);
+
+    final updatedLastRestockedDate = input.clearLastRestockedDate
+        ? null
+        : (input.lastRestockedDate ?? existingItem.lastRestockedDate);
+
+    final updatedIsActive = input.isActive ?? existingItem.isActive;
+
+    final updatedNotes = input.clearNotes
+        ? null
+        : (input.notes != null
+            ? InventoryValidation.validateNotes(input.notes)
+            : existingItem.notes);
+
+    Map<String, dynamic> updatedCustomFields;
+    if (input.customFields != null) {
+      final merged = Map<String, dynamic>.from(existingItem.customFields);
+      for (final entry in input.customFields!.entries) {
+        if (entry.value == null) {
+          merged.remove(entry.key);
+        } else {
+          merged[entry.key] = entry.value;
+        }
+      }
+      updatedCustomFields = _validateAndNormalizeCustomFields(merged);
+    } else {
+      updatedCustomFields = existingItem.customFields;
+    }
+
+    final updatedItem = existingItem.copyWith(
       name: trimmedName,
       sku: trimmedSku,
+      category: updatedCategory,
+      brand: updatedBrand,
+      unit: updatedUnit,
+      barcode: updatedBarcode,
+      warehouse: updatedWarehouse,
+      binLocation: updatedBinLocation,
+      supplier: updatedSupplier,
+      unitCostInr: updatedUnitCost,
+      sellingPriceInr: updatedSellingPrice,
+      reorderLevel: updatedReorderLevel,
+      maxStock: updatedMaxStock,
+      gstPercent: updatedGst,
+      batchNumber: updatedBatchNumber,
+      expiryDate: updatedExpiryDate,
+      lastRestockedDate: updatedLastRestockedDate,
+      isActive: updatedIsActive,
+      notes: updatedNotes,
+      customFields: updatedCustomFields,
     );
 
     _items[existingIndex] = updatedItem;

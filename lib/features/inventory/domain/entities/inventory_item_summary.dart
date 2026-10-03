@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'inventory_item.dart';
+import 'inventory_stock_status.dart';
 
 /// Read projection pairing an [InventoryItem] with its derived stock balance.
 ///
@@ -15,6 +16,15 @@ class InventoryItemSummary {
     required this.quantityOnHand,
   });
 
+  /// Derived stock status computed dynamically from [item.isActive], [quantityOnHand],
+  /// [item.reorderLevel], and [item.maxStock].
+  InventoryStockStatus get stockStatus => InventoryStockStatus.compute(
+        isActive: item.isActive,
+        quantityOnHand: quantityOnHand,
+        reorderLevel: item.reorderLevel,
+        maxStock: item.maxStock,
+      );
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -28,5 +38,5 @@ class InventoryItemSummary {
 
   @override
   String toString() =>
-      'InventoryItemSummary(item: ${item.name} (${item.sku}), quantityOnHand: $quantityOnHand)';
+      'InventoryItemSummary(item: ${item.name} (${item.sku}), quantityOnHand: $quantityOnHand, status: ${stockStatus.name})';
 }
