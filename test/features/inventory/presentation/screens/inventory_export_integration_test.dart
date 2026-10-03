@@ -105,7 +105,6 @@ void main() {
       expect(find.byKey(const Key('inventory_export_dialog')), findsOneWidget);
 
       // Replace Dialog with one using our capturing deliveryService
-      // Or show dialog directly with deliveryService
       Navigator.of(tester.element(find.byKey(const Key('inventory_export_dialog')))).pop();
       await tester.pumpAndSettle();
 
@@ -123,9 +122,16 @@ void main() {
       await tester.tap(find.byKey(const Key('inventory_export_format_csv')));
       await tester.pumpAndSettle();
 
-      // Tap Export submit
+      // Tap Export submit to prepare
       await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
-      await tester.pump();
+      await tester.pumpAndSettle();
+
+      // Saver must NOT have been called yet
+      expect(fileSaver.callCount, equals(0));
+      expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+
+      // Tap explicit Download button
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
       await tester.pumpAndSettle();
 
       // Verify fileSaver was invoked
@@ -177,9 +183,15 @@ void main() {
       expect(xlsxTile.enabled, isTrue);
       expect(csvTile.enabled, isFalse);
 
-      // Tap Export submit
+      // Tap Export submit to prepare
       await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
-      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(fileSaver.callCount, equals(0));
+      expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+
+      // Explicit download action
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
       await tester.pumpAndSettle();
 
       expect(fileSaver.callCount, equals(1));
@@ -223,8 +235,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // 1. Prepare
       await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
-      await tester.pump();
+      await tester.pumpAndSettle();
+
+      // 2. Download
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
       await tester.pumpAndSettle();
 
       expect(fileSaver.callCount, equals(1));

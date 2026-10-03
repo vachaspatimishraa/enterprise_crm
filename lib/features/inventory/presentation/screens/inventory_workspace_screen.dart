@@ -5,6 +5,8 @@ import '../../../auth/domain/entities/crm_module.dart';
 import '../../../auth/domain/entities/current_user.dart';
 import '../../../auth/domain/policies/access_policy.dart';
 import '../../../auth/domain/policies/crm_permissions.dart';
+import '../../../auth/presentation/bloc/auth_cubit.dart';
+import '../../../auth/presentation/bloc/auth_state.dart';
 import '../../../auth/presentation/screens/access_restricted_screen.dart';
 import '../../domain/entities/inventory_item_summary.dart';
 import '../../domain/entities/inventory_sort.dart';
@@ -30,11 +32,13 @@ import 'inventory_item_details_screen.dart';
 class InventoryWorkspaceScreen extends StatelessWidget {
   final CurrentUser user;
   final InventoryRepository repository;
+  final CurrentUser? Function()? currentUserProvider;
 
   const InventoryWorkspaceScreen({
     super.key,
     required this.user,
     required this.repository,
+    this.currentUserProvider,
   });
 
   @override
@@ -50,7 +54,11 @@ class InventoryWorkspaceScreen extends StatelessWidget {
 
     return BlocProvider<InventoryCubit>(
       create: (_) => InventoryCubit(repository)..loadItems(),
-      child: _InventoryWorkspaceView(user: user, repository: repository),
+      child: _InventoryWorkspaceView(
+        user: user,
+        repository: repository,
+        currentUserProvider: currentUserProvider,
+      ),
     );
   }
 }
@@ -58,8 +66,13 @@ class InventoryWorkspaceScreen extends StatelessWidget {
 class _InventoryWorkspaceView extends StatefulWidget {
   final CurrentUser user;
   final InventoryRepository repository;
+  final CurrentUser? Function()? currentUserProvider;
 
-  const _InventoryWorkspaceView({required this.user, required this.repository});
+  const _InventoryWorkspaceView({
+    required this.user,
+    required this.repository,
+    this.currentUserProvider,
+  });
 
   @override
   State<_InventoryWorkspaceView> createState() =>
@@ -139,11 +152,31 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
     }
   }
 
+  CurrentUser? _resolveCurrentUser() {
+    if (widget.currentUserProvider != null) {
+      return widget.currentUserProvider!();
+    }
+    try {
+      final authCubit = context.read<AuthCubit?>();
+      if (authCubit != null) {
+        final authState = authCubit.state;
+        if (authState is AuthAuthenticated) {
+          return authState.user;
+        } else if (authState is AuthUnauthenticated) {
+          return null;
+        }
+      }
+    } catch (_) {}
+    return widget.user;
+  }
+
   void _openExport(BuildContext context) {
+    final liveUser = _resolveCurrentUser() ?? widget.user;
     showInventoryExportDialog(
       context: context,
-      user: widget.user,
+      user: liveUser,
       repository: widget.repository,
+      currentUserProvider: _resolveCurrentUser,
     );
   }
 

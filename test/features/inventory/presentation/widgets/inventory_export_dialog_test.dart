@@ -7,6 +7,8 @@ import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
 import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dart';
 import 'package:enterprise_crm/features/inventory/data/repositories/mock_inventory_repository.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_export_artifact.dart';
+import 'package:enterprise_crm/features/inventory/domain/entities/inventory_page.dart';
+import 'package:enterprise_crm/features/inventory/domain/entities/inventory_query.dart';
 import 'package:enterprise_crm/features/inventory/presentation/screens/inventory_workspace_screen.dart';
 import 'package:enterprise_crm/features/inventory/presentation/services/inventory_export_file_delivery_service.dart';
 import 'package:enterprise_crm/features/inventory/presentation/widgets/inventory_export_dialog.dart';
@@ -44,6 +46,18 @@ class _FakeExportFileSaver implements InventoryExportFileSaver {
       throw throwException!;
     }
     return returnUri;
+  }
+}
+
+class _DelayedInventoryRepository extends MockInventoryRepository {
+  Completer<void>? delayCompleter;
+
+  @override
+  Future<InventoryPage> getItems(InventoryQuery query) async {
+    if (delayCompleter != null) {
+      await delayCompleter!.future;
+    }
+    return super.getItems(query);
   }
 }
 
@@ -198,7 +212,42 @@ void main() {
       expect(fakeSaver.callCount, equals(0));
     });
 
-    testWidgets('successful export on Android saves file and shows success message', (tester) async {
+    testWidgets('preparing displays a loading state and progress indicator', (tester) async {
+      final delayedRepo = _DelayedInventoryRepository();
+      delayedRepo.delayCompleter = Completer<void>();
+      final user = makeUser();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: user,
+              repository: delayedRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Tap Export button to prepare
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pump(); // Enter preparing state
+
+      // Assert loading indicator is displayed while in-flight
+      expect(find.byKey(const Key('inventory_export_loading_indicator')), findsOneWidget);
+      expect(find.text('Preparing inventory export...'), findsOneWidget);
+
+      // Finish async preparation
+      delayedRepo.delayCompleter!.complete();
+      await tester.pumpAndSettle();
+
+      // Preparation finishes: loading indicator gone, prepared download button visible
+      expect(find.byKey(const Key('inventory_export_loading_indicator')), findsNothing);
+      expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+    });
+
+    testWidgets('prepared state displays Download button and does NOT auto-invoke file saver', (tester) async {
       final user = makeUser();
       fakeSaver.returnUri = Uri.parse('file:///storage/emulated/0/Download/export.csv');
 
@@ -215,15 +264,130 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Tap Export button
+      // Tap Export button to prepare
       await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
-      await tester.pump(); // Start preparing
+      await tester.pumpAndSettle(); // Preparation completes
 
-      // Pump through async preparation & delivery
+      // Critical check: Prepared state reached, but file saver has NOT been called!
+      expect(fakeSaver.callCount, equals(0));
+      expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+      expect(find.text('Download CSV'), findsOneWidget);
+      expect(find.text('Inventory export ready (CSV).'), findsOneWidget);
+    });
+
+    testWidgets('tapping Download button invokes file delivery exactly once', (tester) async {
+      final user = makeUser();
+      fakeSaver.returnUri = Uri.parse('file:///storage/emulated/0/Download/export.csv');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: user,
+              repository: mockRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Prepare export
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(fakeSaver.callCount, equals(0));
+
+      // 2. Explicit user action: click Download button
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
       await tester.pumpAndSettle();
 
       expect(fakeSaver.callCount, equals(1));
       expect(fakeSaver.lastExtension, equals('csv'));
+      expect(find.text('Inventory exported successfully.'), findsOneWidget);
+    });
+
+    testWidgets('rebuild does not trigger another download', (tester) async {
+      final user = makeUser();
+      fakeSaver.returnUri = Uri.parse('file:///storage/emulated/0/Download/export.csv');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: user,
+              repository: mockRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
+      await tester.pumpAndSettle();
+
+      expect(fakeSaver.callCount, equals(1));
+
+      // Rebuild the tree
+      await tester.pump();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: user,
+              repository: mockRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Call count remains 1
+      expect(fakeSaver.callCount, equals(1));
+    });
+
+    testWidgets('duplicate concurrent clicks on download are guarded', (tester) async {
+      final user = makeUser();
+      fakeSaver.completer = Completer<Uri?>();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: user,
+              repository: mockRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pumpAndSettle();
+
+      // Click download button while saver is suspended
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
+      await tester.pump(); // starts delivery, _isDelivering = true
+
+      expect(fakeSaver.callCount, equals(1));
+
+      // Attempt second tap while in-flight
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')), warnIfMissed: false);
+      await tester.pump();
+
+      expect(fakeSaver.callCount, equals(1));
+
+      // Complete delivery
+      fakeSaver.completer!.complete(Uri.parse('file:///path/export.csv'));
+      await tester.pumpAndSettle();
+
+      expect(fakeSaver.callCount, equals(1));
       expect(find.text('Inventory exported successfully.'), findsOneWidget);
     });
 
@@ -248,14 +412,16 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
-      await tester.pump();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
       await tester.pumpAndSettle();
 
       expect(fakeSaver.callCount, equals(1));
       expect(find.text('Inventory download started.'), findsOneWidget);
     });
 
-    testWidgets('user cancellation in save dialog shows cancellation feedback without crash', (tester) async {
+    testWidgets('user cancellation in save dialog shows cancellation feedback and permits retry', (tester) async {
       final user = makeUser();
       fakeSaver.returnUri = null; // User cancelled save dialog
 
@@ -273,11 +439,213 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
-      await tester.pump();
+      await tester.pumpAndSettle();
+
+      // First delivery attempt cancelled
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
       await tester.pumpAndSettle();
 
       expect(fakeSaver.callCount, equals(1));
       expect(find.text('File save was cancelled.'), findsOneWidget);
+
+      // Retry: tap download button again with success
+      fakeSaver.returnUri = Uri.parse('file:///storage/export.csv');
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
+      await tester.pumpAndSettle();
+
+      expect(fakeSaver.callCount, equals(2));
+      expect(find.text('Inventory exported successfully.'), findsOneWidget);
+    });
+
+    testWidgets('logout before delivery blocks platform saver with restricted feedback', (tester) async {
+      CurrentUser? liveUser = makeUser();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: liveUser,
+              currentUserProvider: () => liveUser,
+              repository: mockRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Prepare export while signed in
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+      expect(fakeSaver.callCount, equals(0));
+
+      // 2. User logs out before delivery
+      liveUser = null;
+
+      // 3. User clicks Download
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
+      await tester.pumpAndSettle();
+
+      // File saver was NOT invoked
+      expect(fakeSaver.callCount, equals(0));
+      expect(find.text('User session expired or unauthenticated.'), findsOneWidget);
+    });
+
+    testWidgets('account switch before delivery blocks platform saver with restricted feedback', (tester) async {
+      final userA = makeUser(id: 'user_a');
+      final userB = makeUser(id: 'user_b');
+      CurrentUser? liveUser = userA;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: userA,
+              currentUserProvider: () => liveUser,
+              repository: mockRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. User A prepares export
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+
+      // 2. Account switches to User B
+      liveUser = userB;
+
+      // 3. Download clicked
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
+      await tester.pumpAndSettle();
+
+      // File saver was NOT invoked for different user identity
+      expect(fakeSaver.callCount, equals(0));
+      expect(find.text('User identity changed since export was prepared.'), findsOneWidget);
+    });
+
+    testWidgets('permission revocation before delivery blocks platform saver', (tester) async {
+      CurrentUser? liveUser = makeUser();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: liveUser,
+              currentUserProvider: () => liveUser,
+              repository: mockRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Prepare CSV
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+
+      // 2. CSV permission revoked before delivery
+      liveUser = makeUser(
+        permissions: {
+          CrmPermissions.inventoryView,
+          CrmPermissions.inventoryExportXlsx, // Only XLSX now, CSV revoked
+        },
+      );
+
+      // 3. Tap download CSV
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
+      await tester.pumpAndSettle();
+
+      expect(fakeSaver.callCount, equals(0));
+      expect(
+        find.text('User is not authorized to deliver this export format.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('inventory.view revocation before delivery blocks platform saver', (tester) async {
+      CurrentUser? liveUser = makeUser();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: liveUser,
+              currentUserProvider: () => liveUser,
+              repository: mockRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pumpAndSettle();
+
+      // inventory.view revoked
+      liveUser = makeUser(
+        permissions: {
+          CrmPermissions.inventoryExportCsv,
+        },
+      );
+
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
+      await tester.pumpAndSettle();
+
+      expect(fakeSaver.callCount, equals(0));
+      expect(
+        find.text('User is not authorized to deliver this export format.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('format switch after prepared resets state and requires re-preparation', (tester) async {
+      final user = makeUser();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: user,
+              repository: mockRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Prepare CSV
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+      expect(find.text('Download CSV'), findsOneWidget);
+
+      // 2. Switch to Excel format
+      await tester.tap(find.byKey(const Key('inventory_export_format_xlsx')));
+      await tester.pumpAndSettle();
+
+      // State is reset: submit button reappears for XLSX, download button gone
+      expect(find.byKey(const Key('inventory_export_dialog_submit_button')), findsOneWidget);
+      expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsNothing);
+
+      // 3. Prepare Excel
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+      expect(find.text('Download Excel'), findsOneWidget);
     });
 
     testWidgets('responsive layout on narrow screen (320px width) does not overflow', (tester) async {
@@ -290,6 +658,27 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: user,
+              repository: mockRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('inventory_export_dialog')), findsOneWidget);
+    });
+
+    testWidgets('consistent styling across light and dark themes', (tester) async {
+      final user = makeUser();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(useMaterial3: true),
           home: Scaffold(
             body: InventoryExportDialog(
               user: user,
@@ -393,8 +782,8 @@ void main() {
       expect(find.byKey(const Key('inventory_workspace_export_button')), findsNothing);
     });
 
-    testWidgets('tapping Export button on workspace opens InventoryExportDialog', (tester) async {
-      final admin = CurrentUser(
+    testWidgets('tapping Export button on workspace opens InventoryExportDialog with live provider', (tester) async {
+      CurrentUser? liveUser = CurrentUser(
         id: 'adm_1',
         displayName: 'Admin User',
         accountType: AccountType.admin,
@@ -404,7 +793,11 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          home: InventoryWorkspaceScreen(user: admin, repository: mockRepo),
+          home: InventoryWorkspaceScreen(
+            user: liveUser,
+            currentUserProvider: () => liveUser,
+            repository: mockRepo,
+          ),
         ),
       );
       await tester.pumpAndSettle();
