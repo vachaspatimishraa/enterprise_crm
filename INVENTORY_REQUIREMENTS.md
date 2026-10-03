@@ -1090,3 +1090,181 @@ UI Trigger -> ExportCubit -> InventoryRepository -> ExportFormatter (CSV/XLSX) -
 4. Scheduled background email exports.
 5. PDF export formatting.
 6. Backend REST export streaming endpoints.
+
+---
+
+## 16. USER-REQUESTED INVENTORY IMPORT / PDF EXTENSION
+
+The attached inventory workbook request authorizes the following narrow extension
+without widening the existing Inventory domain or CSV/XLSX export schema:
+
+1. **PDF export:** A printable PDF report is available for the same three frozen
+   columns: `Item Name`, `SKU`, and `Current Quantity`.
+2. **PDF permissions:** No new permission key is introduced. PDF export is
+   available when the current user already has CSV or XLSX export permission;
+   Administrators retain unrestricted access.
+3. **Workbook import:** The existing CSV/XLSX bulk-import workflow accepts
+   manually mapped `Name`, `SKU`, and optional `Opening Stock` columns from a
+   wider workbook such as `Inventory_Data`. Other workbook fields are shown to
+   the user but are not persisted because the frozen Inventory entity does not
+   define them.
+4. **Zero stock values:** A source value of `0` in a mapped `Opening Stock`
+   column remains invalid under the existing opening-stock rules. Leave the
+   field unmapped or blank when an item should start with zero movements and a
+   derived quantity of `0.0`.
+
+---
+
+# 17. INVENTORY-7: COMPLETE FLEXIBLE INVENTORY DATA MANAGEMENT SPECIFICATION
+
+**Authorized by:** Vachaspati Mishra
+**Status:** Approved for Implementation
+**Scope:** Replaces the former 3-column restriction with a 21-field persistent inventory catalog, reusable custom fields, advanced manual entry/editing, flexible CSV/XLSX column mapping & import, customizable CSV/XLSX/PDF export, and field-level security.
+
+---
+
+## 17.1 Real Mock Test Workbook Inspection & Ground Truth
+
+The uploaded test workbook `inventory_mock_test_data.xlsx` (and companion `inventory_mock_test_data.csv` on Desktop) was inspected directly. It contains four sheets providing concrete requirements and test criteria:
+
+### Sheet 1: `Inventory_Data` (73 rows / 72 product records)
+- Contains 72 fictional commercial product records with INR pricing across 3 Indian warehouse hubs and 9 product categories.
+- Sample reference date: `2026-10-03`.
+- Exactly 21 columns covering identity, classification, warehouse logistics, financial pricing, stock thresholds, batch traceability, and operational lifecycle.
+
+### Sheet 2: `Test_Overview` (Summary & Baseline KPIs)
+- **Total sample SKUs:** 72
+- **Active SKUs:** 70 (2 discontinued items: `ELE-0007`, `SFT-0005` have `is_active = 0`)
+- **Out-of-stock SKUs:** 8 (`stock_quantity = 0`)
+- **Low-stock SKUs:** 16 (`stock_quantity <= reorder_level`)
+- **In-stock SKUs:** 39 (`reorder_level < stock_quantity <= max_stock`)
+- **Overstock SKUs:** 7 (`stock_quantity > max_stock`)
+- **Total on-hand units:** 3,763 units
+- **Total inventory valuation at cost:** INR 2,342,130
+- **Operational Guidelines:**
+  1. `Inventory_Data` sheet and `inventory_mock_test_data.csv` share identical 72 records.
+  2. Map headers to application schema; `expected_stock_status` is informational and derived by the system.
+  3. `Stock_Movements` sheet represents independent post-import test transactions and must NOT be imported as part of item-master setup.
+  4. `Invalid_Examples` sheet defines the mandatory validation test matrix.
+
+### Sheet 3: `Stock_Movements` (25 transaction records)
+- Contains 25 sample stock movement transactions across movement types: `STOCK_IN`, `STOCK_OUT`, `CUSTOMER_RETURN`, `ADJUSTMENT_IN`, `ADJUSTMENT_OUT`, `SUPPLIER_RETURN`.
+- Columns: `movement_id`, `transaction_date`, `sku`, `warehouse`, `movement_type`, `quantity`, `reference`, `notes`.
+- **Architectural Rule:** Stock movements are an immutable transaction log separate from item-master catalog data. They must NOT be merged or auto-imported with item master rows without an explicitly designed, authorized transaction posting workflow.
+
+### Sheet 4: `Invalid_Examples` (16 Negative Validation Test Cases)
+The workbook defines 16 explicit test cases that must be validated across manual entry and bulk import:
+- **INV-001 (Required SKU):** Blank SKU must be rejected with row-level error.
+- **INV-002 (Duplicate SKU):** Existing SKU entered again must be rejected or handled according to explicit upsert policy.
+- **INV-003 (Negative Quantity):** `stock_quantity < 0` must be rejected.
+- **INV-004 (Negative Cost):** `unit_cost_inr < 0` must be rejected.
+- **INV-005 (Invalid Barcode):** Alphanumeric/invalid checksum barcode must be rejected if barcode validation is enabled.
+- **INV-006 (Invalid Date):** Malformed dates (e.g. `31/31/2026`) must be rejected.
+- **INV-007 (Unknown Warehouse):** Unconfigured warehouse code (e.g. `XYZ-99`) must trigger validation error or mapping request.
+- **INV-008 (Unknown Category):** Unlisted category must trigger validation error or dynamic categorization request.
+- **INV-009 (Missing Product Name):** Blank product name must be rejected.
+- **INV-010 (Invalid Quantity Type):** Non-numeric quantity (e.g. `twelve`) must be rejected.
+- **INV-011 (Quantity Overdraw):** Transaction deducting more than available stock must be rejected.
+- **INV-012 (Invalid Reorder Level):** `reorder_level < 0` must be rejected.
+- **INV-013 (Invalid Max Stock):** `max_stock < reorder_level` must be rejected or flagged with validation warning.
+- **INV-014 (Expired Lot):** Items with `expiry_date` prior to current date (`2026-10-03`) must be flagged/quarantined.
+- **INV-015 (Formula Injection):** Fields beginning with `=,+,-,@` (e.g. `=1+1`) must be sanitized/escaped upon import/export.
+- **INV-016 (Leading-Zero Values):** Barcodes and SKUs with leading zeros (e.g. `0012345678905`) must be stored strictly as text, avoiding truncation or scientific notation.
+
+---
+
+## 17.2 The 21-Field Inventory Data Catalog
+
+| # | Column Key | Display Label | Logical Type | Dart / Storage Type | Nullable? | Validation Rules & Constraints | Field Sensitivity & Access Control |
+|---|---|---|---|---|:---:|---|---|
+| 1 | `sku` | SKU | Text | `String` | **No** | 1-64 chars; unique; whitespace trimmed; leading zeros preserved (INV-016); no formula injection. | Standard View |
+| 2 | `product_name` | Product Name | Text | `String` | **No** | 1-255 chars; non-blank; formula escaped. | Standard View |
+| 3 | `category` | Category | Taxonomy / Enum | `String` | **No** | Validated against configured category list or dynamic catalog. 9 seed values: `Cleaning`, `Electronics`, `IT Accessories`, `Maintenance`, `Office Furniture`, `Packaging`, `Pantry`, `Safety`, `Stationery`. | Standard View |
+| 4 | `brand` | Brand | Text | `String?` | Yes | 0-100 chars; optional. 31 unique brands in seed data. | Standard View |
+| 5 | `unit` | Unit of Measure | Taxonomy / Enum | `String` | **No** | Standardized UoM. 11 seed values: `bag`, `bottle`, `box`, `case`, `jar`, `kit`, `pack`, `piece`, `ream`, `roll`, `set`. Defaults to `piece`. | Standard View |
+| 6 | `barcode` | Barcode | Text (EAN/UPC) | `String?` | Yes | Strictly stored as text (prevents numeric truncation). Validated for length & format (e.g. EAN-13 13 numeric digits). | Standard View |
+| 7 | `warehouse` | Warehouse | Location Code | `String` | **No** | Seed values: `BLR-01`, `DEL-01`, `MUM-01`. Validated against facility list. | Standard View |
+| 8 | `bin_location` | Bin Location | Text | `String?` | Yes | Aisle/Rack/Shelf code (e.g. `ELE-A1-01`). Alphanumeric. | Standard View |
+| 9 | `supplier` | Supplier | Text / Link | `String?` | Yes | Vendor company name. 9 seed values in mock data. | **Commercial Sensitivity:** Requires supplier view permission or Admin role; masked if restricted. |
+| 10 | `unit_cost_inr` | Unit Cost (INR) | Currency / Decimal | `double?` | Yes | Non-negative (`>= 0.0`). Currency formatted. | **Highly Sensitive Financial:** Requires `inventory.cost.view` or Admin role; hidden/omitted if unauthorized. |
+| 11 | `selling_price_inr` | Selling Price (INR) | Currency / Decimal | `double?` | Yes | Non-negative (`>= 0.0`). Currency formatted. | Controlled financial pricing field. |
+| 12 | `stock_quantity` | Stock Quantity | Quantity | `double` | **No** | Non-negative (`>= 0`). In CRM, derived from movement ledger; on import, initializes opening stock ledger entry if > 0. | Standard View |
+| 13 | `reorder_level` | Reorder Level | Quantity | `double?` | Yes | Non-negative (`>= 0`). Minimum threshold before reorder alert. | Standard View |
+| 14 | `max_stock` | Max Stock | Quantity | `double?` | Yes | Must be `>= reorder_level` if both are specified. | Standard View |
+| 15 | `gst_percent` | GST (%) | Percentage | `double?` | Yes | Tax rate percentage (e.g. `5.0`, `12.0`, `18.0`). Non-negative. | Financial / Accounting |
+| 16 | `batch_number` | Batch Number | Text | `String?` | Yes | Lot / batch tracking code (e.g. `B26-ELE-01`). | Traceability |
+| 17 | `expiry_date` | Expiry Date | Date | `DateTime?` | Yes | ISO-8601 Date (`YYYY-MM-DD`). Flags quarantine/warning if prior to current date. | Quality / FEFO Control |
+| 18 | `last_restocked_date` | Last Restocked Date | Date | `DateTime?` | Yes | ISO-8601 Date (`YYYY-MM-DD`). Informational restock stamp. | Logistics |
+| 19 | `is_active` | Is Active | Boolean | `bool` | **No** | `true` (active) or `false` (inactive/discontinued). Defaults to `true`. | Standard View |
+| 20 | `expected_stock_status` | Stock Status | Computed Enum | `InventoryStockStatus` | **No** | Informational / derived: `OUT_OF_STOCK`, `LOW_STOCK`, `IN_STOCK`, `OVERSTOCK`, `DISCONTINUED`. Computed by CRM logic. | Standard View |
+| 21 | `notes` | Notes | Text | `String?` | Yes | Remarks / operational flags (up to 1,000 characters). | Standard View |
+
+---
+
+## 17.3 Reusable Custom Field Infrastructure
+
+To support arbitrary business extensions without database schema migrations:
+1. **Custom Field Definition (`CustomFieldDefinition`):**
+   - `id`: Unique identifier (UUID).
+   - `key`: Machine-readable slug (e.g. `shelf_life_days`, `hsn_code`). Must be alphanumeric snake_case.
+   - `label`: Human-readable label (e.g. `Shelf Life (Days)`, `HSN Code`).
+   - `dataType`: `text`, `number`, `date`, `boolean`, `dropdown`.
+   - `isRequired`: Boolean flag indicating mandatory input.
+   - `options`: List of string choices for `dropdown` type.
+   - `defaultValue`: Optional fallback value.
+   - `createdAt`, `createdBy`: Audit trail stamps.
+2. **Entity Storage:**
+   - `InventoryItem` holds `Map<String, dynamic> customFields`.
+   - Keys correspond to `CustomFieldDefinition.key`.
+   - Values are typed and validated against the definition before save.
+3. **Unmapped Column Protection Invariant:**
+   - **Never silently drop unsupported columns.**
+   - When importing a CSV or Excel file containing columns outside the 21 standard fields:
+     - The column mapping screen displays an **Unmapped Columns** alert.
+     - User is offered 4 clear options for each unmatched column:
+       1. Map to an existing Standard Field.
+       2. Map to an existing Custom Field.
+       3. **Create New Custom Field** (one-click dialog pre-populating key, label, and inferred type).
+       4. Explicitly **Skip / Ignore** the column with explicit user acknowledgment.
+
+---
+
+## 17.4 Field-Level Security and Visibility Matrix
+
+To protect sensitive financial and supplier information:
+1. **`unit_cost_inr` (Unit Cost):**
+   - Highly sensitive commercial field.
+   - Restricted to users possessing `inventory.cost.view` permission or Administrator role.
+   - Unauthorized users: field is hidden in UI, masked in details, omitted from manual forms, and excluded from exports.
+2. **`supplier` (Supplier Information):**
+   - Sensitive vendor relationship field.
+   - Restricted to users possessing `inventory.supplier.view` permission or Administrator role.
+3. **`selling_price_inr` (Selling Price):**
+   - Visible to inventory managers and sales agents; editable only with inventory management permission.
+
+---
+
+## 17.5 Granular PDF Export Authorization
+
+1. **Dedicated Permission Key:**
+   - Introducing `CrmPermissions.inventoryExportPdf = 'inventory.export.pdf'`.
+   - PDF export will NOT automatically inherit from `inventory.export.csv` or `inventory.export.xlsx`.
+   - Administrators hold full access. Standard Users require explicit assignment of `inventory.export.pdf`.
+2. **Status of Previous PDF Implementation:**
+   - The initial dependency-free 3-column PDF serializer (`InventoryPdfSerializer`) exists in `lib/features/inventory/presentation/services/inventory_pdf_serializer.dart` with passing unit tests (`inventory_pdf_serializer_test.dart`).
+   - However, because previous automated Flutter test verification stalled on platform runner execution, it is recorded as **UNVERIFIED / PENDING INVENTORY-7.6** until dedicated permission wiring and multi-column PDF formatting are verified.
+
+---
+
+## 17.6 Phased Implementation Roadmap
+
+| Phase | Milestone | Scope Summary |
+|---|---|---|
+| **INVENTORY-7.1** | **Requirements & Catalog Design** | *(Current Checkpoint)* Inspect workbook, define 21 fields, custom field schema, security matrix, unmapped column rules, and PDF permission architecture. |
+| **INVENTORY-7.2** | **Persistent Standard & Custom Fields** | Extend `InventoryItem`, input DTOs, `MockInventoryRepository`, and custom field store to persist all 21 fields and arbitrary custom attributes while maintaining 100% backwards compatibility with existing 1,674 tests. |
+| **INVENTORY-7.3** | **Advanced Add / Edit Forms** | Multi-section responsive forms (General, Logistics, Pricing, Traceability, Custom Fields) with field-level visibility guards, validation, and barcode/SKU formatting. |
+| **INVENTORY-7.4** | **Flexible Import & Column Mapping** | Interactive column mapper supporting Excel (.xlsx) & CSV (.csv), header auto-matching, custom field creation, preview grid, duplicate handling (Reject/Skip/Update), and validation against the 16 negative test cases. |
+| **INVENTORY-7.5** | **Customizable CSV & XLSX Export** | Dynamic column selector, column reordering, export of all vs filtered vs selected records, custom field inclusion, and legacy 3-column preset preservation. |
+| **INVENTORY-7.6** | **Customizable PDF Export & Security** | Multi-column PDF serializer with pagination, header wrapping, formula escaping, and enforcement of the dedicated `inventory.export.pdf` permission. |
+| **INVENTORY-7.7** | **Integration, Regression & Security QA** | Full test suite execution across all modules, mock repository assertions, tamper-resistance, and fail-closed security rechecks. |
+| **INVENTORY-7.8** | **Manual Acceptance & Owner Review** | Real browser (Chrome/Edge) and Android verification, export file inspection, and owner review. |
