@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../auth/domain/entities/current_user.dart';
+import '../../../auth/presentation/bloc/auth_cubit.dart';
+import '../../../auth/presentation/bloc/auth_state.dart';
 import '../../domain/entities/inventory_export_artifact.dart';
 import '../../domain/policies/inventory_export_policy.dart';
 import '../../domain/repositories/inventory_repository.dart';
@@ -20,13 +22,25 @@ Future<bool?> showInventoryExportDialog({
   InventoryExportCubit? cubit,
   InventoryExportFileDeliveryService? fileDeliveryService,
 }) {
+  CurrentUser? Function()? effectiveProvider = currentUserProvider;
+  if (effectiveProvider == null) {
+    try {
+      final authCubit = context.read<AuthCubit?>();
+      if (authCubit != null) {
+        effectiveProvider = () {
+          final s = authCubit.state;
+          return s is AuthAuthenticated ? s.user : null;
+        };
+      }
+    } catch (_) {}
+  }
   return showDialog<bool>(
     context: context,
     barrierDismissible: false,
     builder: (_) => InventoryExportDialog(
       user: user,
       repository: repository,
-      currentUserProvider: currentUserProvider,
+      currentUserProvider: effectiveProvider,
       cubit: cubit,
       fileDeliveryService: fileDeliveryService,
     ),
@@ -66,10 +80,30 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   String? _deliveryFeedback;
   bool _isDeliverySuccess = false;
 
+  CurrentUser? _getSafeCurrentUser() {
+    try {
+      return _currentUserProvider();
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    _currentUserProvider = widget.currentUserProvider ?? (() => widget.user);
+    _currentUserProvider = widget.currentUserProvider ??
+        () {
+          try {
+            final authCubit = context.read<AuthCubit?>();
+            if (authCubit != null) {
+              final authState = authCubit.state;
+              if (authState is AuthAuthenticated) {
+                return authState.user;
+              }
+            }
+          } catch (_) {}
+          return null;
+        };
     _isExternalCubit = widget.cubit != null;
     if (_isExternalCubit) {
       _cubit = widget.cubit!;
@@ -79,16 +113,16 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
       _cubit = InventoryExportCubit(
         exportService: exportService,
         currentUser: widget.user,
-        currentUserProvider: _currentUserProvider,
+        currentUserProvider: _getSafeCurrentUser,
       );
     }
 
     _fileDeliveryService = widget.fileDeliveryService ??
         InventoryExportFileDeliveryService();
 
-    final activeUser = _currentUserProvider() ?? widget.user;
-    final canCsv = InventoryExportPolicy.canExportCsv(activeUser);
-    final canXlsx = InventoryExportPolicy.canExportXlsx(activeUser);
+    final activeUser = _getSafeCurrentUser();
+    final canCsv = activeUser != null && InventoryExportPolicy.canExportCsv(activeUser);
+    final canXlsx = activeUser != null && InventoryExportPolicy.canExportXlsx(activeUser);
 
     if (canCsv) {
       _selectedFormat = InventoryExportFormat.csv;
@@ -111,7 +145,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
       _isDeliverySuccess = false;
     });
 
-    final activeUser = _currentUserProvider();
+    final activeUser = _getSafeCurrentUser();
     if (activeUser == null) {
       setState(() {
         _deliveryFeedback = 'User session expired or unauthenticated.';
@@ -146,7 +180,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
 
     final result = await _fileDeliveryService.deliverArtifact(
       artifact: artifact,
-      currentUserProvider: _currentUserProvider,
+      currentUserProvider: _getSafeCurrentUser,
       boundUserId: _initiatingUserId,
     );
 
@@ -188,12 +222,13 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
           final theme = Theme.of(context);
           final colorScheme = theme.colorScheme;
 
-          final activeUser = _currentUserProvider() ?? widget.user;
-          final canCsv = InventoryExportPolicy.canExportCsv(activeUser);
-          final canXlsx = InventoryExportPolicy.canExportXlsx(activeUser);
+          final activeUser = _getSafeCurrentUser();
+          final canCsv = activeUser != null && InventoryExportPolicy.canExportCsv(activeUser);
+          final canXlsx = activeUser != null && InventoryExportPolicy.canExportXlsx(activeUser);
 
           final isBusy = state is InventoryExportPreparing || _isDelivering;
-          final canSelected = _selectedFormat == InventoryExportFormat.csv ? canCsv : canXlsx;
+          final canSelected = activeUser != null &&
+              (_selectedFormat == InventoryExportFormat.csv ? canCsv : canXlsx);
 
           return PopScope(
             canPop: !isBusy,
@@ -275,6 +310,17 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                           ],
                         ),
                       ),
+
+                      if (activeUser == null && state is! InventoryExportPrepared && _deliveryFeedback == null) ...[
+                        const SizedBox(height: 12),
+                        _buildFeedbackBox(
+                          context,
+                          key: const Key('inventory_export_dialog_unauthenticated_notice'),
+                          icon: Icons.lock_outline,
+                          message: 'User session expired or unauthenticated.',
+                          isError: true,
+                        ),
+                      ],
 
                       if (state is InventoryExportPreparing || _isDelivering) ...[
                         const SizedBox(height: 16),

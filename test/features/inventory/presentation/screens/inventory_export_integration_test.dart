@@ -91,7 +91,7 @@ void main() {
       // 1. Open Workspace
       await tester.pumpWidget(
         MaterialApp(
-          home: InventoryWorkspaceScreen(user: adminUser, repository: mockRepo),
+          home: InventoryWorkspaceScreen(user: adminUser, currentUserProvider: () => adminUser, repository: mockRepo),
         ),
       );
       await tester.pumpAndSettle();
@@ -113,6 +113,7 @@ void main() {
       showInventoryExportDialog(
         context: context,
         user: adminUser,
+        currentUserProvider: () => adminUser,
         repository: mockRepo,
         fileDeliveryService: deliveryService,
       );
@@ -158,7 +159,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          home: InventoryWorkspaceScreen(user: standardXlsxOnly, repository: mockRepo),
+          home: InventoryWorkspaceScreen(user: standardXlsxOnly, currentUserProvider: () => standardXlsxOnly, repository: mockRepo),
         ),
       );
       await tester.pumpAndSettle();
@@ -168,6 +169,7 @@ void main() {
       showInventoryExportDialog(
         context: context,
         user: standardXlsxOnly,
+        currentUserProvider: () => standardXlsxOnly,
         repository: mockRepo,
         fileDeliveryService: deliveryService,
       );
@@ -221,7 +223,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          home: InventoryWorkspaceScreen(user: standardCsvOnly, repository: mockRepo),
+          home: InventoryWorkspaceScreen(user: standardCsvOnly, currentUserProvider: () => standardCsvOnly, repository: mockRepo),
         ),
       );
       await tester.pumpAndSettle();
@@ -230,6 +232,7 @@ void main() {
       showInventoryExportDialog(
         context: context,
         user: standardCsvOnly,
+        currentUserProvider: () => standardCsvOnly,
         repository: mockRepo,
         fileDeliveryService: deliveryService,
       );

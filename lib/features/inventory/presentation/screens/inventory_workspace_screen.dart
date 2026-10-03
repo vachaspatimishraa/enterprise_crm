@@ -152,26 +152,57 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
     }
   }
 
-  CurrentUser? _resolveCurrentUser() {
+  CurrentUser? _resolveCurrentUser([BuildContext? contextOverride]) {
     if (widget.currentUserProvider != null) {
-      return widget.currentUserProvider!();
+      try {
+        return widget.currentUserProvider!();
+      } catch (_) {
+        return null;
+      }
     }
+    final ctx = contextOverride ?? context;
     try {
-      final authCubit = context.read<AuthCubit?>();
+      final authCubit = ctx.read<AuthCubit?>();
       if (authCubit != null) {
         final authState = authCubit.state;
         if (authState is AuthAuthenticated) {
           return authState.user;
-        } else if (authState is AuthUnauthenticated) {
-          return null;
         }
       }
     } catch (_) {}
-    return widget.user;
+    return null;
+  }
+
+  CurrentUser? _watchCurrentUser(BuildContext context) {
+    if (widget.currentUserProvider != null) {
+      try {
+        return widget.currentUserProvider!();
+      } catch (_) {
+        return null;
+      }
+    }
+    try {
+      final authCubit = context.watch<AuthCubit?>();
+      if (authCubit != null) {
+        final authState = authCubit.state;
+        if (authState is AuthAuthenticated) {
+          return authState.user;
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   void _openExport(BuildContext context) {
-    final liveUser = _resolveCurrentUser() ?? widget.user;
+    final liveUser = _resolveCurrentUser(context);
+    if (liveUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('User session expired or unauthenticated.'),
+        ),
+      );
+      return;
+    }
     showInventoryExportDialog(
       context: context,
       user: liveUser,
@@ -418,7 +449,8 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
             widget.user,
           );
           final canImport = InventoryImportPolicy.canImport(widget.user);
-          final canExport = InventoryExportPolicy.canExport(widget.user);
+          final liveUser = _watchCurrentUser(context);
+          final canExport = liveUser != null && InventoryExportPolicy.canExport(liveUser);
 
           if (isCompact) {
             return Column(

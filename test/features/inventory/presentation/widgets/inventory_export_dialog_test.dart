@@ -6,6 +6,10 @@ import 'package:enterprise_crm/features/auth/domain/entities/crm_module.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
 import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dart';
 import 'package:enterprise_crm/features/inventory/data/repositories/mock_inventory_repository.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:enterprise_crm/features/auth/presentation/bloc/auth_cubit.dart';
+import 'package:enterprise_crm/features/auth/presentation/bloc/auth_state.dart';
+import 'package:enterprise_crm/features/inventory/domain/repositories/inventory_repository.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_export_artifact.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_page.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_query.dart';
@@ -61,6 +65,31 @@ class _DelayedInventoryRepository extends MockInventoryRepository {
   }
 }
 
+
+class _FakeAuthCubit extends Cubit<AuthState> implements AuthCubit {
+  _FakeAuthCubit(super.initialState);
+
+  void emitState(AuthState state) => emit(state);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _TrackingInventoryRepository implements InventoryRepository {
+  final InventoryRepository delegate;
+  int getItemsCount = 0;
+  _TrackingInventoryRepository(this.delegate);
+
+  @override
+  Future<InventoryPage> getItems(InventoryQuery query) {
+    getItemsCount++;
+    return delegate.getItems(query);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => invocation;
+}
+
 void main() {
   CurrentUser makeUser({
     String id = 'usr_1',
@@ -103,6 +132,7 @@ void main() {
           home: Scaffold(
             body: InventoryExportDialog(
               user: user,
+              currentUserProvider: () => user,
               repository: mockRepo,
               fileDeliveryService: deliveryService,
             ),
@@ -139,6 +169,7 @@ void main() {
           home: Scaffold(
             body: InventoryExportDialog(
               user: user,
+              currentUserProvider: () => user,
               repository: mockRepo,
               fileDeliveryService: deliveryService,
             ),
@@ -171,6 +202,7 @@ void main() {
           home: Scaffold(
             body: InventoryExportDialog(
               user: user,
+              currentUserProvider: () => user,
               repository: mockRepo,
               fileDeliveryService: deliveryService,
             ),
@@ -198,6 +230,7 @@ void main() {
           home: Scaffold(
             body: InventoryExportDialog(
               user: user,
+              currentUserProvider: () => user,
               repository: mockRepo,
               fileDeliveryService: deliveryService,
             ),
@@ -222,6 +255,7 @@ void main() {
           home: Scaffold(
             body: InventoryExportDialog(
               user: user,
+              currentUserProvider: () => user,
               repository: delayedRepo,
               fileDeliveryService: deliveryService,
             ),
@@ -256,6 +290,7 @@ void main() {
           home: Scaffold(
             body: InventoryExportDialog(
               user: user,
+              currentUserProvider: () => user,
               repository: mockRepo,
               fileDeliveryService: deliveryService,
             ),
@@ -284,6 +319,7 @@ void main() {
           home: Scaffold(
             body: InventoryExportDialog(
               user: user,
+              currentUserProvider: () => user,
               repository: mockRepo,
               fileDeliveryService: deliveryService,
             ),
@@ -316,6 +352,7 @@ void main() {
           home: Scaffold(
             body: InventoryExportDialog(
               user: user,
+              currentUserProvider: () => user,
               repository: mockRepo,
               fileDeliveryService: deliveryService,
             ),
@@ -339,6 +376,7 @@ void main() {
           home: Scaffold(
             body: InventoryExportDialog(
               user: user,
+              currentUserProvider: () => user,
               repository: mockRepo,
               fileDeliveryService: deliveryService,
             ),
@@ -360,6 +398,7 @@ void main() {
           home: Scaffold(
             body: InventoryExportDialog(
               user: user,
+              currentUserProvider: () => user,
               repository: mockRepo,
               fileDeliveryService: deliveryService,
             ),
@@ -403,6 +442,7 @@ void main() {
           home: Scaffold(
             body: InventoryExportDialog(
               user: user,
+              currentUserProvider: () => user,
               repository: mockRepo,
               fileDeliveryService: webDeliveryService,
             ),
@@ -430,6 +470,7 @@ void main() {
           home: Scaffold(
             body: InventoryExportDialog(
               user: user,
+              currentUserProvider: () => user,
               repository: mockRepo,
               fileDeliveryService: deliveryService,
             ),
@@ -617,6 +658,7 @@ void main() {
           home: Scaffold(
             body: InventoryExportDialog(
               user: user,
+              currentUserProvider: () => user,
               repository: mockRepo,
               fileDeliveryService: deliveryService,
             ),
@@ -661,6 +703,7 @@ void main() {
           home: Scaffold(
             body: InventoryExportDialog(
               user: user,
+              currentUserProvider: () => user,
               repository: mockRepo,
               fileDeliveryService: deliveryService,
             ),
@@ -682,6 +725,7 @@ void main() {
           home: Scaffold(
             body: InventoryExportDialog(
               user: user,
+              currentUserProvider: () => user,
               repository: mockRepo,
               fileDeliveryService: deliveryService,
             ),
@@ -719,7 +763,11 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          home: InventoryWorkspaceScreen(user: admin, repository: mockRepo),
+          home: InventoryWorkspaceScreen(
+            user: admin,
+            currentUserProvider: () => admin,
+            repository: mockRepo,
+          ),
         ),
       );
       await tester.pumpAndSettle();
@@ -731,7 +779,11 @@ void main() {
       tester.view.physicalSize = const Size(400, 800);
       await tester.pumpWidget(
         MaterialApp(
-          home: InventoryWorkspaceScreen(user: admin, repository: mockRepo),
+          home: InventoryWorkspaceScreen(
+            user: admin,
+            currentUserProvider: () => admin,
+            repository: mockRepo,
+          ),
         ),
       );
       await tester.pumpAndSettle();
@@ -753,7 +805,11 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          home: InventoryWorkspaceScreen(user: standardWithCsv, repository: mockRepo),
+          home: InventoryWorkspaceScreen(
+            user: standardWithCsv,
+            currentUserProvider: () => standardWithCsv,
+            repository: mockRepo,
+          ),
         ),
       );
       await tester.pumpAndSettle();
@@ -774,7 +830,11 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          home: InventoryWorkspaceScreen(user: viewOnlyUser, repository: mockRepo),
+          home: InventoryWorkspaceScreen(
+            user: viewOnlyUser,
+            currentUserProvider: () => viewOnlyUser,
+            repository: mockRepo,
+          ),
         ),
       );
       await tester.pumpAndSettle();
@@ -809,4 +869,363 @@ void main() {
       expect(find.text('Export Inventory'), findsOneWidget);
     });
   });
+
+  group('INVENTORY-6.4-FIX1 Fail-Closed Security Regression Tests', () {
+    late MockInventoryRepository baseRepo;
+    late _TrackingInventoryRepository trackingRepo;
+    late _FakeExportFileSaver fakeSaver;
+    late InventoryExportFileDeliveryService deliveryService;
+
+    final adminUser = CurrentUser(
+      id: 'adm_sec',
+      displayName: 'Sec Admin',
+      accountType: AccountType.admin,
+      modules: {CrmModule.inventory},
+      permissions: {},
+    );
+
+    setUp(() {
+      baseRepo = MockInventoryRepository();
+      trackingRepo = _TrackingInventoryRepository(baseRepo);
+      fakeSaver = _FakeExportFileSaver();
+      deliveryService = InventoryExportFileDeliveryService(
+        fileSaver: fakeSaver,
+        isWeb: false,
+      );
+    });
+
+    testWidgets('Workspace screen: missing AuthCubit and no provider hides Export button (fail closed)', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: InventoryWorkspaceScreen(
+            user: adminUser,
+            repository: trackingRepo,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_workspace_export_button')), findsNothing);
+      expect(fakeSaver.callCount, equals(0));
+    });
+
+    testWidgets('Workspace screen: AuthCubit in AuthAuthenticating hides Export button (fail closed)', (tester) async {
+      final fakeAuth = _FakeAuthCubit(const AuthAuthenticating());
+
+      await tester.pumpWidget(
+        BlocProvider<AuthCubit>.value(
+          value: fakeAuth,
+          child: MaterialApp(
+            home: InventoryWorkspaceScreen(
+              user: adminUser,
+              repository: trackingRepo,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_workspace_export_button')), findsNothing);
+      expect(fakeSaver.callCount, equals(0));
+    });
+
+    testWidgets('Workspace screen: AuthCubit in AuthUnauthenticated hides Export button (fail closed)', (tester) async {
+      final fakeAuth = _FakeAuthCubit(const AuthUnauthenticated());
+
+      await tester.pumpWidget(
+        BlocProvider<AuthCubit>.value(
+          value: fakeAuth,
+          child: MaterialApp(
+            home: InventoryWorkspaceScreen(
+              user: adminUser,
+              repository: trackingRepo,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_workspace_export_button')), findsNothing);
+      expect(fakeSaver.callCount, equals(0));
+    });
+
+    testWidgets('Workspace screen: AuthCubit in AuthFailure hides Export button (fail closed)', (tester) async {
+      final fakeAuth = _FakeAuthCubit(const AuthFailure('Authentication connection lost'));
+
+      await tester.pumpWidget(
+        BlocProvider<AuthCubit>.value(
+          value: fakeAuth,
+          child: MaterialApp(
+            home: InventoryWorkspaceScreen(
+              user: adminUser,
+              repository: trackingRepo,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_workspace_export_button')), findsNothing);
+      expect(fakeSaver.callCount, equals(0));
+    });
+
+    testWidgets('Workspace screen: throwing provider fails closed and hides Export button', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: InventoryWorkspaceScreen(
+            user: adminUser,
+            currentUserProvider: () => throw StateError('Session store disconnected'),
+            repository: trackingRepo,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_workspace_export_button')), findsNothing);
+      expect(fakeSaver.callCount, equals(0));
+    });
+
+    testWidgets('Workspace screen: AuthCubit in AuthAuthenticated dynamically displays Export button and reacts to logout', (tester) async {
+      final fakeAuth = _FakeAuthCubit(AuthAuthenticated(adminUser));
+
+      await tester.pumpWidget(
+        BlocProvider<AuthCubit>.value(
+          value: fakeAuth,
+          child: MaterialApp(
+            home: InventoryWorkspaceScreen(
+              user: adminUser,
+              repository: trackingRepo,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_workspace_export_button')), findsOneWidget);
+
+      // Transition to unauthenticated
+      fakeAuth.emitState(const AuthUnauthenticated());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_workspace_export_button')), findsNothing);
+      expect(fakeSaver.callCount, equals(0));
+    });
+
+    testWidgets('InventoryExportDialog without trusted live provider disables format selection and preparation with 0 repo reads', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: adminUser,
+              // No currentUserProvider and no AuthCubit in tree
+              repository: trackingRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_export_dialog_unauthenticated_notice')), findsOneWidget);
+
+      final csvTile = tester.widget<RadioListTile<InventoryExportFormat>>(
+        find.byKey(const Key('inventory_export_format_csv')),
+      );
+      final xlsxTile = tester.widget<RadioListTile<InventoryExportFormat>>(
+        find.byKey(const Key('inventory_export_format_xlsx')),
+      );
+      final submitButton = tester.widget<FilledButton>(
+        find.byKey(const Key('inventory_export_dialog_submit_button')),
+      );
+
+      expect(csvTile.enabled, isFalse);
+      expect(xlsxTile.enabled, isFalse);
+      expect(submitButton.onPressed, isNull);
+
+      // Verify zero repository reads and zero file saver calls
+      expect(trackingRepo.getItemsCount, equals(0));
+      expect(fakeSaver.callCount, equals(0));
+    });
+
+    testWidgets('InventoryExportDialog with throwing provider denies preparation with 0 repo reads', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: adminUser,
+              currentUserProvider: () => throw Exception('Corrupted session'),
+              repository: trackingRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final submitButton = tester.widget<FilledButton>(
+        find.byKey(const Key('inventory_export_dialog_submit_button')),
+      );
+      expect(submitButton.onPressed, isNull);
+
+      expect(trackingRepo.getItemsCount, equals(0));
+      expect(fakeSaver.callCount, equals(0));
+    });
+
+    testWidgets('InventoryExportDialog: logout during preparation fails preparation with 0 platform saver calls', (tester) async {
+      CurrentUser? liveUser = adminUser;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: adminUser,
+              currentUserProvider: () => liveUser,
+              repository: trackingRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Log out before tapping prepare
+      liveUser = null;
+
+      // Tap prepare
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('User session expired or unauthenticated.'), findsOneWidget);
+      expect(trackingRepo.getItemsCount, equals(0));
+      expect(fakeSaver.callCount, equals(0));
+    });
+
+    testWidgets('InventoryExportDialog: unauthenticated provider blocks delivery with 0 platform saver calls', (tester) async {
+      CurrentUser? liveUser = adminUser;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: adminUser,
+              currentUserProvider: () => liveUser,
+              repository: trackingRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Prepare export while authenticated
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+      expect(fakeSaver.callCount, equals(0));
+
+      // 2. User logs out before clicking download
+      liveUser = null;
+
+      // 3. Attempt download
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
+      await tester.pumpAndSettle();
+
+      // Verify restricted error and zero saver calls
+      expect(find.text('User session expired or unauthenticated.'), findsOneWidget);
+      expect(fakeSaver.callCount, equals(0));
+    });
+
+    testWidgets('InventoryExportDialog: account switch between prepare and download blocks saver with 0 saver calls', (tester) async {
+      CurrentUser? liveUser = adminUser;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: adminUser,
+              currentUserProvider: () => liveUser,
+              repository: trackingRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Prepare
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+
+      // 2. Switch to another user
+      liveUser = CurrentUser(
+        id: 'other_user_sec',
+        displayName: 'Other User',
+        accountType: AccountType.admin,
+        modules: {CrmModule.inventory},
+        permissions: {},
+      );
+
+      // 3. Download
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('User identity changed since export was prepared.'), findsOneWidget);
+      expect(fakeSaver.callCount, equals(0));
+    });
+
+    testWidgets('InventoryExportDialog: permission revocation between prepare and download blocks saver with 0 saver calls', (tester) async {
+      CurrentUser? liveUser = CurrentUser(
+        id: 'usr_csv_perm',
+        displayName: 'CSV User',
+        accountType: AccountType.user,
+        modules: {CrmModule.inventory},
+        permissions: {
+          CrmPermissions.inventoryView,
+          CrmPermissions.inventoryExportCsv,
+        },
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: liveUser,
+              currentUserProvider: () => liveUser,
+              repository: trackingRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Prepare
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+
+      // 2. Revoke inventory.export.csv permission
+      liveUser = CurrentUser(
+        id: 'usr_csv_perm',
+        displayName: 'CSV User',
+        accountType: AccountType.user,
+        modules: {CrmModule.inventory},
+        permissions: {
+          CrmPermissions.inventoryView,
+        },
+      );
+
+      // 3. Download
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text("User is not authorized to deliver this export format."), findsOneWidget);
+      expect(fakeSaver.callCount, equals(0));
+    });
+  });
+
 }
