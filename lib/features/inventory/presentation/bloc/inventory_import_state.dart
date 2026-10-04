@@ -1,3 +1,5 @@
+import '../../domain/entities/custom_field_definition.dart';
+import '../../domain/entities/inventory_catalogs.dart';
 import '../../domain/entities/inventory_import_models.dart';
 import '../services/inventory_import_parser.dart';
 
@@ -69,6 +71,8 @@ class InventoryImportMappingState extends InventoryImportState {
     required this.availableColumns,
     required this.mapping,
     this.validationError,
+    this.customFieldDefinitions = const [],
+    this.catalogs,
   });
 
   final InventoryImportParsedFile file;
@@ -77,6 +81,8 @@ class InventoryImportMappingState extends InventoryImportState {
   final List<String> availableColumns;
   final InventoryImportColumnMapping mapping;
   final String? validationError;
+  final List<CustomFieldDefinition> customFieldDefinitions;
+  final InventoryCatalogs? catalogs;
 
   InventoryImportParsedSheet get sheet => file.sheets[sheetIndex];
 
@@ -84,6 +90,8 @@ class InventoryImportMappingState extends InventoryImportState {
     InventoryImportColumnMapping? mapping,
     String? validationError,
     bool clearValidationError = false,
+    List<CustomFieldDefinition>? customFieldDefinitions,
+    InventoryCatalogs? catalogs,
   }) {
     return InventoryImportMappingState(
       file: file,
@@ -94,6 +102,9 @@ class InventoryImportMappingState extends InventoryImportState {
       validationError: clearValidationError
           ? null
           : (validationError ?? this.validationError),
+      customFieldDefinitions:
+          customFieldDefinitions ?? this.customFieldDefinitions,
+      catalogs: catalogs ?? this.catalogs,
     );
   }
 }
@@ -105,19 +116,25 @@ class InventoryImportPreviewState extends InventoryImportState {
     required this.sheetIndex,
     required this.mapping,
     required this.preview,
+    this.filter = 'all',
   });
 
   final InventoryImportParsedFile file;
   final int sheetIndex;
   final InventoryImportColumnMapping mapping;
   final InventoryImportPreview preview;
+  final String filter; // 'all', 'valid', 'errors'
 
-  InventoryImportPreviewState copyWith({InventoryImportPreview? preview}) {
+  InventoryImportPreviewState copyWith({
+    InventoryImportPreview? preview,
+    String? filter,
+  }) {
     return InventoryImportPreviewState(
       file: file,
       sheetIndex: sheetIndex,
       mapping: mapping,
       preview: preview ?? this.preview,
+      filter: filter ?? this.filter,
     );
   }
 }
