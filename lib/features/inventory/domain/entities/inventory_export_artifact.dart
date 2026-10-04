@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 enum InventoryExportFormat {
   csv,
   xlsx,
+  pdf,
 }
 
 /// Prepared inventory export artifact containing serialized bytes and metadata.
@@ -23,12 +24,19 @@ class InventoryExportArtifact {
         generatedAt = generatedAt ?? DateTime.now();
 
   /// The standard file extension (including dot).
-  String get fileExtension => format == InventoryExportFormat.csv ? '.csv' : '.xlsx';
+  String get fileExtension => switch (format) {
+    InventoryExportFormat.csv => '.csv',
+    InventoryExportFormat.xlsx => '.xlsx',
+    InventoryExportFormat.pdf => '.pdf',
+  };
 
   /// The standard MIME type for the format.
-  String get mimeType => format == InventoryExportFormat.csv
-      ? 'text/csv'
-      : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  String get mimeType => switch (format) {
+    InventoryExportFormat.csv => 'text/csv',
+    InventoryExportFormat.xlsx =>
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    InventoryExportFormat.pdf => 'application/pdf',
+  };
 
   /// Suggested filename prefix matching project conventions.
   String defaultFileName({DateTime? timestamp}) {

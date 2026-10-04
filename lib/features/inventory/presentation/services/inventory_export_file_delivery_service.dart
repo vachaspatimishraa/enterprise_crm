@@ -164,9 +164,11 @@ class InventoryExportFileDeliveryService {
       }
 
       // 4. Authorization policy check immediately before delivery
-      final isAuthorized = artifact.format == InventoryExportFormat.csv
-          ? InventoryExportPolicy.canExportCsv(currentUser)
-          : InventoryExportPolicy.canExportXlsx(currentUser);
+      final isAuthorized = switch (artifact.format) {
+        InventoryExportFormat.csv => InventoryExportPolicy.canExportCsv(currentUser),
+        InventoryExportFormat.xlsx => InventoryExportPolicy.canExportXlsx(currentUser),
+        InventoryExportFormat.pdf => InventoryExportPolicy.canExportPdf(currentUser),
+      };
 
       if (!isAuthorized) {
         return const InventoryExportDeliveryResult.restricted(

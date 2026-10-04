@@ -37,13 +37,17 @@ void main() {
         expect(InventoryExportPolicy.canExportXlsx(adminUser), isTrue);
       });
 
-      test('3. canExport returns true for Administrator', () {
+      test('3. Authorized Administrator can export PDF', () {
+        expect(InventoryExportPolicy.canExportPdf(adminUser), isTrue);
+      });
+
+      test('4. canExport returns true for Administrator', () {
         expect(InventoryExportPolicy.canExport(adminUser), isTrue);
       });
     });
 
     group('Standard User Authorization Matrix', () {
-      test('4. Inventory + View + CSV permits CSV', () {
+      test('4. Inventory + View + CSV permits CSV and strictly denies PDF and XLSX', () {
         final user = createStandardUser(
           permissions: {
             CrmPermissions.inventoryView,
@@ -52,10 +56,11 @@ void main() {
         );
         expect(InventoryExportPolicy.canExportCsv(user), isTrue);
         expect(InventoryExportPolicy.canExportXlsx(user), isFalse);
+        expect(InventoryExportPolicy.canExportPdf(user), isFalse);
         expect(InventoryExportPolicy.canExport(user), isTrue);
       });
 
-      test('5. Inventory + View + XLSX permits XLSX', () {
+      test('5. Inventory + View + XLSX permits XLSX and strictly denies PDF and CSV', () {
         final user = createStandardUser(
           permissions: {
             CrmPermissions.inventoryView,
@@ -64,23 +69,39 @@ void main() {
         );
         expect(InventoryExportPolicy.canExportCsv(user), isFalse);
         expect(InventoryExportPolicy.canExportXlsx(user), isTrue);
+        expect(InventoryExportPolicy.canExportPdf(user), isFalse);
         expect(InventoryExportPolicy.canExport(user), isTrue);
       });
 
-      test('6. Inventory + View + both Export permissions permits both', () {
+      test('6. Inventory + View + PDF permits PDF and strictly denies CSV and XLSX', () {
+        final user = createStandardUser(
+          permissions: {
+            CrmPermissions.inventoryView,
+            InventoryExportPolicy.exportPdfPermission,
+          },
+        );
+        expect(InventoryExportPolicy.canExportCsv(user), isFalse);
+        expect(InventoryExportPolicy.canExportXlsx(user), isFalse);
+        expect(InventoryExportPolicy.canExportPdf(user), isTrue);
+        expect(InventoryExportPolicy.canExport(user), isTrue);
+      });
+
+      test('7. Inventory + View + all export permissions permits all formats', () {
         final user = createStandardUser(
           permissions: {
             CrmPermissions.inventoryView,
             CrmPermissions.inventoryExportCsv,
             CrmPermissions.inventoryExportXlsx,
+            InventoryExportPolicy.exportPdfPermission,
           },
         );
         expect(InventoryExportPolicy.canExportCsv(user), isTrue);
         expect(InventoryExportPolicy.canExportXlsx(user), isTrue);
+        expect(InventoryExportPolicy.canExportPdf(user), isTrue);
         expect(InventoryExportPolicy.canExport(user), isTrue);
       });
 
-      test('7. CSV-only permission denies XLSX', () {
+      test('8. CSV-only permission denies XLSX and PDF', () {
         final user = createStandardUser(
           permissions: {
             CrmPermissions.inventoryView,
@@ -88,9 +109,10 @@ void main() {
           },
         );
         expect(InventoryExportPolicy.canExportXlsx(user), isFalse);
+        expect(InventoryExportPolicy.canExportPdf(user), isFalse);
       });
 
-      test('8. XLSX-only permission denies CSV', () {
+      test('9. XLSX-only permission denies CSV and PDF', () {
         final user = createStandardUser(
           permissions: {
             CrmPermissions.inventoryView,
@@ -98,44 +120,61 @@ void main() {
           },
         );
         expect(InventoryExportPolicy.canExportCsv(user), isFalse);
+        expect(InventoryExportPolicy.canExportPdf(user), isFalse);
       });
 
-      test('9. Inventory View without export permission denies both', () {
+      test('10. PDF-only permission denies CSV and XLSX', () {
+        final user = createStandardUser(
+          permissions: {
+            CrmPermissions.inventoryView,
+            InventoryExportPolicy.exportPdfPermission,
+          },
+        );
+        expect(InventoryExportPolicy.canExportCsv(user), isFalse);
+        expect(InventoryExportPolicy.canExportXlsx(user), isFalse);
+      });
+
+      test('11. Inventory View without export permission denies all formats', () {
         final user = createStandardUser(
           permissions: {CrmPermissions.inventoryView},
         );
         expect(InventoryExportPolicy.canExportCsv(user), isFalse);
         expect(InventoryExportPolicy.canExportXlsx(user), isFalse);
+        expect(InventoryExportPolicy.canExportPdf(user), isFalse);
         expect(InventoryExportPolicy.canExport(user), isFalse);
       });
 
-      test('10. Export permissions without Inventory module deny both', () {
+      test('12. Export permissions without Inventory module deny all formats', () {
         final user = createStandardUser(
           modules: {CrmModule.leadManagement},
           permissions: {
             CrmPermissions.inventoryView,
             CrmPermissions.inventoryExportCsv,
             CrmPermissions.inventoryExportXlsx,
+            InventoryExportPolicy.exportPdfPermission,
           },
         );
         expect(InventoryExportPolicy.canExportCsv(user), isFalse);
         expect(InventoryExportPolicy.canExportXlsx(user), isFalse);
+        expect(InventoryExportPolicy.canExportPdf(user), isFalse);
         expect(InventoryExportPolicy.canExport(user), isFalse);
       });
 
-      test('11. Export permissions without Inventory View deny both', () {
+      test('13. Export permissions without Inventory View deny all formats', () {
         final user = createStandardUser(
           permissions: {
             CrmPermissions.inventoryExportCsv,
             CrmPermissions.inventoryExportXlsx,
+            InventoryExportPolicy.exportPdfPermission,
           },
         );
         expect(InventoryExportPolicy.canExportCsv(user), isFalse);
         expect(InventoryExportPolicy.canExportXlsx(user), isFalse);
+        expect(InventoryExportPolicy.canExportPdf(user), isFalse);
         expect(InventoryExportPolicy.canExport(user), isFalse);
       });
 
-      test('12. Import CSV alone does not permit CSV export', () {
+      test('14. Import CSV alone does not permit CSV or PDF export', () {
         final user = createStandardUser(
           permissions: {
             CrmPermissions.inventoryView,
@@ -143,9 +182,10 @@ void main() {
           },
         );
         expect(InventoryExportPolicy.canExportCsv(user), isFalse);
+        expect(InventoryExportPolicy.canExportPdf(user), isFalse);
       });
 
-      test('13. Import XLSX alone does not permit XLSX export', () {
+      test('15. Import XLSX alone does not permit XLSX or PDF export', () {
         final user = createStandardUser(
           permissions: {
             CrmPermissions.inventoryView,
@@ -153,9 +193,10 @@ void main() {
           },
         );
         expect(InventoryExportPolicy.canExportXlsx(user), isFalse);
+        expect(InventoryExportPolicy.canExportPdf(user), isFalse);
       });
 
-      test('14. Stock Manage alone does not grant export', () {
+      test('16. Stock Manage alone does not grant export', () {
         final user = createStandardUser(
           permissions: {
             CrmPermissions.inventoryView,
@@ -164,9 +205,10 @@ void main() {
         );
         expect(InventoryExportPolicy.canExportCsv(user), isFalse);
         expect(InventoryExportPolicy.canExportXlsx(user), isFalse);
+        expect(InventoryExportPolicy.canExportPdf(user), isFalse);
       });
 
-      test('15. Create/Edit/Delete permissions alone do not grant export', () {
+      test('17. Create/Edit/Delete permissions alone do not grant export', () {
         final user = createStandardUser(
           permissions: {
             CrmPermissions.inventoryView,
@@ -177,15 +219,17 @@ void main() {
         );
         expect(InventoryExportPolicy.canExportCsv(user), isFalse);
         expect(InventoryExportPolicy.canExportXlsx(user), isFalse);
+        expect(InventoryExportPolicy.canExportPdf(user), isFalse);
       });
 
-      test('16. No authenticated user (null) denies both', () {
+      test('18. No authenticated user (null) denies all formats', () {
         expect(InventoryExportPolicy.canExportCsv(null), isFalse);
         expect(InventoryExportPolicy.canExportXlsx(null), isFalse);
+        expect(InventoryExportPolicy.canExportPdf(null), isFalse);
         expect(InventoryExportPolicy.canExport(null), isFalse);
       });
 
-      test('17. Revoked CSV permission causes denial', () {
+      test('19. Revoked CSV permission causes denial', () {
         var user = createStandardUser(
           permissions: {
             CrmPermissions.inventoryView,
@@ -202,7 +246,7 @@ void main() {
         expect(InventoryExportPolicy.canExportCsv(user), isFalse);
       });
 
-      test('18. Revoked XLSX permission causes denial', () {
+      test('20. Revoked XLSX permission causes denial', () {
         var user = createStandardUser(
           permissions: {
             CrmPermissions.inventoryView,
@@ -219,17 +263,36 @@ void main() {
         expect(InventoryExportPolicy.canExportXlsx(user), isFalse);
       });
 
-      test('19. Removing Inventory module assignment causes denial', () {
+      test('21. Revoked PDF permission causes denial', () {
+        var user = createStandardUser(
+          permissions: {
+            CrmPermissions.inventoryView,
+            InventoryExportPolicy.exportPdfPermission,
+          },
+        );
+        expect(InventoryExportPolicy.canExportPdf(user), isTrue);
+
+        user = createStandardUser(
+          permissions: {
+            CrmPermissions.inventoryView,
+          },
+        );
+        expect(InventoryExportPolicy.canExportPdf(user), isFalse);
+      });
+
+      test('22. Removing Inventory module assignment causes denial for all formats', () {
         var user = createStandardUser(
           modules: {CrmModule.inventory},
           permissions: {
             CrmPermissions.inventoryView,
             CrmPermissions.inventoryExportCsv,
             CrmPermissions.inventoryExportXlsx,
+            InventoryExportPolicy.exportPdfPermission,
           },
         );
         expect(InventoryExportPolicy.canExportCsv(user), isTrue);
         expect(InventoryExportPolicy.canExportXlsx(user), isTrue);
+        expect(InventoryExportPolicy.canExportPdf(user), isTrue);
 
         user = createStandardUser(
           modules: {CrmModule.hrPayroll},
@@ -237,31 +300,37 @@ void main() {
             CrmPermissions.inventoryView,
             CrmPermissions.inventoryExportCsv,
             CrmPermissions.inventoryExportXlsx,
+            InventoryExportPolicy.exportPdfPermission,
           },
         );
         expect(InventoryExportPolicy.canExportCsv(user), isFalse);
         expect(InventoryExportPolicy.canExportXlsx(user), isFalse);
+        expect(InventoryExportPolicy.canExportPdf(user), isFalse);
       });
 
-      test('20. Removing Inventory View causes denial', () {
+      test('23. Removing Inventory View causes denial for all formats', () {
         var user = createStandardUser(
           permissions: {
             CrmPermissions.inventoryView,
             CrmPermissions.inventoryExportCsv,
             CrmPermissions.inventoryExportXlsx,
+            InventoryExportPolicy.exportPdfPermission,
           },
         );
         expect(InventoryExportPolicy.canExportCsv(user), isTrue);
         expect(InventoryExportPolicy.canExportXlsx(user), isTrue);
+        expect(InventoryExportPolicy.canExportPdf(user), isTrue);
 
         user = createStandardUser(
           permissions: {
             CrmPermissions.inventoryExportCsv,
             CrmPermissions.inventoryExportXlsx,
+            InventoryExportPolicy.exportPdfPermission,
           },
         );
         expect(InventoryExportPolicy.canExportCsv(user), isFalse);
         expect(InventoryExportPolicy.canExportXlsx(user), isFalse);
+        expect(InventoryExportPolicy.canExportPdf(user), isFalse);
       });
     });
   });

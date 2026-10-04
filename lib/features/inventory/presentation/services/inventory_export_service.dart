@@ -3,6 +3,7 @@ import '../../domain/entities/inventory_export_artifact.dart';
 import '../../domain/policies/inventory_export_policy.dart';
 import 'inventory_csv_serializer.dart';
 import 'inventory_export_data_loader.dart';
+import 'inventory_pdf_serializer.dart';
 import 'inventory_xlsx_serializer.dart';
 
 /// Exception thrown when authorized inventory export preparation fails.
@@ -19,14 +20,17 @@ class InventoryExportService {
   final InventoryExportDataLoader _dataLoader;
   final InventoryCsvSerializer _csvSerializer;
   final InventoryXlsxSerializer _xlsxSerializer;
+  final InventoryPdfSerializer _pdfSerializer;
 
   InventoryExportService({
     required InventoryExportDataLoader dataLoader,
     InventoryCsvSerializer? csvSerializer,
     InventoryXlsxSerializer? xlsxSerializer,
+    InventoryPdfSerializer? pdfSerializer,
   })  : _dataLoader = dataLoader,
         _csvSerializer = csvSerializer ?? const InventoryCsvSerializer(),
-        _xlsxSerializer = xlsxSerializer ?? InventoryXlsxSerializer();
+        _xlsxSerializer = xlsxSerializer ?? InventoryXlsxSerializer(),
+        _pdfSerializer = pdfSerializer ?? InventoryPdfSerializer();
 
   /// Orchestrates export preparation with dual authorization boundaries.
   ///
@@ -74,9 +78,11 @@ class InventoryExportService {
     }
 
     // 4. Serialize bytes based on format
-    final bytes = format == InventoryExportFormat.csv
-        ? _csvSerializer.convertToBytes(items)
-        : _xlsxSerializer.convertToBytes(items);
+    final bytes = switch (format) {
+      InventoryExportFormat.csv => _csvSerializer.convertToBytes(items),
+      InventoryExportFormat.xlsx => _xlsxSerializer.convertToBytes(items),
+      InventoryExportFormat.pdf => _pdfSerializer.convertToBytes(items),
+    };
 
     // 5. Package into artifact
     return InventoryExportArtifact(
@@ -88,8 +94,10 @@ class InventoryExportService {
 
   bool _isAuthorized(CurrentUser? user, InventoryExportFormat format) {
     if (user == null) return false;
-    return format == InventoryExportFormat.csv
-        ? InventoryExportPolicy.canExportCsv(user)
-        : InventoryExportPolicy.canExportXlsx(user);
+    return switch (format) {
+      InventoryExportFormat.csv => InventoryExportPolicy.canExportCsv(user),
+      InventoryExportFormat.xlsx => InventoryExportPolicy.canExportXlsx(user),
+      InventoryExportFormat.pdf => InventoryExportPolicy.canExportPdf(user),
+    };
   }
 }

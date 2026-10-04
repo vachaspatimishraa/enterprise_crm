@@ -79,8 +79,10 @@ class InventoryExportCubit extends Cubit<InventoryExportState> {
   }
 
   bool _isAuthorized(CurrentUser user, InventoryExportFormat format) {
-    return format == InventoryExportFormat.csv
-        ? InventoryExportPolicy.canExportCsv(user)
-        : InventoryExportPolicy.canExportXlsx(user);
+    return switch (format) {
+      InventoryExportFormat.csv => InventoryExportPolicy.canExportCsv(user),
+      InventoryExportFormat.xlsx => InventoryExportPolicy.canExportXlsx(user),
+      InventoryExportFormat.pdf => InventoryExportPolicy.canExportPdf(user),
+    };
   }
 }

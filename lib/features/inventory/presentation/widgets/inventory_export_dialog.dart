@@ -123,11 +123,14 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
     final activeUser = _getSafeCurrentUser();
     final canCsv = activeUser != null && InventoryExportPolicy.canExportCsv(activeUser);
     final canXlsx = activeUser != null && InventoryExportPolicy.canExportXlsx(activeUser);
+    final canPdf = activeUser != null && InventoryExportPolicy.canExportPdf(activeUser);
 
     if (canCsv) {
       _selectedFormat = InventoryExportFormat.csv;
     } else if (canXlsx) {
       _selectedFormat = InventoryExportFormat.xlsx;
+    } else if (canPdf) {
+      _selectedFormat = InventoryExportFormat.pdf;
     }
   }
 
@@ -153,9 +156,11 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
       return;
     }
 
-    final isAuthorized = format == InventoryExportFormat.csv
-        ? InventoryExportPolicy.canExportCsv(activeUser)
-        : InventoryExportPolicy.canExportXlsx(activeUser);
+    final isAuthorized = switch (format) {
+      InventoryExportFormat.csv => InventoryExportPolicy.canExportCsv(activeUser),
+      InventoryExportFormat.xlsx => InventoryExportPolicy.canExportXlsx(activeUser),
+      InventoryExportFormat.pdf => InventoryExportPolicy.canExportPdf(activeUser),
+    };
 
     if (!isAuthorized) {
       setState(() {
@@ -225,10 +230,15 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
           final activeUser = _getSafeCurrentUser();
           final canCsv = activeUser != null && InventoryExportPolicy.canExportCsv(activeUser);
           final canXlsx = activeUser != null && InventoryExportPolicy.canExportXlsx(activeUser);
+          final canPdf = activeUser != null && InventoryExportPolicy.canExportPdf(activeUser);
 
           final isBusy = state is InventoryExportPreparing || _isDelivering;
-          final canSelected = activeUser != null &&
-              (_selectedFormat == InventoryExportFormat.csv ? canCsv : canXlsx);
+          final canSelected = activeUser != null && switch (_selectedFormat) {
+            InventoryExportFormat.csv => canCsv,
+            InventoryExportFormat.xlsx => canXlsx,
+            InventoryExportFormat.pdf => canPdf,
+            null => false,
+          };
 
           return PopScope(
             canPop: !isBusy,
@@ -298,6 +308,16 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                               contentPadding: EdgeInsets.zero,
                             ),
                             RadioListTile<InventoryExportFormat>(
+                              key: const Key('inventory_export_format_pdf'),
+                              value: InventoryExportFormat.pdf,
+                              title: const Text('PDF (.pdf)'),
+                              subtitle: const Text('Printable report with the same three columns.'),
+                              enabled: !isBusy && canPdf,
+                              dense: true,
+                              visualDensity: VisualDensity.compact,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            RadioListTile<InventoryExportFormat>(
                               key: const Key('inventory_export_format_xlsx'),
                               value: InventoryExportFormat.xlsx,
                               title: const Text('Excel (.xlsx)'),
@@ -356,7 +376,11 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                           context,
                           key: const Key('inventory_export_dialog_prepared_feedback'),
                           icon: Icons.check_circle_outline,
-                          message: 'Inventory export ready (${state.artifact.format == InventoryExportFormat.csv ? "CSV" : "Excel"}).',
+                          message: 'Inventory export ready (${switch (state.artifact.format) {
+                            InventoryExportFormat.csv => "CSV",
+                            InventoryExportFormat.xlsx => "Excel",
+                            InventoryExportFormat.pdf => "PDF",
+                          }}).',
                           isError: false,
                         ),
                       ],
@@ -417,9 +441,11 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                             ),
                           )
                         : Text(
-                            state.artifact.format == InventoryExportFormat.csv
-                                ? 'Download CSV'
-                                : 'Download Excel',
+                            switch (state.artifact.format) {
+                              InventoryExportFormat.csv => 'Download CSV',
+                              InventoryExportFormat.xlsx => 'Download Excel',
+                              InventoryExportFormat.pdf => 'Download PDF',
+                            },
                           ),
                   )
                 else
