@@ -17,6 +17,7 @@ import '../bloc/inventory_export_state.dart';
 import '../services/inventory_export_data_loader.dart';
 import '../services/inventory_export_file_delivery_service.dart';
 import '../services/inventory_export_service.dart';
+import '../services/inventory_pdf_serializer.dart';
 
 /// Opens the inventory export modal dialog.
 Future<bool?> showInventoryExportDialog({
@@ -93,6 +94,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   InventoryExportScope _selectedScope = InventoryExportScope.all;
   List<String> _selectedColumns = [];
   List<CustomFieldDefinition> _customDefinitions = [];
+  PdfLayoutOrientation _selectedPdfOrientation = PdfLayoutOrientation.auto;
 
   bool _isDelivering = false;
   String? _deliveryFeedback;
@@ -206,8 +208,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
       _isDeliverySuccess = false;
     });
 
-    final effectiveColumns = _selectedPreset == InventoryExportPreset.custom &&
-            format != InventoryExportFormat.pdf
+    final effectiveColumns = _selectedPreset == InventoryExportPreset.custom
         ? _selectedColumns
         : InventoryExportFields.legacyHeaders;
 
@@ -219,6 +220,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
       query: widget.currentQuery,
       selectedItemIds: widget.selectedItemIds,
       customFieldDefinitions: _customDefinitions,
+      orientation: _selectedPdfOrientation,
     );
   }
 
@@ -323,9 +325,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        isPdf
-                            ? 'Printable report with frozen three columns (Item Name, SKU, Current Quantity).'
-                            : 'Configure export format, column selection, and record scope.',
+                        'Configure export format, column selection, and record scope.',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
@@ -392,7 +392,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                       ),
 
                       // Non-PDF options: Record Scope and Presets
-                      if (!isPdf && _selectedFormat != null) ...[
+                      if (_selectedFormat != null) ...[
                         const SizedBox(height: 16),
                         Text(
                           'Record Scope',
@@ -477,7 +477,11 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                                 value: InventoryExportPreset.legacyThreeColumn,
                                 enabled: !isBusy,
                                 title: const Text('Legacy Three-Column Preset'),
-                                subtitle: const Text('Item Name, SKU, Current Quantity'),
+                                subtitle: Text(
+                                  isPdf
+                                      ? 'Printable report with frozen three columns (Item Name, SKU, Current Quantity).'
+                                      : 'Item Name, SKU, Current Quantity',
+                                ),
                                 dense: true,
                                 visualDensity: VisualDensity.compact,
                                 contentPadding: EdgeInsets.zero,
@@ -500,6 +504,44 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
 
                         // Custom Column Configuration
                         if (isCustomPreset) ...[
+                          if (isPdf) ...[
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<PdfLayoutOrientation>(
+                              key: const Key('inventory_export_pdf_orientation'),
+                              initialValue: _selectedPdfOrientation,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Page Layout / Orientation',
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                border: OutlineInputBorder(),
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: PdfLayoutOrientation.auto,
+                                  child: Text('Auto (Recommended)'),
+                                ),
+                                DropdownMenuItem(
+                                  value: PdfLayoutOrientation.portrait,
+                                  child: Text('Portrait'),
+                                ),
+                                DropdownMenuItem(
+                                  value: PdfLayoutOrientation.landscape,
+                                  child: Text('Landscape'),
+                                ),
+                              ],
+                              onChanged: isBusy
+                                  ? null
+                                  : (val) {
+                                      if (val != null) {
+                                        setState(() {
+                                          _selectedPdfOrientation = val;
+                                          _invalidatePreparedState();
+                                        });
+                                      }
+                                    },
+                            ),
+                          ],
                           const SizedBox(height: 8),
                           Wrap(
                             spacing: 8,

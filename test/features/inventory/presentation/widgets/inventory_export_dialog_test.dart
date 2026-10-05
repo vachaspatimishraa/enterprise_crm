@@ -1498,7 +1498,7 @@ void main() {
         expect(find.byKey(const Key('inventory_export_scope_selected')), findsOneWidget);
       });
 
-      testWidgets('hides preset and column selector when PDF format is selected', (tester) async {
+      testWidgets('PDF format allows selecting Legacy or Custom preset, and custom reveals column controls', (tester) async {
         setScreenSize(tester);
 
         final user = makeUser(
@@ -1528,10 +1528,21 @@ void main() {
         await tester.tap(find.byKey(const Key('inventory_export_format_pdf')));
         await tester.pumpAndSettle();
 
-        expect(find.byKey(const Key('inventory_export_preset_legacy')), findsNothing);
-        expect(find.byKey(const Key('inventory_export_preset_custom')), findsNothing);
-        expect(find.byKey(const Key('inventory_export_scope_all')), findsNothing);
+        // PDF now supports presets and scope in INVENTORY-7.6
+        expect(find.byKey(const Key('inventory_export_preset_legacy')), findsOneWidget);
+        expect(find.byKey(const Key('inventory_export_preset_custom')), findsOneWidget);
+        expect(find.byKey(const Key('inventory_export_scope_all')), findsOneWidget);
         expect(find.text('Printable report with frozen three columns (Item Name, SKU, Current Quantity).'), findsOneWidget);
+
+        // Switch to Custom preset on PDF
+        await tester.ensureVisible(find.byKey(const Key('inventory_export_preset_custom')));
+        await tester.tap(find.byKey(const Key('inventory_export_preset_custom')));
+        await tester.pumpAndSettle();
+
+        // Reveals column selector and PDF orientation selector
+        expect(find.byKey(const Key('inventory_export_select_all_columns')), findsOneWidget);
+        expect(find.byKey(const Key('inventory_export_deselect_all_columns')), findsOneWidget);
+        expect(find.byKey(const Key('inventory_export_pdf_orientation')), findsOneWidget);
       });
 
       testWidgets('switching to custom preset reveals column selection and reordering controls', (tester) async {
@@ -1699,6 +1710,114 @@ void main() {
         expect(fakeSaver.callCount, equals(1));
         expect(fakeSaver.lastExtension, equals('csv'));
         expect(find.text('Inventory exported successfully.'), findsOneWidget);
+      });
+
+      testWidgets('custom export flow prepares and downloads PDF with custom columns and orientation', (tester) async {
+        setScreenSize(tester);
+
+        final user = makeUser(
+          permissions: {
+            CrmPermissions.inventoryView,
+            CrmPermissions.inventoryExportCsv,
+            CrmPermissions.inventoryExportXlsx,
+            InventoryExportPolicy.exportPdfPermission,
+          },
+        );
+        fakeSaver.returnUri = Uri.parse('file:///storage/custom.pdf');
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: InventoryExportDialog(
+                user: user,
+                currentUserProvider: () => user,
+                repository: mockRepo,
+                fileDeliveryService: deliveryService,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Switch to PDF
+        await tester.ensureVisible(find.byKey(const Key('inventory_export_format_pdf')));
+        await tester.tap(find.byKey(const Key('inventory_export_format_pdf')));
+        await tester.pumpAndSettle();
+
+        // 2. Switch to Custom Preset
+        await tester.ensureVisible(find.byKey(const Key('inventory_export_preset_custom')));
+        await tester.tap(find.byKey(const Key('inventory_export_preset_custom')));
+        await tester.pumpAndSettle();
+
+        // Orientation dropdown is visible
+        expect(find.byKey(const Key('inventory_export_pdf_orientation')), findsOneWidget);
+
+        // 3. Tap prepare
+        await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+
+        // 4. Tap download
+        await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
+        await tester.pumpAndSettle();
+
+        expect(fakeSaver.callCount, equals(1));
+        expect(fakeSaver.lastExtension, equals('pdf'));
+        expect(find.text('Inventory exported successfully.'), findsOneWidget);
+      });
+
+      testWidgets('changing PDF orientation after preparation resets prepared state and requires re-preparation', (tester) async {
+        setScreenSize(tester);
+
+        final user = makeUser(
+          permissions: {
+            CrmPermissions.inventoryView,
+            CrmPermissions.inventoryExportCsv,
+            CrmPermissions.inventoryExportXlsx,
+            InventoryExportPolicy.exportPdfPermission,
+          },
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: InventoryExportDialog(
+                user: user,
+                currentUserProvider: () => user,
+                repository: mockRepo,
+                fileDeliveryService: deliveryService,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Switch to PDF and Custom Preset
+        await tester.ensureVisible(find.byKey(const Key('inventory_export_format_pdf')));
+        await tester.tap(find.byKey(const Key('inventory_export_format_pdf')));
+        await tester.pumpAndSettle();
+
+        await tester.ensureVisible(find.byKey(const Key('inventory_export_preset_custom')));
+        await tester.tap(find.byKey(const Key('inventory_export_preset_custom')));
+        await tester.pumpAndSettle();
+
+        // Prepare
+        await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+
+        // Change orientation
+        await tester.ensureVisible(find.byKey(const Key('inventory_export_pdf_orientation')));
+        await tester.tap(find.byKey(const Key('inventory_export_pdf_orientation')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Landscape').last);
+        await tester.pumpAndSettle();
+
+        // Prepared state was reset
+        expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsNothing);
+        expect(find.byKey(const Key('inventory_export_dialog_submit_button')), findsOneWidget);
       });
     });
   });

@@ -49,6 +49,7 @@ class InventoryExportService {
     InventoryQuery? query,
     Set<String>? selectedItemIds,
     List<CustomFieldDefinition>? customFieldDefinitions,
+    PdfLayoutOrientation orientation = PdfLayoutOrientation.auto,
   }) async {
     // 1. Initial format authorization check
     if (!_isAuthorized(initialUser, format)) {
@@ -61,7 +62,7 @@ class InventoryExportService {
 
     // Resolve column list based on preset
     final List<String> effectiveColumns;
-    if (format == InventoryExportFormat.pdf || preset == InventoryExportPreset.legacyThreeColumn) {
+    if (preset == InventoryExportPreset.legacyThreeColumn) {
       effectiveColumns = InventoryExportFields.legacyHeaders;
     } else {
       if (columns == null || columns.isEmpty) {
@@ -139,7 +140,14 @@ class InventoryExportService {
           customFieldDefinitions: customFieldDefinitions,
           isLegacy: preset == InventoryExportPreset.legacyThreeColumn,
         ),
-      InventoryExportFormat.pdf => _pdfSerializer.convertToBytes(items),
+      InventoryExportFormat.pdf => _pdfSerializer.convertToBytes(
+          items,
+          columns: effectiveColumns,
+          customFieldDefinitions: customFieldDefinitions,
+          isLegacy: preset == InventoryExportPreset.legacyThreeColumn,
+          scope: scope,
+          orientation: orientation,
+        ),
     };
 
     // 5. Package into artifact

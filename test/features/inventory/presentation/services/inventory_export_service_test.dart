@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:enterprise_crm/features/inventory/domain/entities/custom_field_definition.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_export_fields.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_query.dart';
@@ -676,6 +677,71 @@ void main() {
             contains('No items selected for export.'),
           )),
         );
+      });
+
+      test('custom PDF export prepares valid PDF artifact with selected columns', () async {
+        final artifact = await exportService.prepareExport(
+          format: InventoryExportFormat.pdf,
+          initialUser: adminUser,
+          currentUserProvider: () => adminUser,
+          preset: InventoryExportPreset.custom,
+          columns: ['sku', 'product_name', 'category', 'unit_cost_inr'],
+          scope: InventoryExportScope.all,
+        );
+
+        expect(artifact.format, equals(InventoryExportFormat.pdf));
+        expect(artifact.mimeType, equals('application/pdf'));
+        expect(artifact.fileExtension, equals('.pdf'));
+        expect(artifact.columns, equals(['sku', 'product_name', 'category', 'unit_cost_inr']));
+        expect(artifact.bytes.length, greaterThan(100));
+
+        final text = ascii.decode(artifact.bytes);
+        expect(text, startsWith('%PDF-1.4'));
+        expect(text, contains('SKU'));
+        expect(text, contains('Product Name'));
+        expect(text, contains(r'Unit Cost \(INR\)'));
+      });
+
+      test('custom PDF export rejects unauthorized fields for standard user', () async {
+        final standardUserWithoutCost = makeUser(
+          permissions: {
+            CrmPermissions.inventoryView,
+            InventoryExportPolicy.exportPdfPermission,
+          },
+        );
+
+        expect(
+          () => exportService.prepareExport(
+            format: InventoryExportFormat.pdf,
+            initialUser: standardUserWithoutCost,
+            currentUserProvider: () => standardUserWithoutCost,
+            preset: InventoryExportPreset.custom,
+            columns: ['sku', 'unit_cost_inr'],
+          ),
+          throwsA(isA<InventoryExportException>().having(
+            (e) => e.message,
+            'message',
+            contains('Unauthorized field requested: unit_cost_inr'),
+          )),
+        );
+      });
+
+      test('custom PDF export with filtered scope only exports matching items', () async {
+        final artifact = await exportService.prepareExport(
+          format: InventoryExportFormat.pdf,
+          initialUser: adminUser,
+          currentUserProvider: () => adminUser,
+          preset: InventoryExportPreset.custom,
+          columns: ['sku', 'product_name'],
+          scope: InventoryExportScope.filtered,
+          query: const InventoryQuery(searchText: 'Laptop'),
+        );
+
+        expect(artifact.scope, equals(InventoryExportScope.filtered));
+        expect(artifact.itemCount, greaterThan(0));
+        final text = ascii.decode(artifact.bytes);
+        expect(text, contains(r'Scope: Filtered Results'));
+        expect(text, contains('Laptop'));
       });
     });
   });

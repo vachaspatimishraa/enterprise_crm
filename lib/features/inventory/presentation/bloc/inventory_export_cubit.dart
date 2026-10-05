@@ -5,6 +5,7 @@ import '../../domain/entities/inventory_export_artifact.dart';
 import '../../domain/entities/inventory_query.dart';
 import '../../domain/policies/inventory_export_policy.dart';
 import '../services/inventory_export_service.dart';
+import '../services/inventory_pdf_serializer.dart';
 import 'inventory_export_state.dart';
 
 /// Cubit responsible for orchestrating authorized inventory export requests.
@@ -34,6 +35,7 @@ class InventoryExportCubit extends Cubit<InventoryExportState> {
     InventoryQuery? query,
     Set<String>? selectedItemIds,
     List<CustomFieldDefinition>? customFieldDefinitions,
+    PdfLayoutOrientation orientation = PdfLayoutOrientation.auto,
   }) async {
     // Duplicate-request guard: do not allow initiating while another export is preparing
     if (isPreparing) {
@@ -76,6 +78,7 @@ class InventoryExportCubit extends Cubit<InventoryExportState> {
         query: query,
         selectedItemIds: selectedItemIds,
         customFieldDefinitions: customFieldDefinitions,
+        orientation: orientation,
       );
 
       // Guard against stale asynchronous completion or cubit closure
