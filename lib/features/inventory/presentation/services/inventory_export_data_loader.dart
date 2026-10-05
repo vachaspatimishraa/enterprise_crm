@@ -1,3 +1,4 @@
+import '../../domain/entities/inventory_export_artifact.dart';
 import '../../domain/entities/inventory_item_summary.dart';
 import '../../domain/entities/inventory_query.dart';
 import '../../domain/entities/inventory_sort.dart';
@@ -13,8 +14,8 @@ class InventoryExportDataLoaderException implements Exception {
   String toString() => message;
 }
 
-/// Service responsible for loading and deterministically sorting the complete
-/// authorized active inventory dataset for export.
+/// Service responsible for loading and deterministically sorting authorized
+/// inventory datasets for export across all, filtered, or selected record scopes.
 class InventoryExportDataLoader {
   const InventoryExportDataLoader(this._repository);
 
@@ -24,11 +25,59 @@ class InventoryExportDataLoader {
   /// validates dataset completeness, and applies global deterministic sorting.
   Future<List<InventoryItemSummary>> loadAllItems({
     int batchSize = 100,
+  }) {
+    return loadItems(
+      scope: InventoryExportScope.all,
+      batchSize: batchSize,
+    );
+  }
+
+  /// Loads inventory items matching [scope] across pages.
+  ///
+  /// - [InventoryExportScope.all]: paginates all authorized items without filtering.
+  /// - [InventoryExportScope.filtered]: paginates all authorized items matching [query].
+  /// - [InventoryExportScope.selected]: resolves [selectedItemIds] through repository,
+  ///   omitting inaccessible or pending-deleted items, and throws if [selectedItemIds] is empty.
+  Future<List<InventoryItemSummary>> loadItems({
+    InventoryExportScope scope = InventoryExportScope.all,
+    InventoryQuery? query,
+    Set<String>? selectedItemIds,
+    int batchSize = 100,
   }) async {
     if (batchSize <= 0) {
       throw const InventoryExportDataLoaderException(
         'Batch size must be greater than zero.',
       );
+    }
+
+    if (scope == InventoryExportScope.selected) {
+      if (selectedItemIds == null || selectedItemIds.isEmpty) {
+        throw const InventoryExportDataLoaderException(
+          'No items selected for export.',
+        );
+      }
+
+      try {
+        final pending = await _repository.getPendingDeletions();
+        final pendingIds = pending.map((p) => p.itemId).toSet();
+
+        final items = <InventoryItemSummary>[];
+        for (final id in selectedItemIds) {
+          if (pendingIds.contains(id)) continue;
+          final summary = await _repository.getItemById(id);
+          if (summary != null) {
+            items.add(summary);
+          }
+        }
+
+        _sortDeterministically(items);
+        return List.unmodifiable(items);
+      } catch (e) {
+        if (e is InventoryExportDataLoaderException) rethrow;
+        throw InventoryExportDataLoaderException(
+          'Failed to load selected inventory items for export: $e',
+        );
+      }
     }
 
     final allSummaries = <InventoryItemSummary>[];
@@ -38,15 +87,17 @@ class InventoryExportDataLoader {
     int? expectedTotalItems;
     const maxPages = 10000;
 
+    final effectiveQuery = query ?? const InventoryQuery();
+
     try {
       while (hasNext && currentPage <= maxPages) {
-        final query = InventoryQuery(
+        final pageQuery = effectiveQuery.copyWith(
           page: currentPage,
           pageSize: batchSize,
           sort: InventorySort.nameAsc,
         );
 
-        final pageData = await _repository.getItems(query);
+        final pageData = await _repository.getItems(pageQuery);
 
         // Validate page contract metadata
         if (pageData.currentPage != currentPage) {
@@ -117,7 +168,12 @@ class InventoryExportDataLoader {
       );
     }
 
-    allSummaries.sort((a, b) {
+    _sortDeterministically(allSummaries);
+    return List.unmodifiable(allSummaries);
+  }
+
+  void _sortDeterministically(List<InventoryItemSummary> items) {
+    items.sort((a, b) {
       final nameCompare = a.item.name.toLowerCase().compareTo(
             b.item.name.toLowerCase(),
           );
@@ -130,7 +186,5 @@ class InventoryExportDataLoader {
 
       return a.item.id.compareTo(b.item.id);
     });
-
-    return List.unmodifiable(allSummaries);
   }
 }

@@ -1,3 +1,5 @@
+import 'package:enterprise_crm/features/inventory/domain/entities/custom_field_definition.dart';
+import 'package:enterprise_crm/features/inventory/domain/entities/inventory_export_fields.dart';
 import 'dart:typed_data';
 
 import 'package:enterprise_crm/features/inventory/data/repositories/mock_inventory_repository.dart';
@@ -227,6 +229,204 @@ void main() {
       final csvLines = csvString.split('\r\n');
       expect(csvLines[1], contains(firstSummary.item.name));
       expect(csvLines[1], contains(firstSummary.item.sku));
+    });
+     group('Customizable XLSX Export Tests (INVENTORY-7.5)', () {
+      test('exports selected columns in exact requested order', () {
+        final item = InventoryItem(
+          id: 'item-1',
+          name: 'Super Gadget',
+          sku: 'SKU-001',
+          category: 'Electronics',
+        );
+        final summary = InventoryItemSummary(item: item, quantityOnHand: 42.0);
+
+        final columns = ['category', 'product_name', 'current_quantity', 'sku'];
+        final bytes = serializer.convertToBytes([summary], columns: columns);
+
+        final excel = Excel.decodeBytes(bytes);
+        final table = excel.tables['Inventory']!;
+
+        expect(table.maxRows, equals(2));
+        final headerRow = table.rows[0];
+        expect((headerRow[0]?.value as TextCellValue).value.toString(), equals('Category'));
+        expect((headerRow[1]?.value as TextCellValue).value.toString(), equals('Product Name'));
+        expect((headerRow[2]?.value as TextCellValue).value.toString(), equals('Current Quantity'));
+        expect((headerRow[3]?.value as TextCellValue).value.toString(), equals('SKU'));
+
+        final dataRow = table.rows[1];
+        expect((dataRow[0]?.value as TextCellValue).value.toString(), equals('Electronics'));
+        expect((dataRow[1]?.value as TextCellValue).value.toString(), equals('Super Gadget'));
+        expect((dataRow[2]?.value as IntCellValue).value, equals(42));
+        expect((dataRow[3]?.value as TextCellValue).value.toString(), equals('SKU-001'));
+      });
+
+      test('preserves leading zeroes in SKU and barcode as TextCellValue', () {
+        final item = InventoryItem(
+          id: 'item-1',
+          name: 'Zero Item',
+          sku: '00054321',
+          barcode: '000999888',
+        );
+        final summary = InventoryItemSummary(item: item, quantityOnHand: 1.0);
+
+        final columns = ['sku', 'barcode'];
+        final bytes = serializer.convertToBytes([summary], columns: columns);
+
+        final excel = Excel.decodeBytes(bytes);
+        final table = excel.tables['Inventory']!;
+        final dataRow = table.rows[1];
+
+        expect(dataRow[0]?.value, isA<TextCellValue>());
+        expect((dataRow[0]?.value as TextCellValue).value.toString(), equals('00054321'));
+
+        expect(dataRow[1]?.value, isA<TextCellValue>());
+        expect((dataRow[1]?.value as TextCellValue).value.toString(), equals('000999888'));
+      });
+
+      test('stores quantities, prices, and percentages as numeric cells', () {
+        final item = InventoryItem(
+          id: 'item-1',
+          name: 'Priced Item',
+          sku: 'SKU-PRICED',
+          unitCostInr: 99.50,
+          sellingPriceInr: 150.00,
+          gstPercent: 18.0,
+        );
+        final summary = InventoryItemSummary(item: item, quantityOnHand: 10.5);
+
+        final columns = ['current_quantity', 'unit_cost_inr', 'selling_price_inr', 'gst_percent'];
+        final bytes = serializer.convertToBytes([summary], columns: columns);
+
+        final excel = Excel.decodeBytes(bytes);
+        final table = excel.tables['Inventory']!;
+        final dataRow = table.rows[1];
+
+        expect(dataRow[0]?.value, isA<DoubleCellValue>());
+        expect((dataRow[0]?.value as DoubleCellValue).value, equals(10.5));
+
+        expect(dataRow[1]?.value, isA<DoubleCellValue>());
+        expect((dataRow[1]?.value as DoubleCellValue).value, equals(99.50));
+
+        expect(dataRow[2]?.value, isA<IntCellValue>());
+        expect((dataRow[2]?.value as IntCellValue).value, equals(150));
+
+        expect(dataRow[3]?.value, isA<IntCellValue>());
+        expect((dataRow[3]?.value as IntCellValue).value, equals(18));
+      });
+
+      test('stores dates as DateCellValue and booleans as BoolCellValue', () {
+        final item = InventoryItem(
+          id: 'item-1',
+          name: 'Dated Item',
+          sku: 'SKU-DATE',
+          expiryDate: DateTime(2028, 12, 31),
+          isActive: true,
+        );
+        final summary = InventoryItemSummary(item: item, quantityOnHand: 0.0);
+
+        final columns = ['expiry_date', 'is_active'];
+        final bytes = serializer.convertToBytes([summary], columns: columns);
+
+        final excel = Excel.decodeBytes(bytes);
+        final table = excel.tables['Inventory']!;
+        final dataRow = table.rows[1];
+
+        expect(dataRow[0]?.value, isA<DateCellValue>());
+        final dateCell = dataRow[0]?.value as DateCellValue;
+        expect(dateCell.year, equals(2028));
+        expect(dateCell.month, equals(12));
+        expect(dateCell.day, equals(31));
+
+        expect(dataRow[1]?.value, isA<BoolCellValue>());
+        expect((dataRow[1]?.value as BoolCellValue).value, isTrue);
+      });
+
+      test('exports registered custom fields with appropriate cell types', () {
+        final item = InventoryItem(
+          id: 'item-1',
+          name: 'Custom Item',
+          sku: 'SKU-CUST',
+          customFields: {
+            'cf_text': 'Heavy Duty',
+            'cf_num': 100,
+            'cf_bool': false,
+          },
+        );
+        final summary = InventoryItemSummary(item: item, quantityOnHand: 5.0);
+
+        final customDefs = [
+          CustomFieldDefinition(id: '1', key: 'cf_text', label: 'Material', dataType: CustomFieldDataType.text),
+          CustomFieldDefinition(id: '2', key: 'cf_num', label: 'Rating', dataType: CustomFieldDataType.number),
+          CustomFieldDefinition(id: '3', key: 'cf_bool', label: 'Recyclable', dataType: CustomFieldDataType.boolean),
+        ];
+
+        final columns = ['cf_text', 'cf_num', 'cf_bool'];
+        final bytes = serializer.convertToBytes(
+          [summary],
+          columns: columns,
+          customFieldDefinitions: customDefs,
+        );
+
+        final excel = Excel.decodeBytes(bytes);
+        final table = excel.tables['Inventory']!;
+
+        final headerRow = table.rows[0];
+        expect((headerRow[0]?.value as TextCellValue).value.toString(), equals('Material'));
+        expect((headerRow[1]?.value as TextCellValue).value.toString(), equals('Rating'));
+        expect((headerRow[2]?.value as TextCellValue).value.toString(), equals('Recyclable'));
+
+        final dataRow = table.rows[1];
+        expect((dataRow[0]?.value as TextCellValue).value.toString(), equals('Heavy Duty'));
+        expect((dataRow[1]?.value as IntCellValue).value, equals(100));
+        expect((dataRow[2]?.value as BoolCellValue).value, isFalse);
+      });
+
+      test('handles null values gracefully as null cells', () {
+        final item = InventoryItem(
+          id: 'item-1',
+          name: 'Null Item',
+          sku: 'SKU-NULL',
+          brand: null,
+          binLocation: null,
+        );
+        final summary = InventoryItemSummary(item: item, quantityOnHand: 1.0);
+
+        final columns = ['product_name', 'brand', 'bin_location'];
+        final bytes = serializer.convertToBytes([summary], columns: columns);
+
+        final excel = Excel.decodeBytes(bytes);
+        final table = excel.tables['Inventory']!;
+        final dataRow = table.rows[1];
+
+        expect(dataRow[0]?.value, isA<TextCellValue>());
+        expect(dataRow[1]?.value, isNull);
+        expect(dataRow[2]?.value, isNull);
+      });
+
+      test('all 21 standard fields export with correct canonical headers in XLSX', () {
+        final item = InventoryItem(
+          id: 'item-1',
+          name: 'Standard Item',
+          sku: 'SKU-STD',
+        );
+        final summary = InventoryItemSummary(item: item, quantityOnHand: 1.0);
+
+        final columns = InventoryExportFields.standardFieldKeys;
+        final bytes = serializer.convertToBytes([summary], columns: columns);
+
+        final excel = Excel.decodeBytes(bytes);
+        final table = excel.tables['Inventory']!;
+        final headerRow = table.rows[0];
+
+        expect(headerRow.length, equals(21));
+        expect((headerRow[0]?.value as TextCellValue).value.toString(), equals('SKU'));
+        expect((headerRow[1]?.value as TextCellValue).value.toString(), equals('Product Name'));
+        expect((headerRow[9]?.value as TextCellValue).value.toString(), equals('Unit Cost (INR)'));
+        expect((headerRow[10]?.value as TextCellValue).value.toString(), equals('Selling Price (INR)'));
+        expect((headerRow[11]?.value as TextCellValue).value.toString(), equals('Current Quantity'));
+        expect((headerRow[14]?.value as TextCellValue).value.toString(), equals('GST (%)'));
+        expect((headerRow[19]?.value as TextCellValue).value.toString(), equals('Stock Status'));
+      });
     });
   });
 }

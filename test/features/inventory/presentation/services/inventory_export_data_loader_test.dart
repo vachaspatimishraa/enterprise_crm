@@ -1,3 +1,4 @@
+import 'package:enterprise_crm/features/inventory/domain/entities/inventory_export_artifact.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:enterprise_crm/features/inventory/data/repositories/mock_inventory_repository.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_item.dart';
@@ -391,6 +392,101 @@ void main() {
           contains('Expected page 1 but received 99'),
         )),
       );
+    });
+     group('Record Scope Loading Tests (INVENTORY-7.5)', () {
+      test('filtered scope loads matching items across multiple pages', () async {
+        final filteredItems = await loader.loadItems(
+          scope: InventoryExportScope.filtered,
+          query: const InventoryQuery(searchText: 'Widget'),
+          batchSize: 2,
+        );
+        for (final item in filteredItems) {
+          final match = item.item.name.toLowerCase().contains('widget') ||
+              item.item.sku.toLowerCase().contains('widget');
+          expect(match, isTrue);
+        }
+      });
+
+      test('selected scope loads matching items by ID', () async {
+        final all = await loader.loadAllItems();
+        final selectedIds = {all[0].item.id, all[1].item.id};
+
+        final selected = await loader.loadItems(
+          scope: InventoryExportScope.selected,
+          selectedItemIds: selectedIds,
+        );
+
+        expect(selected.length, equals(2));
+        final resultIds = selected.map((s) => s.item.id).toSet();
+        expect(resultIds, equals(selectedIds));
+      });
+
+      test('selected scope throws when selected set is empty', () async {
+        expect(
+          () => loader.loadItems(
+            scope: InventoryExportScope.selected,
+            selectedItemIds: {},
+          ),
+          throwsA(
+            isA<InventoryExportDataLoaderException>().having(
+              (e) => e.message,
+              'message',
+              contains('No items selected for export.'),
+            ),
+          ),
+        );
+      });
+
+      test('selected scope excludes pending deletions', () async {
+        final all = await loader.loadAllItems();
+        final itemToDelete = all.first;
+        await repository.requestItemDeletion(
+          itemId: itemToDelete.item.id,
+          performedByUserId: 'admin_1',
+        );
+
+        final selected = await loader.loadItems(
+          scope: InventoryExportScope.selected,
+          selectedItemIds: {itemToDelete.item.id, all[1].item.id},
+        );
+
+        expect(selected.length, equals(1));
+        expect(selected.first.item.id, equals(all[1].item.id));
+      });
+
+      test('selected scope includes undo-restored item', () async {
+        final all = await loader.loadAllItems();
+        final itemToRestore = all.first;
+        await repository.requestItemDeletion(
+          itemId: itemToRestore.item.id,
+          performedByUserId: 'admin_1',
+        );
+        await repository.undoItemDeletion(
+          itemId: itemToRestore.item.id,
+          performedByUserId: 'admin_1',
+        );
+
+        final selected = await loader.loadItems(
+          scope: InventoryExportScope.selected,
+          selectedItemIds: {itemToRestore.item.id},
+        );
+
+        expect(selected.length, equals(1));
+        expect(selected.first.item.id, equals(itemToRestore.item.id));
+      });
+
+      test('selected scope safely omits unknown / invalid IDs', () async {
+        final all = await loader.loadAllItems();
+        final validId = all.first.item.id;
+
+        final selected = await loader.loadItems(
+          scope: InventoryExportScope.selected,
+          selectedItemIds: {validId, 'non_existent_id_999'},
+        );
+
+        expect(selected.length, equals(1));
+        expect(selected.first.item.id, equals(validId));
+      });
     });
   });
 }

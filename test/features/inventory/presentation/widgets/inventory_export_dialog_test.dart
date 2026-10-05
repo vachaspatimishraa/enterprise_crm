@@ -15,6 +15,7 @@ import 'package:enterprise_crm/features/inventory/domain/entities/inventory_page
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_query.dart';
 import 'package:enterprise_crm/features/inventory/presentation/screens/inventory_workspace_screen.dart';
 import 'package:enterprise_crm/features/inventory/presentation/services/inventory_export_file_delivery_service.dart';
+import 'package:enterprise_crm/features/inventory/domain/policies/inventory_export_policy.dart';
 import 'package:enterprise_crm/features/inventory/presentation/widgets/inventory_export_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -152,8 +153,13 @@ void main() {
         find.byKey(const Key('inventory_export_format_xlsx')),
       );
 
+      final pdfTile = tester.widget<RadioListTile<InventoryExportFormat>>(
+        find.byKey(const Key('inventory_export_format_pdf')),
+      );
+
       expect(csvTile.enabled, isTrue);
       expect(xlsxTile.enabled, isTrue);
+      expect(pdfTile.enabled, isFalse);
     });
 
     testWidgets('CSV-only user has CSV enabled and XLSX disabled', (tester) async {
@@ -185,8 +191,13 @@ void main() {
         find.byKey(const Key('inventory_export_format_xlsx')),
       );
 
+      final pdfTile = tester.widget<RadioListTile<InventoryExportFormat>>(
+        find.byKey(const Key('inventory_export_format_pdf')),
+      );
+
       expect(csvTile.enabled, isTrue);
       expect(xlsxTile.enabled, isFalse);
+      expect(pdfTile.enabled, isFalse);
     });
 
     testWidgets('XLSX-only user has XLSX enabled and CSV disabled', (tester) async {
@@ -218,8 +229,228 @@ void main() {
         find.byKey(const Key('inventory_export_format_xlsx')),
       );
 
+      final pdfTile = tester.widget<RadioListTile<InventoryExportFormat>>(
+        find.byKey(const Key('inventory_export_format_pdf')),
+      );
+
       expect(csvTile.enabled, isFalse);
       expect(xlsxTile.enabled, isTrue);
+      expect(pdfTile.enabled, isFalse);
+    });
+
+
+    testWidgets('PDF-only user has PDF enabled and CSV/XLSX disabled', (tester) async {
+      final user = makeUser(
+        permissions: {
+          CrmPermissions.inventoryView,
+          InventoryExportPolicy.exportPdfPermission,
+        },
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: user,
+              currentUserProvider: () => user,
+              repository: mockRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final csvTile = tester.widget<RadioListTile<InventoryExportFormat>>(
+        find.byKey(const Key('inventory_export_format_csv')),
+      );
+      final xlsxTile = tester.widget<RadioListTile<InventoryExportFormat>>(
+        find.byKey(const Key('inventory_export_format_xlsx')),
+      );
+      final pdfTile = tester.widget<RadioListTile<InventoryExportFormat>>(
+        find.byKey(const Key('inventory_export_format_pdf')),
+      );
+
+      expect(csvTile.enabled, isFalse);
+      expect(xlsxTile.enabled, isFalse);
+      expect(pdfTile.enabled, isTrue);
+      final radioGroup = tester.widget<RadioGroup<InventoryExportFormat>>(
+        find.byType(RadioGroup<InventoryExportFormat>),
+      );
+      expect(radioGroup.groupValue, equals(InventoryExportFormat.pdf));
+    });
+
+    testWidgets('User with all three permissions has CSV, XLSX, and PDF enabled', (tester) async {
+      final user = makeUser(
+        permissions: {
+          CrmPermissions.inventoryView,
+          CrmPermissions.inventoryExportCsv,
+          CrmPermissions.inventoryExportXlsx,
+          InventoryExportPolicy.exportPdfPermission,
+        },
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: user,
+              currentUserProvider: () => user,
+              repository: mockRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final csvTile = tester.widget<RadioListTile<InventoryExportFormat>>(
+        find.byKey(const Key('inventory_export_format_csv')),
+      );
+      final xlsxTile = tester.widget<RadioListTile<InventoryExportFormat>>(
+        find.byKey(const Key('inventory_export_format_xlsx')),
+      );
+      final pdfTile = tester.widget<RadioListTile<InventoryExportFormat>>(
+        find.byKey(const Key('inventory_export_format_pdf')),
+      );
+
+      expect(csvTile.enabled, isTrue);
+      expect(xlsxTile.enabled, isTrue);
+      expect(pdfTile.enabled, isTrue);
+    });
+
+    testWidgets('PDF export flow: prepares and downloads PDF successfully', (tester) async {
+      final user = makeUser(
+        permissions: {
+          CrmPermissions.inventoryView,
+          InventoryExportPolicy.exportPdfPermission,
+        },
+      );
+      fakeSaver.returnUri = Uri.parse('file:///storage/export.pdf');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: user,
+              currentUserProvider: () => user,
+              repository: mockRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Tap prepare
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+      expect(find.text('Download PDF'), findsOneWidget);
+
+      // Tap download
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
+      await tester.pumpAndSettle();
+
+      expect(fakeSaver.callCount, equals(1));
+      expect(fakeSaver.lastMimeType, equals('application/pdf'));
+      expect(fakeSaver.lastFileName, endsWith('.pdf'));
+    });
+
+    testWidgets('PDF export security: permission revocation before delivery blocks saver with 0 saver calls', (tester) async {
+      CurrentUser? liveUser = makeUser(
+        permissions: {
+          CrmPermissions.inventoryView,
+          InventoryExportPolicy.exportPdfPermission,
+        },
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: liveUser,
+              currentUserProvider: () => liveUser,
+              repository: mockRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Prepare PDF
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+
+      // 2. Revoke PDF permission
+      liveUser = makeUser(
+        permissions: {
+          CrmPermissions.inventoryView, // No PDF permission
+        },
+      );
+
+      // 3. Tap download
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
+      await tester.pumpAndSettle();
+
+      expect(fakeSaver.callCount, equals(0));
+      expect(
+        find.text('User is not authorized to deliver this export format.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('PDF export security: account switch before delivery blocks saver with 0 saver calls', (tester) async {
+      CurrentUser? liveUser = makeUser(
+        id: 'user_pdf_orig',
+        permissions: {
+          CrmPermissions.inventoryView,
+          InventoryExportPolicy.exportPdfPermission,
+        },
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryExportDialog(
+              user: liveUser,
+              currentUserProvider: () => liveUser,
+              repository: mockRepo,
+              fileDeliveryService: deliveryService,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Prepare PDF
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+
+      // 2. Account switch
+      liveUser = makeUser(
+        id: 'user_pdf_switched',
+        permissions: {
+          CrmPermissions.inventoryView,
+          InventoryExportPolicy.exportPdfPermission,
+        },
+      );
+
+      // 3. Tap download
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
+      await tester.pumpAndSettle();
+
+      expect(fakeSaver.callCount, equals(0));
+      expect(
+        find.text('User identity changed since export was prepared.'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('tapping cancel closes dialog without starting export', (tester) async {
@@ -1226,6 +1457,249 @@ void main() {
       expect(find.text("User is not authorized to deliver this export format."), findsOneWidget);
       expect(fakeSaver.callCount, equals(0));
     });
-  });
+     group('Customizable Export Dialog Tests (INVENTORY-7.5)', () {
+      late MockInventoryRepository mockRepo;
 
+      void setScreenSize(WidgetTester tester) {
+        tester.view.devicePixelRatio = 1.0;
+        tester.view.physicalSize = const Size(1200, 1600);
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+      }
+
+      setUp(() {
+        mockRepo = MockInventoryRepository();
+      });
+
+      testWidgets('displays preset selector and record scope options when CSV or Excel is selected', (tester) async {
+        setScreenSize(tester);
+
+        final user = makeUser();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: InventoryExportDialog(
+                user: user,
+                currentUserProvider: () => user,
+                repository: mockRepo,
+                fileDeliveryService: deliveryService,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('inventory_export_preset_legacy')), findsOneWidget);
+        expect(find.byKey(const Key('inventory_export_preset_custom')), findsOneWidget);
+        expect(find.byKey(const Key('inventory_export_scope_all')), findsOneWidget);
+        expect(find.byKey(const Key('inventory_export_scope_filtered')), findsOneWidget);
+        expect(find.byKey(const Key('inventory_export_scope_selected')), findsOneWidget);
+      });
+
+      testWidgets('hides preset and column selector when PDF format is selected', (tester) async {
+        setScreenSize(tester);
+
+        final user = makeUser(
+          permissions: {
+            CrmPermissions.inventoryView,
+            CrmPermissions.inventoryExportCsv,
+            CrmPermissions.inventoryExportXlsx,
+            InventoryExportPolicy.exportPdfPermission,
+          },
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: InventoryExportDialog(
+                user: user,
+                currentUserProvider: () => user,
+                repository: mockRepo,
+                fileDeliveryService: deliveryService,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Switch to PDF
+        await tester.ensureVisible(find.byKey(const Key('inventory_export_format_pdf')));
+        await tester.tap(find.byKey(const Key('inventory_export_format_pdf')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('inventory_export_preset_legacy')), findsNothing);
+        expect(find.byKey(const Key('inventory_export_preset_custom')), findsNothing);
+        expect(find.byKey(const Key('inventory_export_scope_all')), findsNothing);
+        expect(find.text('Printable report with frozen three columns (Item Name, SKU, Current Quantity).'), findsOneWidget);
+      });
+
+      testWidgets('switching to custom preset reveals column selection and reordering controls', (tester) async {
+        setScreenSize(tester);
+
+        final user = makeUser();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: InventoryExportDialog(
+                user: user,
+                currentUserProvider: () => user,
+                repository: mockRepo,
+                fileDeliveryService: deliveryService,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Switch to Custom Preset
+        await tester.ensureVisible(find.byKey(const Key('inventory_export_preset_custom')));
+        await tester.tap(find.byKey(const Key('inventory_export_preset_custom')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('inventory_export_select_all_columns')), findsOneWidget);
+        expect(find.byKey(const Key('inventory_export_deselect_all_columns')), findsOneWidget);
+        expect(find.byKey(const Key('inventory_export_col_sku')), findsOneWidget);
+        expect(find.byKey(const Key('inventory_export_col_product_name')), findsOneWidget);
+      });
+
+      testWidgets('deselecting all columns disables submit button', (tester) async {
+        setScreenSize(tester);
+
+        final user = makeUser();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: InventoryExportDialog(
+                user: user,
+                currentUserProvider: () => user,
+                repository: mockRepo,
+                fileDeliveryService: deliveryService,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Switch to Custom Preset
+        await tester.ensureVisible(find.byKey(const Key('inventory_export_preset_custom')));
+        await tester.tap(find.byKey(const Key('inventory_export_preset_custom')));
+        await tester.pumpAndSettle();
+
+        // Tap Deselect All
+        await tester.ensureVisible(find.byKey(const Key('inventory_export_deselect_all_columns')));
+        await tester.tap(find.byKey(const Key('inventory_export_deselect_all_columns')));
+        await tester.pumpAndSettle();
+
+        final submitButton = tester.widget<FilledButton>(
+          find.byKey(const Key('inventory_export_dialog_submit_button')),
+        );
+        expect(submitButton.onPressed, isNull);
+      });
+
+      testWidgets('selected scope with 0 selected items disables submit button', (tester) async {
+        setScreenSize(tester);
+
+        final user = makeUser();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: InventoryExportDialog(
+                user: user,
+                currentUserProvider: () => user,
+                repository: mockRepo,
+                fileDeliveryService: deliveryService,
+                selectedItemIds: {}, // empty
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Switch to Selected Scope
+        await tester.ensureVisible(find.byKey(const Key('inventory_export_scope_selected')));
+        await tester.tap(find.byKey(const Key('inventory_export_scope_selected')));
+        await tester.pumpAndSettle();
+
+        final submitButton = tester.widget<FilledButton>(
+          find.byKey(const Key('inventory_export_dialog_submit_button')),
+        );
+        expect(submitButton.onPressed, isNull);
+      });
+
+      testWidgets('changing preset after preparation resets prepared state and requires re-preparation', (tester) async {
+        setScreenSize(tester);
+
+        final user = makeUser();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: InventoryExportDialog(
+                user: user,
+                currentUserProvider: () => user,
+                repository: mockRepo,
+                fileDeliveryService: deliveryService,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Prepare legacy export
+        await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+
+        // 2. Switch preset to custom
+        await tester.ensureVisible(find.byKey(const Key('inventory_export_preset_custom')));
+        await tester.tap(find.byKey(const Key('inventory_export_preset_custom')));
+        await tester.pumpAndSettle();
+
+        // 3. Download button disappears, submit button reappears
+        expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsNothing);
+        expect(find.byKey(const Key('inventory_export_dialog_submit_button')), findsOneWidget);
+      });
+
+      testWidgets('custom export flow prepares and downloads CSV with custom columns', (tester) async {
+        setScreenSize(tester);
+
+        final user = makeUser();
+        fakeSaver.returnUri = Uri.parse('file:///storage/custom.csv');
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: InventoryExportDialog(
+                user: user,
+                currentUserProvider: () => user,
+                repository: mockRepo,
+                fileDeliveryService: deliveryService,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Switch to Custom Preset
+        await tester.ensureVisible(find.byKey(const Key('inventory_export_preset_custom')));
+        await tester.tap(find.byKey(const Key('inventory_export_preset_custom')));
+        await tester.pumpAndSettle();
+
+        // Tap prepare
+        await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('inventory_export_dialog_download_button')), findsOneWidget);
+
+        // Tap download
+        await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
+        await tester.pumpAndSettle();
+
+        expect(fakeSaver.callCount, equals(1));
+        expect(fakeSaver.lastExtension, equals('csv'));
+        expect(find.text('Inventory exported successfully.'), findsOneWidget);
+      });
+    });
+  });
 }

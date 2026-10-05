@@ -1,3 +1,5 @@
+import 'package:enterprise_crm/features/inventory/domain/entities/custom_field_definition.dart';
+import 'package:enterprise_crm/features/inventory/domain/entities/inventory_export_fields.dart';
 import 'dart:convert';
 import 'package:csv/csv.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -132,6 +134,144 @@ void main() {
       expect(summary.item.name, equals('=Formula'));
       expect(summary.item.sku, equals('SKU-01'));
       expect(summary.quantityOnHand, equals(10.0));
+    });
+     group('Customizable CSV Export Tests (INVENTORY-7.5)', () {
+      test('exports selected columns in exact requested order', () {
+        final item = InventoryItem(
+          id: 'item-1',
+          name: 'Super Gadget',
+          sku: 'SKU-001',
+          category: 'Electronics',
+          warehouse: 'Main WH',
+        );
+        final summary = InventoryItemSummary(item: item, quantityOnHand: 42.0);
+
+        final columns = ['category', 'product_name', 'current_quantity', 'sku'];
+        final csv = serializer.convertToString([summary], columns: columns);
+        final lines = csv.trim().split('\r\n');
+
+        expect(lines.length, equals(2));
+        expect(lines[0], equals('Category,Product Name,Current Quantity,SKU'));
+        expect(lines[1], equals('Electronics,Super Gadget,42,SKU-001'));
+      });
+
+      test('exports leading zeroes in SKU and barcode without truncation', () {
+        final item = InventoryItem(
+          id: 'item-1',
+          name: 'Leading Zero Item',
+          sku: '00012345',
+          barcode: '000987654321',
+        );
+        final summary = InventoryItemSummary(item: item, quantityOnHand: 5.0);
+
+        final columns = ['sku', 'barcode', 'product_name'];
+        final csv = serializer.convertToString([summary], columns: columns);
+        final lines = csv.trim().split('\r\n');
+
+        expect(lines[1], contains('00012345'));
+        expect(lines[1], contains('000987654321'));
+      });
+
+      test('neutralizes formula injection in custom text and notes fields', () {
+        final item = InventoryItem(
+          id: 'item-1',
+          name: 'Normal Item',
+          sku: 'SKU-NORM',
+          notes: '=SUM(A1:A10)',
+          customFields: {'cf_risk': '+cmd|/C calc'},
+        );
+        final summary = InventoryItemSummary(item: item, quantityOnHand: 1.0);
+
+        final customDef = CustomFieldDefinition(
+          id: 'cf-1',
+          key: 'cf_risk',
+          label: 'Risk Level',
+          dataType: CustomFieldDataType.text,
+        );
+
+        final columns = ['notes', 'cf_risk'];
+        final csv = serializer.convertToString(
+          [summary],
+          columns: columns,
+          customFieldDefinitions: [customDef],
+        );
+
+        final lines = csv.trim().split('\r\n');
+        expect(lines[0], equals('Notes,Risk Level'));
+        expect(lines[1], contains("'=SUM(A1:A10)"));
+        expect(lines[1], contains("'+cmd|/C calc"));
+      });
+
+      test('formats dates, booleans, quantities, percentages, and prices correctly', () {
+        final item = InventoryItem(
+          id: 'item-1',
+          name: 'Complete Item',
+          sku: 'SKU-FULL',
+          unitCostInr: 100.50,
+          sellingPriceInr: 199.99,
+          gstPercent: 18.0,
+          expiryDate: DateTime(2027, 6, 15),
+          isActive: true,
+        );
+        final summary = InventoryItemSummary(item: item, quantityOnHand: 250.0);
+
+        final columns = [
+          'product_name',
+          'unit_cost_inr',
+          'selling_price_inr',
+          'gst_percent',
+          'expiry_date',
+          'is_active',
+          'current_quantity',
+        ];
+        final csv = serializer.convertToString([summary], columns: columns);
+        final lines = csv.trim().split('\r\n');
+
+        expect(lines[1], equals('Complete Item,100.5,199.99,18,2027-06-15,true,250'));
+      });
+
+      test('handles null values as empty CSV cells', () {
+        final item = InventoryItem(
+          id: 'item-1',
+          name: 'Null Fields Item',
+          sku: 'SKU-NULL',
+          brand: null,
+          binLocation: null,
+        );
+        final summary = InventoryItemSummary(item: item, quantityOnHand: 0.0);
+
+        final columns = ['product_name', 'brand', 'bin_location', 'current_quantity'];
+        final csv = serializer.convertToString([summary], columns: columns);
+        final lines = csv.trim().split('\r\n');
+
+        expect(lines[0], equals('Product Name,Brand,Bin Location,Current Quantity'));
+        expect(lines[1], equals('Null Fields Item,,,0'));
+      });
+
+      test('all 21 standard fields export with correct canonical headers', () {
+        final item = InventoryItem(
+          id: 'item-1',
+          name: 'All Standard Fields Item',
+          sku: 'SKU-ALL',
+        );
+        final summary = InventoryItemSummary(item: item, quantityOnHand: 10.0);
+
+        final columns = InventoryExportFields.standardFieldKeys;
+        expect(columns.length, equals(21));
+
+        final csv = serializer.convertToString([summary], columns: columns);
+        final headerLine = csv.trim().split('\r\n')[0];
+        final headers = headerLine.split(',');
+
+        expect(headers.length, equals(21));
+        expect(headers[0], equals('SKU'));
+        expect(headers[1], equals('Product Name'));
+        expect(headers[9], equals('Unit Cost (INR)'));
+        expect(headers[10], equals('Selling Price (INR)'));
+        expect(headers[11], equals('Current Quantity'));
+        expect(headers[14], equals('GST (%)'));
+        expect(headers[19], equals('Stock Status'));
+      });
     });
   });
 }

@@ -4,7 +4,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../auth/domain/entities/current_user.dart';
 import '../../../auth/presentation/bloc/auth_cubit.dart';
 import '../../../auth/presentation/bloc/auth_state.dart';
+import '../../data/repositories/mock_inventory_repository.dart';
+import '../../domain/entities/custom_field_definition.dart';
 import '../../domain/entities/inventory_export_artifact.dart';
+import '../../domain/entities/inventory_export_fields.dart';
+import '../../domain/entities/inventory_field_metadata.dart';
+import '../../domain/entities/inventory_query.dart';
 import '../../domain/policies/inventory_export_policy.dart';
 import '../../domain/repositories/inventory_repository.dart';
 import '../bloc/inventory_export_cubit.dart';
@@ -21,6 +26,8 @@ Future<bool?> showInventoryExportDialog({
   CurrentUser? Function()? currentUserProvider,
   InventoryExportCubit? cubit,
   InventoryExportFileDeliveryService? fileDeliveryService,
+  InventoryQuery? currentQuery,
+  Set<String>? selectedItemIds,
 }) {
   CurrentUser? Function()? effectiveProvider = currentUserProvider;
   if (effectiveProvider == null) {
@@ -43,17 +50,21 @@ Future<bool?> showInventoryExportDialog({
       currentUserProvider: effectiveProvider,
       cubit: cubit,
       fileDeliveryService: fileDeliveryService,
+      currentQuery: currentQuery,
+      selectedItemIds: selectedItemIds,
     ),
   );
 }
 
-/// Reusable modal dialog for configuring, preparing, and delivering inventory exports.
+/// Reusable modal dialog for configuring, preparing, and delivering customizable inventory exports.
 class InventoryExportDialog extends StatefulWidget {
   final CurrentUser user;
   final InventoryRepository repository;
   final CurrentUser? Function()? currentUserProvider;
   final InventoryExportCubit? cubit;
   final InventoryExportFileDeliveryService? fileDeliveryService;
+  final InventoryQuery? currentQuery;
+  final Set<String>? selectedItemIds;
 
   const InventoryExportDialog({
     super.key,
@@ -62,6 +73,8 @@ class InventoryExportDialog extends StatefulWidget {
     this.currentUserProvider,
     this.cubit,
     this.fileDeliveryService,
+    this.currentQuery,
+    this.selectedItemIds,
   });
 
   @override
@@ -76,6 +89,11 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
 
   String? _initiatingUserId;
   InventoryExportFormat? _selectedFormat;
+  InventoryExportPreset _selectedPreset = InventoryExportPreset.legacyThreeColumn;
+  InventoryExportScope _selectedScope = InventoryExportScope.all;
+  List<String> _selectedColumns = [];
+  List<CustomFieldDefinition> _customDefinitions = [];
+
   bool _isDelivering = false;
   String? _deliveryFeedback;
   bool _isDeliverySuccess = false;
@@ -132,6 +150,28 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
     } else if (canPdf) {
       _selectedFormat = InventoryExportFormat.pdf;
     }
+
+    // Initialize custom columns with permitted standard fields
+    _initPermittedColumns(activeUser);
+
+    // Load registered custom field definitions from repository
+    final repo = widget.repository;
+    if (repo is MockInventoryRepository) {
+      repo.getCustomFieldDefinitions().then((defs) {
+        if (mounted) {
+          setState(() {
+            _customDefinitions = defs;
+          });
+        }
+      });
+    }
+  }
+
+  void _initPermittedColumns(CurrentUser? user) {
+    _selectedColumns = InventoryFieldMetadata.allStandardFields
+        .where((f) => f.canView(user))
+        .map((f) => f.key)
+        .toList();
   }
 
   @override
@@ -142,42 +182,47 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
     super.dispose();
   }
 
+  void _invalidatePreparedState() {
+    if (_cubit.state is InventoryExportPrepared) {
+      _cubit.reset();
+    }
+    _deliveryFeedback = null;
+    _isDeliverySuccess = false;
+  }
+
   void _startPreparation(InventoryExportFormat format) {
+    final activeUser = _getSafeCurrentUser();
+    if (activeUser == null) {
+      setState(() {
+        _deliveryFeedback = 'User session expired or unauthenticated.';
+        _isDeliverySuccess = false;
+      });
+      return;
+    }
+
+    _initiatingUserId = activeUser.id;
     setState(() {
       _deliveryFeedback = null;
       _isDeliverySuccess = false;
     });
 
-    final activeUser = _getSafeCurrentUser();
-    if (activeUser == null) {
-      setState(() {
-        _deliveryFeedback = 'User session expired or unauthenticated.';
-      });
-      return;
-    }
+    final effectiveColumns = _selectedPreset == InventoryExportPreset.custom &&
+            format != InventoryExportFormat.pdf
+        ? _selectedColumns
+        : InventoryExportFields.legacyHeaders;
 
-    final isAuthorized = switch (format) {
-      InventoryExportFormat.csv => InventoryExportPolicy.canExportCsv(activeUser),
-      InventoryExportFormat.xlsx => InventoryExportPolicy.canExportXlsx(activeUser),
-      InventoryExportFormat.pdf => InventoryExportPolicy.canExportPdf(activeUser),
-    };
-
-    if (!isAuthorized) {
-      setState(() {
-        _deliveryFeedback =
-            "You don't have permission to export inventory in this format.";
-      });
-      return;
-    }
-
-    // Capture the initiating user identity at preparation time
-    _initiatingUserId = activeUser.id;
-    _cubit.export(format);
+    _cubit.export(
+      format,
+      scope: _selectedScope,
+      preset: _selectedPreset,
+      columns: effectiveColumns,
+      query: widget.currentQuery,
+      selectedItemIds: widget.selectedItemIds,
+      customFieldDefinitions: _customDefinitions,
+    );
   }
 
   Future<void> _handleDelivery(InventoryExportArtifact artifact) async {
-    if (_isDelivering) return;
-
     setState(() {
       _isDelivering = true;
       _deliveryFeedback = null;
@@ -219,10 +264,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
     return BlocProvider.value(
       value: _cubit,
       child: BlocConsumer<InventoryExportCubit, InventoryExportState>(
-        listener: (context, state) {
-          // Delivery is NOT triggered automatically from the listener.
-          // It requires an explicit user action (Download button click) in the Prepared state.
-        },
+        listener: (context, state) {},
         builder: (context, state) {
           final theme = Theme.of(context);
           final colorScheme = theme.colorScheme;
@@ -239,6 +281,19 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
             InventoryExportFormat.pdf => canPdf,
             null => false,
           };
+
+          final isPdf = _selectedFormat == InventoryExportFormat.pdf;
+          final isCustomPreset = _selectedPreset == InventoryExportPreset.custom;
+
+          final hasSelectedItems = widget.selectedItemIds != null && widget.selectedItemIds!.isNotEmpty;
+          final selectedScopeValid = _selectedScope != InventoryExportScope.selected || hasSelectedItems;
+          final columnsValid = isPdf || !isCustomPreset || _selectedColumns.isNotEmpty;
+
+          final canSubmit = !isBusy && _selectedFormat != null && canSelected && selectedScopeValid && columnsValid;
+
+          final permittedStandardFields = InventoryFieldMetadata.allStandardFields
+              .where((f) => f.canView(activeUser))
+              .toList();
 
           return PopScope(
             canPop: !isBusy,
@@ -261,14 +316,16 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                 ],
               ),
               content: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
+                constraints: const BoxConstraints(maxWidth: 480, maxHeight: 420),
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        'Export all authorized active items. Exactly three columns (Item Name, SKU, Current Quantity) will be exported.',
+                        isPdf
+                            ? 'Printable report with frozen three columns (Item Name, SKU, Current Quantity).'
+                            : 'Configure export format, column selection, and record scope.',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
@@ -283,15 +340,18 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                       const SizedBox(height: 4),
                       RadioGroup<InventoryExportFormat>(
                         groupValue: _selectedFormat,
-                        onChanged: (format) {
-                          if (!isBusy && format != null) {
-                            setState(() {
-                              _selectedFormat = format;
-                              _deliveryFeedback = null;
-                              _isDeliverySuccess = false;
-                            });
-                            if (state is InventoryExportPrepared) {
-                              _cubit.reset();
+                        onChanged: (f) {
+                          if (!isBusy && f != null) {
+                            final allowed = switch (f) {
+                              InventoryExportFormat.csv => canCsv,
+                              InventoryExportFormat.xlsx => canXlsx,
+                              InventoryExportFormat.pdf => canPdf,
+                            };
+                            if (allowed) {
+                              setState(() {
+                                _selectedFormat = f;
+                                _invalidatePreparedState();
+                              });
                             }
                           }
                         },
@@ -300,9 +360,9 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                             RadioListTile<InventoryExportFormat>(
                               key: const Key('inventory_export_format_csv'),
                               value: InventoryExportFormat.csv,
+                              enabled: !isBusy && canCsv,
                               title: const Text('CSV (.csv)'),
                               subtitle: const Text('Spreadsheet-compatible text file.'),
-                              enabled: !isBusy && canCsv,
                               dense: true,
                               visualDensity: VisualDensity.compact,
                               contentPadding: EdgeInsets.zero,
@@ -310,9 +370,9 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                             RadioListTile<InventoryExportFormat>(
                               key: const Key('inventory_export_format_pdf'),
                               value: InventoryExportFormat.pdf,
+                              enabled: !isBusy && canPdf,
                               title: const Text('PDF (.pdf)'),
                               subtitle: const Text('Printable report with the same three columns.'),
-                              enabled: !isBusy && canPdf,
                               dense: true,
                               visualDensity: VisualDensity.compact,
                               contentPadding: EdgeInsets.zero,
@@ -320,9 +380,9 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                             RadioListTile<InventoryExportFormat>(
                               key: const Key('inventory_export_format_xlsx'),
                               value: InventoryExportFormat.xlsx,
+                              enabled: !isBusy && canXlsx,
                               title: const Text('Excel (.xlsx)'),
                               subtitle: const Text('Excel workbook with numeric stock quantities.'),
-                              enabled: !isBusy && canXlsx,
                               dense: true,
                               visualDensity: VisualDensity.compact,
                               contentPadding: EdgeInsets.zero,
@@ -330,6 +390,280 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                           ],
                         ),
                       ),
+
+                      // Non-PDF options: Record Scope and Presets
+                      if (!isPdf && _selectedFormat != null) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          'Record Scope',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        RadioGroup<InventoryExportScope>(
+                          groupValue: _selectedScope,
+                          onChanged: (s) {
+                            if (!isBusy && s != null) {
+                              setState(() {
+                                _selectedScope = s;
+                                _invalidatePreparedState();
+                              });
+                            }
+                          },
+                          child: Column(
+                            children: [
+                              RadioListTile<InventoryExportScope>(
+                                key: const Key('inventory_export_scope_all'),
+                                value: InventoryExportScope.all,
+                                enabled: !isBusy,
+                                title: const Text('All Records'),
+                                subtitle: const Text('Export all active authorized inventory items.'),
+                                dense: true,
+                                visualDensity: VisualDensity.compact,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                              RadioListTile<InventoryExportScope>(
+                                key: const Key('inventory_export_scope_filtered'),
+                                value: InventoryExportScope.filtered,
+                                enabled: !isBusy,
+                                title: const Text('Filtered Results'),
+                                subtitle: Text(
+                                  widget.currentQuery?.searchText != null &&
+                                          widget.currentQuery!.searchText!.trim().isNotEmpty
+                                      ? 'Filter: "${widget.currentQuery!.searchText!.trim()}"'
+                                      : 'All matching active items.',
+                                ),
+                                dense: true,
+                                visualDensity: VisualDensity.compact,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                              RadioListTile<InventoryExportScope>(
+                                key: const Key('inventory_export_scope_selected'),
+                                value: InventoryExportScope.selected,
+                                enabled: !isBusy,
+                                title: Text(
+                                  'Selected Records (${widget.selectedItemIds?.length ?? 0} items)',
+                                ),
+                                subtitle: const Text('Export only currently selected items.'),
+                                dense: true,
+                                visualDensity: VisualDensity.compact,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+                        Text(
+                          'Columns & Presets',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        RadioGroup<InventoryExportPreset>(
+                          groupValue: _selectedPreset,
+                          onChanged: (p) {
+                            if (!isBusy && p != null) {
+                              setState(() {
+                                _selectedPreset = p;
+                                _invalidatePreparedState();
+                              });
+                            }
+                          },
+                          child: Column(
+                            children: [
+                              RadioListTile<InventoryExportPreset>(
+                                key: const Key('inventory_export_preset_legacy'),
+                                value: InventoryExportPreset.legacyThreeColumn,
+                                enabled: !isBusy,
+                                title: const Text('Legacy Three-Column Preset'),
+                                subtitle: const Text('Item Name, SKU, Current Quantity'),
+                                dense: true,
+                                visualDensity: VisualDensity.compact,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                              RadioListTile<InventoryExportPreset>(
+                                key: const Key('inventory_export_preset_custom'),
+                                value: InventoryExportPreset.custom,
+                                enabled: !isBusy,
+                                title: const Text('Custom Columns'),
+                                subtitle: Text(
+                                  '${_selectedColumns.length} columns selected.',
+                                ),
+                                dense: true,
+                                visualDensity: VisualDensity.compact,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // Custom Column Configuration
+                        if (isCustomPreset) ...[
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              TextButton(
+                                key: const Key('inventory_export_select_all_columns'),
+                                onPressed: isBusy
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _selectedColumns = [
+                                            ...permittedStandardFields.map((f) => f.key),
+                                            ..._customDefinitions.map((d) => d.key),
+                                          ];
+                                          _invalidatePreparedState();
+                                        });
+                                      },
+                                child: const Text('Select All Permitted'),
+                              ),
+                              TextButton(
+                                key: const Key('inventory_export_deselect_all_columns'),
+                                onPressed: isBusy
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _selectedColumns.clear();
+                                          _invalidatePreparedState();
+                                        });
+                                      },
+                                child: const Text('Deselect All'),
+                              ),
+                            ],
+                          ),
+                          Container(
+                            decoration: BoxDecoration(
+                              border: Border.all(color: colorScheme.outlineVariant),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ...permittedStandardFields.map((field) {
+                                  final isChecked = _selectedColumns.contains(field.key);
+                                  return CheckboxListTile(
+                                    key: Key('inventory_export_col_${field.key}'),
+                                    value: isChecked,
+                                    title: Text(field.label),
+                                    subtitle: Text(field.dataTypeDescription),
+                                    dense: true,
+                                    visualDensity: VisualDensity.compact,
+                                    onChanged: isBusy
+                                        ? null
+                                        : (val) {
+                                            setState(() {
+                                              if (val == true) {
+                                                _selectedColumns.add(field.key);
+                                              } else {
+                                                _selectedColumns.remove(field.key);
+                                              }
+                                              _invalidatePreparedState();
+                                            });
+                                          },
+                                  );
+                                }),
+                                ..._customDefinitions.map((def) {
+                                  final isChecked = _selectedColumns.contains(def.key);
+                                  return CheckboxListTile(
+                                    key: Key('inventory_export_col_${def.key}'),
+                                    value: isChecked,
+                                    title: Text('${def.label} (Custom)'),
+                                    subtitle: Text(def.dataType.name),
+                                    dense: true,
+                                    visualDensity: VisualDensity.compact,
+                                    onChanged: isBusy
+                                        ? null
+                                        : (val) {
+                                            setState(() {
+                                              if (val == true) {
+                                                _selectedColumns.add(def.key);
+                                              } else {
+                                                _selectedColumns.remove(def.key);
+                                              }
+                                              _invalidatePreparedState();
+                                            });
+                                          },
+                                  );
+                                }),
+                              ],
+                            ),
+                          ),
+
+                          // Column Order Management
+                          if (_selectedColumns.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Text(
+                              'Column Order (${_selectedColumns.length})',
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Container(
+                              decoration: BoxDecoration(
+                                border: Border.all(color: colorScheme.outlineVariant),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  for (int index = 0; index < _selectedColumns.length; index++) ...[
+                                    Builder(
+                                      builder: (context) {
+                                        final colKey = _selectedColumns[index];
+                                        final label = InventoryExportFields.getHeaderLabel(
+                                          colKey,
+                                          customFieldDefinitions: _customDefinitions,
+                                        );
+                                        return ListTile(
+                                          key: Key('inventory_export_order_$colKey'),
+                                          dense: true,
+                                          visualDensity: VisualDensity.compact,
+                                          title: Text('${index + 1}. $label'),
+                                          trailing: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              IconButton(
+                                                key: Key('inventory_export_move_up_$colKey'),
+                                                icon: const Icon(Icons.arrow_upward, size: 16),
+                                                onPressed: isBusy || index == 0
+                                                    ? null
+                                                    : () {
+                                                        setState(() {
+                                                          final item = _selectedColumns.removeAt(index);
+                                                          _selectedColumns.insert(index - 1, item);
+                                                          _invalidatePreparedState();
+                                                        });
+                                                      },
+                                              ),
+                                              IconButton(
+                                                key: Key('inventory_export_move_down_$colKey'),
+                                                icon: const Icon(Icons.arrow_downward, size: 16),
+                                                onPressed: isBusy || index == _selectedColumns.length - 1
+                                                    ? null
+                                                    : () {
+                                                        setState(() {
+                                                          final item = _selectedColumns.removeAt(index);
+                                                          _selectedColumns.insert(index + 1, item);
+                                                          _invalidatePreparedState();
+                                                        });
+                                                      },
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ],
 
                       if (activeUser == null && state is! InventoryExportPrepared && _deliveryFeedback == null) ...[
                         const SizedBox(height: 12),
@@ -451,9 +785,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                 else
                   FilledButton(
                     key: const Key('inventory_export_dialog_submit_button'),
-                    onPressed: (isBusy || _selectedFormat == null || !canSelected)
-                        ? null
-                        : () => _startPreparation(_selectedFormat!),
+                    onPressed: canSubmit ? () => _startPreparation(_selectedFormat!) : null,
                     child: isBusy
                         ? const SizedBox(
                             width: 16,

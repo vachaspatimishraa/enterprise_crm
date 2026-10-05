@@ -7,6 +7,19 @@ enum InventoryExportFormat {
   pdf,
 }
 
+/// Supported record scopes for inventory export.
+enum InventoryExportScope {
+  all,
+  filtered,
+  selected,
+}
+
+/// Configuration presets for inventory export columns.
+enum InventoryExportPreset {
+  legacyThreeColumn,
+  custom,
+}
+
 /// Prepared inventory export artifact containing serialized bytes and metadata.
 @immutable
 class InventoryExportArtifact {
@@ -14,14 +27,21 @@ class InventoryExportArtifact {
   final InventoryExportFormat format;
   final int itemCount;
   final DateTime generatedAt;
+  final List<String> columns;
+  final InventoryExportScope scope;
+  final InventoryExportPreset preset;
 
   InventoryExportArtifact({
     required Uint8List bytes,
     required this.format,
     required this.itemCount,
     DateTime? generatedAt,
+    List<String>? columns,
+    this.scope = InventoryExportScope.all,
+    this.preset = InventoryExportPreset.legacyThreeColumn,
   })  : bytes = Uint8List.fromList(bytes),
-        generatedAt = generatedAt ?? DateTime.now();
+        generatedAt = generatedAt ?? DateTime.now(),
+        columns = List.unmodifiable(columns ?? const ['Item Name', 'SKU', 'Current Quantity']);
 
   /// The standard file extension (including dot).
   String get fileExtension => switch (format) {
@@ -47,6 +67,7 @@ class InventoryExportArtifact {
     final hour = t.hour.toString().padLeft(2, '0');
     final minute = t.minute.toString().padLeft(2, '0');
     final second = t.second.toString().padLeft(2, '0');
+    // ignore: unnecessary_brace_in_string_interps
     return 'inventory_export_$year$month${day}_$hour$minute$second$fileExtension';
   }
 
@@ -57,12 +78,22 @@ class InventoryExportArtifact {
           runtimeType == other.runtimeType &&
           format == other.format &&
           itemCount == other.itemCount &&
+          scope == other.scope &&
+          preset == other.preset &&
+          listEquals(columns, other.columns) &&
           listEquals(bytes, other.bytes);
 
   @override
-  int get hashCode => Object.hash(format, itemCount, Object.hashAll(bytes));
+  int get hashCode => Object.hash(
+        format,
+        itemCount,
+        scope,
+        preset,
+        Object.hashAll(columns),
+        Object.hashAll(bytes),
+      );
 
   @override
   String toString() =>
-      'InventoryExportArtifact(format: $format, itemCount: $itemCount, bytes: ${bytes.length})';
+      'InventoryExportArtifact(format: $format, itemCount: $itemCount, scope: $scope, preset: $preset, columns: ${columns.length}, bytes: ${bytes.length})';
 }

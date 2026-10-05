@@ -207,11 +207,13 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
       );
       return;
     }
+    final cubit = context.read<InventoryCubit?>();
     showInventoryExportDialog(
       context: context,
       user: liveUser,
       repository: widget.repository,
       currentUserProvider: _resolveCurrentUser,
+      currentQuery: cubit?.state.query,
     );
   }
 

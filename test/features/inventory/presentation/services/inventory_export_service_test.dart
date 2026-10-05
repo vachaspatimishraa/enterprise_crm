@@ -1,3 +1,7 @@
+import 'package:enterprise_crm/features/inventory/domain/entities/custom_field_definition.dart';
+import 'package:enterprise_crm/features/inventory/domain/entities/inventory_export_fields.dart';
+import 'package:enterprise_crm/features/inventory/domain/entities/inventory_query.dart';
+import 'package:enterprise_crm/features/inventory/domain/policies/inventory_field_access_policy.dart';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/account_type.dart';
@@ -7,7 +11,6 @@ import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dar
 import 'package:enterprise_crm/features/inventory/data/repositories/mock_inventory_repository.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_export_artifact.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_page.dart';
-import 'package:enterprise_crm/features/inventory/domain/entities/inventory_query.dart';
 import 'package:enterprise_crm/features/inventory/domain/policies/inventory_export_policy.dart';
 import 'package:enterprise_crm/features/inventory/domain/repositories/inventory_repository.dart';
 import 'package:enterprise_crm/features/inventory/presentation/services/inventory_export_data_loader.dart';
@@ -373,6 +376,307 @@ void main() {
           contains('revoked'),
         )),
       );
+    });
+     group('Customizable Export Service Tests (INVENTORY-7.5)', () {
+    late CurrentUser adminUser;
+
+    setUp(() {
+      adminUser = makeUser(type: AccountType.admin);
+    });
+      test('exports all 21 standard fields in requested order for admin', () async {
+        final artifact = await exportService.prepareExport(
+          format: InventoryExportFormat.csv,
+          initialUser: adminUser,
+          currentUserProvider: () => adminUser,
+          preset: InventoryExportPreset.custom,
+          columns: InventoryExportFields.standardFieldKeys,
+        );
+
+        expect(artifact.format, equals(InventoryExportFormat.csv));
+        expect(artifact.preset, equals(InventoryExportPreset.custom));
+        expect(artifact.columns.length, equals(21));
+        final csvString = String.fromCharCodes(artifact.bytes);
+        final headerLine = csvString.trim().split('\r\n')[0];
+        expect(headerLine.split(',').length, equals(21));
+      });
+
+      test('exports registered custom fields in CSV and XLSX', () async {
+        final customDef = CustomFieldDefinition(
+          id: 'cf-batch',
+          key: 'cf_grade',
+          label: 'Material Grade',
+          dataType: CustomFieldDataType.text,
+        );
+
+        final artifact = await exportService.prepareExport(
+          format: InventoryExportFormat.csv,
+          initialUser: adminUser,
+          currentUserProvider: () => adminUser,
+          preset: InventoryExportPreset.custom,
+          columns: ['sku', 'product_name', 'cf_grade'],
+          customFieldDefinitions: [customDef],
+        );
+
+        expect(artifact.columns, equals(['sku', 'product_name', 'cf_grade']));
+        final csvString = String.fromCharCodes(artifact.bytes);
+        expect(csvString, contains('Material Grade'));
+      });
+
+      test('preserves user-selected column reordering', () async {
+        final artifact = await exportService.prepareExport(
+          format: InventoryExportFormat.csv,
+          initialUser: adminUser,
+          currentUserProvider: () => adminUser,
+          preset: InventoryExportPreset.custom,
+          columns: ['selling_price_inr', 'sku', 'warehouse', 'product_name'],
+        );
+
+        final csvString = String.fromCharCodes(artifact.bytes);
+        final headerLine = csvString.trim().split('\r\n')[0];
+        expect(
+          headerLine,
+          equals('Selling Price (INR),SKU,Warehouse,Product Name'),
+        );
+      });
+
+      test('rejects empty column selection in custom preset', () async {
+        expect(
+          () => exportService.prepareExport(
+            format: InventoryExportFormat.csv,
+            initialUser: adminUser,
+            currentUserProvider: () => adminUser,
+            preset: InventoryExportPreset.custom,
+            columns: [],
+          ),
+          throwsA(isA<InventoryExportException>().having(
+            (e) => e.message,
+            'message',
+            contains('No export columns selected.'),
+          )),
+        );
+      });
+
+      test('rejects duplicate column selection in custom preset', () async {
+        expect(
+          () => exportService.prepareExport(
+            format: InventoryExportFormat.csv,
+            initialUser: adminUser,
+            currentUserProvider: () => adminUser,
+            preset: InventoryExportPreset.custom,
+            columns: ['sku', 'product_name', 'sku'],
+          ),
+          throwsA(isA<InventoryExportException>().having(
+            (e) => e.message,
+            'message',
+            contains('Duplicate export columns are not permitted.'),
+          )),
+        );
+      });
+
+      test('rejects unknown column keys', () async {
+        expect(
+          () => exportService.prepareExport(
+            format: InventoryExportFormat.csv,
+            initialUser: adminUser,
+            currentUserProvider: () => adminUser,
+            preset: InventoryExportPreset.custom,
+            columns: ['sku', 'unregistered_mystery_col'],
+          ),
+          throwsA(isA<InventoryExportException>().having(
+            (e) => e.message,
+            'message',
+            contains('Unknown export column: unregistered_mystery_col'),
+          )),
+        );
+      });
+
+      test('rejects restricted field request when standard user lacks permission', () async {
+        final standardUser = CurrentUser(
+          id: 'std_user_1',
+          displayName: 'Standard User',
+          accountType: AccountType.user,
+          modules: {CrmModule.inventory},
+          permissions: {
+            CrmPermissions.inventoryView,
+            CrmPermissions.inventoryExportCsv,
+            // Does not have costViewPermission or supplierViewPermission
+          },
+        );
+
+        expect(
+          () => exportService.prepareExport(
+            format: InventoryExportFormat.csv,
+            initialUser: standardUser,
+            currentUserProvider: () => standardUser,
+            preset: InventoryExportPreset.custom,
+            columns: ['sku', 'unit_cost_inr'],
+          ),
+          throwsA(isA<InventoryExportException>().having(
+            (e) => e.message,
+            'message',
+            contains('Unauthorized field requested: unit_cost_inr'),
+          )),
+        );
+
+        expect(
+          () => exportService.prepareExport(
+            format: InventoryExportFormat.csv,
+            initialUser: standardUser,
+            currentUserProvider: () => standardUser,
+            preset: InventoryExportPreset.custom,
+            columns: ['sku', 'supplier'],
+          ),
+          throwsA(isA<InventoryExportException>().having(
+            (e) => e.message,
+            'message',
+            contains('Unauthorized field requested: supplier'),
+          )),
+        );
+      });
+
+      test('allows authorized standard user with costViewPermission to export cost', () async {
+        final costAuthorizedUser = CurrentUser(
+          id: 'cost_user_1',
+          displayName: 'Cost User',
+          accountType: AccountType.user,
+          modules: {CrmModule.inventory},
+          permissions: {
+            CrmPermissions.inventoryView,
+            CrmPermissions.inventoryExportCsv,
+            InventoryFieldAccessPolicy.costViewPermission,
+          },
+        );
+
+        final artifact = await exportService.prepareExport(
+          format: InventoryExportFormat.csv,
+          initialUser: costAuthorizedUser,
+          currentUserProvider: () => costAuthorizedUser,
+          preset: InventoryExportPreset.custom,
+          columns: ['sku', 'product_name', 'unit_cost_inr'],
+        );
+
+        expect(artifact.columns, contains('unit_cost_inr'));
+        final csvString = String.fromCharCodes(artifact.bytes);
+        expect(csvString, contains('Unit Cost (INR)'));
+      });
+
+      test('field authorization revocation during preparation fails closed', () async {
+        final initialUser = CurrentUser(
+          id: 'user_cost_dyn',
+          displayName: 'Dyn User',
+          accountType: AccountType.user,
+          modules: {CrmModule.inventory},
+          permissions: {
+            CrmPermissions.inventoryView,
+            CrmPermissions.inventoryExportCsv,
+            InventoryFieldAccessPolicy.costViewPermission,
+          },
+        );
+
+        final revokedUser = CurrentUser(
+          id: 'user_cost_dyn',
+          displayName: 'Dyn User',
+          accountType: AccountType.user,
+          modules: {CrmModule.inventory},
+          permissions: {
+            CrmPermissions.inventoryView,
+            CrmPermissions.inventoryExportCsv,
+            // costViewPermission revoked
+          },
+        );
+
+        expect(
+          () => exportService.prepareExport(
+            format: InventoryExportFormat.csv,
+            initialUser: initialUser,
+            currentUserProvider: () => revokedUser,
+            preset: InventoryExportPreset.custom,
+            columns: ['sku', 'unit_cost_inr'],
+          ),
+          throwsA(isA<InventoryExportException>().having(
+            (e) => e.message,
+            'message',
+            contains('Field authorization revoked during export preparation: unit_cost_inr'),
+          )),
+        );
+      });
+
+      test('proves serializer output does not contain unauthorized fields', () async {
+        final standardUser = CurrentUser(
+          id: 'std_user_safe',
+          displayName: 'Safe User',
+          accountType: AccountType.user,
+          modules: {CrmModule.inventory},
+          permissions: {
+            CrmPermissions.inventoryView,
+            CrmPermissions.inventoryExportCsv,
+          },
+        );
+
+        final artifact = await exportService.prepareExport(
+          format: InventoryExportFormat.csv,
+          initialUser: standardUser,
+          currentUserProvider: () => standardUser,
+          preset: InventoryExportPreset.custom,
+          columns: ['sku', 'product_name', 'selling_price_inr'],
+        );
+
+        final csvString = String.fromCharCodes(artifact.bytes);
+        expect(csvString, isNot(contains('Unit Cost')));
+        expect(csvString, isNot(contains('Supplier')));
+      });
+
+      test('filtered scope exports only matching records', () async {
+        final artifact = await exportService.prepareExport(
+          format: InventoryExportFormat.csv,
+          initialUser: adminUser,
+          currentUserProvider: () => adminUser,
+          scope: InventoryExportScope.filtered,
+          query: const InventoryQuery(searchText: 'Laptop'),
+        );
+
+        expect(artifact.scope, equals(InventoryExportScope.filtered));
+        final csvString = String.fromCharCodes(artifact.bytes);
+        final lines = csvString.trim().split('\r\n');
+        expect(lines.length, greaterThan(1));
+        // Verify all rows match widget
+        for (var i = 1; i < lines.length; i++) {
+          expect(lines[i].toLowerCase(), contains('laptop'));
+        }
+      });
+
+      test('selected scope exports exactly selected items', () async {
+        final allItems = await mockRepo.getItems(const InventoryQuery(pageSize: 5));
+        final selectedIds = {allItems.items[0].item.id, allItems.items[1].item.id};
+
+        final artifact = await exportService.prepareExport(
+          format: InventoryExportFormat.csv,
+          initialUser: adminUser,
+          currentUserProvider: () => adminUser,
+          scope: InventoryExportScope.selected,
+          selectedItemIds: selectedIds,
+        );
+
+        expect(artifact.scope, equals(InventoryExportScope.selected));
+        expect(artifact.itemCount, equals(2));
+      });
+
+      test('selected scope rejects empty selected set', () async {
+        expect(
+          () => exportService.prepareExport(
+            format: InventoryExportFormat.csv,
+            initialUser: adminUser,
+            currentUserProvider: () => adminUser,
+            scope: InventoryExportScope.selected,
+            selectedItemIds: {},
+          ),
+          throwsA(isA<InventoryExportException>().having(
+            (e) => e.message,
+            'message',
+            contains('No items selected for export.'),
+          )),
+        );
+      });
     });
   });
 }

@@ -1,5 +1,10 @@
+import 'dart:typed_data';
+
 import '../../../auth/domain/entities/current_user.dart';
+import '../../domain/entities/custom_field_definition.dart';
 import '../../domain/entities/inventory_export_artifact.dart';
+import '../../domain/entities/inventory_export_fields.dart';
+import '../../domain/entities/inventory_query.dart';
 import '../../domain/policies/inventory_export_policy.dart';
 import 'inventory_csv_serializer.dart';
 import 'inventory_export_data_loader.dart';
@@ -30,32 +35,65 @@ class InventoryExportService {
   })  : _dataLoader = dataLoader,
         _csvSerializer = csvSerializer ?? const InventoryCsvSerializer(),
         _xlsxSerializer = xlsxSerializer ?? InventoryXlsxSerializer(),
-        _pdfSerializer = pdfSerializer ?? InventoryPdfSerializer();
+        _pdfSerializer = pdfSerializer ?? const InventoryPdfSerializer();
 
-  /// Orchestrates export preparation with dual authorization boundaries.
-  ///
-  /// 1. Validates initial authorization for [format] using [initialUser].
-  /// 2. Loads complete active inventory dataset through [_dataLoader].
-  /// 3. Revalidates authorization using [currentUserProvider] to detect identity changes,
-  ///    sign-out, or permission revocation during loading.
-  /// 4. Serializes records using [InventoryCsvSerializer] or [InventoryXlsxSerializer].
-  /// 5. Returns an immutable [InventoryExportArtifact].
+  /// Prepares an export artifact after strictly verifying format authorization,
+  /// field-level access, record scope, and live session continuity.
   Future<InventoryExportArtifact> prepareExport({
     required InventoryExportFormat format,
     required CurrentUser initialUser,
     required CurrentUser? Function() currentUserProvider,
+    InventoryExportScope scope = InventoryExportScope.all,
+    InventoryExportPreset preset = InventoryExportPreset.legacyThreeColumn,
+    List<String>? columns,
+    InventoryQuery? query,
+    Set<String>? selectedItemIds,
+    List<CustomFieldDefinition>? customFieldDefinitions,
   }) async {
-    // 1. Initial authorization check before accessing repository data
+    // 1. Initial format authorization check
     if (!_isAuthorized(initialUser, format)) {
       throw const InventoryExportException(
-        'User is not authorized for this export format.',
+        'User is not authorized to export in this format.',
       );
     }
 
     final initialUserId = initialUser.id;
 
-    // 2. Load dataset across pages
-    final items = await _dataLoader.loadAllItems();
+    // Resolve column list based on preset
+    final List<String> effectiveColumns;
+    if (format == InventoryExportFormat.pdf || preset == InventoryExportPreset.legacyThreeColumn) {
+      effectiveColumns = InventoryExportFields.legacyHeaders;
+    } else {
+      if (columns == null || columns.isEmpty) {
+        throw const InventoryExportException('No export columns selected.');
+      }
+      if (columns.toSet().length != columns.length) {
+        throw const InventoryExportException('Duplicate export columns are not permitted.');
+      }
+      for (final col in columns) {
+        if (!InventoryExportFields.isValidKey(col, customFieldDefinitions: customFieldDefinitions)) {
+          throw InventoryExportException('Unknown export column: $col');
+        }
+        if (InventoryExportPolicy.isRestrictedField(col) &&
+            !InventoryExportPolicy.canExportField(initialUser, col)) {
+          throw InventoryExportException('Unauthorized field requested: $col');
+        }
+      }
+      effectiveColumns = List.unmodifiable(columns);
+    }
+
+    // Selected scope validation
+    if (scope == InventoryExportScope.selected &&
+        (selectedItemIds == null || selectedItemIds.isEmpty)) {
+      throw const InventoryExportException('No items selected for export.');
+    }
+
+    // 2. Load dataset across pages or resolved IDs
+    final items = await _dataLoader.loadItems(
+      scope: scope,
+      query: query,
+      selectedItemIds: selectedItemIds,
+    );
 
     // 3. Revalidation check after async operation
     final revalidatedUser = currentUserProvider();
@@ -77,10 +115,30 @@ class InventoryExportService {
       );
     }
 
+    // Verify field-level permissions were not revoked
+    for (final col in effectiveColumns) {
+      if (InventoryExportPolicy.isRestrictedField(col) &&
+          !InventoryExportPolicy.canExportField(revalidatedUser, col)) {
+        throw InventoryExportException(
+          'Field authorization revoked during export preparation: $col',
+        );
+      }
+    }
+
     // 4. Serialize bytes based on format
-    final bytes = switch (format) {
-      InventoryExportFormat.csv => _csvSerializer.convertToBytes(items),
-      InventoryExportFormat.xlsx => _xlsxSerializer.convertToBytes(items),
+    final Uint8List bytes = switch (format) {
+      InventoryExportFormat.csv => _csvSerializer.convertToBytes(
+          items,
+          columns: effectiveColumns,
+          customFieldDefinitions: customFieldDefinitions,
+          isLegacy: preset == InventoryExportPreset.legacyThreeColumn,
+        ),
+      InventoryExportFormat.xlsx => _xlsxSerializer.convertToBytes(
+          items,
+          columns: effectiveColumns,
+          customFieldDefinitions: customFieldDefinitions,
+          isLegacy: preset == InventoryExportPreset.legacyThreeColumn,
+        ),
       InventoryExportFormat.pdf => _pdfSerializer.convertToBytes(items),
     };
 
@@ -89,6 +147,9 @@ class InventoryExportService {
       bytes: bytes,
       format: format,
       itemCount: items.length,
+      columns: effectiveColumns,
+      scope: scope,
+      preset: preset,
     );
   }
 

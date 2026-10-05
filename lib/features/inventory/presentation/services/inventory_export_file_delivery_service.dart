@@ -176,6 +176,16 @@ class InventoryExportFileDeliveryService {
         );
       }
 
+      // 4b. Field-level authorization check immediately before delivery
+      for (final col in artifact.columns) {
+        if (InventoryExportPolicy.isRestrictedField(col) &&
+            !InventoryExportPolicy.canExportField(currentUser, col)) {
+          return const InventoryExportDeliveryResult.restricted(
+            'User is not authorized to deliver this export configuration.',
+          );
+        }
+      }
+
       // 5. Filename determination & safety validation
       final effectiveFileName = (customFileName != null && customFileName.trim().isNotEmpty)
           ? customFileName.trim()

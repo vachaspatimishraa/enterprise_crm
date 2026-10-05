@@ -1,3 +1,4 @@
+import 'package:enterprise_crm/features/inventory/domain/policies/inventory_field_access_policy.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/account_type.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/crm_module.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
@@ -331,6 +332,66 @@ void main() {
         expect(InventoryExportPolicy.canExportCsv(user), isFalse);
         expect(InventoryExportPolicy.canExportXlsx(user), isFalse);
         expect(InventoryExportPolicy.canExportPdf(user), isFalse);
+      });
+    });
+     group('Field-Level Export Authorization (INVENTORY-7.5)', () {
+      test('Administrator can export all sensitive and regular fields', () {
+        final admin = adminUser;
+        expect(InventoryExportPolicy.canExportField(admin, 'sku'), isTrue);
+        expect(InventoryExportPolicy.canExportField(admin, 'unit_cost_inr'), isTrue);
+        expect(InventoryExportPolicy.canExportField(admin, 'supplier'), isTrue);
+      });
+
+      test('Standard user with costViewPermission can export cost, denied supplier', () {
+        final user = createStandardUser(
+          permissions: {
+            CrmPermissions.inventoryView,
+            CrmPermissions.inventoryExportCsv,
+            InventoryFieldAccessPolicy.costViewPermission,
+          },
+        );
+        expect(InventoryExportPolicy.canExportField(user, 'sku'), isTrue);
+        expect(InventoryExportPolicy.canExportField(user, 'unit_cost_inr'), isTrue);
+        expect(InventoryExportPolicy.canExportField(user, 'supplier'), isFalse);
+      });
+
+      test('Standard user with supplierViewPermission can export supplier, denied cost', () {
+        final user = createStandardUser(
+          permissions: {
+            CrmPermissions.inventoryView,
+            CrmPermissions.inventoryExportCsv,
+            InventoryFieldAccessPolicy.supplierViewPermission,
+          },
+        );
+        expect(InventoryExportPolicy.canExportField(user, 'sku'), isTrue);
+        expect(InventoryExportPolicy.canExportField(user, 'supplier'), isTrue);
+        expect(InventoryExportPolicy.canExportField(user, 'unit_cost_inr'), isFalse);
+      });
+
+      test('Standard user without special permissions denied sensitive fields', () {
+        final user = createStandardUser(
+          permissions: {
+            CrmPermissions.inventoryView,
+            CrmPermissions.inventoryExportCsv,
+          },
+        );
+        expect(InventoryExportPolicy.canExportField(user, 'sku'), isTrue);
+        expect(InventoryExportPolicy.canExportField(user, 'unit_cost_inr'), isFalse);
+        expect(InventoryExportPolicy.canExportField(user, 'supplier'), isFalse);
+      });
+
+      test('Null user denied all fields', () {
+        expect(InventoryExportPolicy.canExportField(null, 'sku'), isFalse);
+        expect(InventoryExportPolicy.canExportField(null, 'unit_cost_inr'), isFalse);
+        expect(InventoryExportPolicy.canExportField(null, 'supplier'), isFalse);
+      });
+
+      test('isRestrictedField identifies unit_cost_inr and supplier', () {
+        expect(InventoryExportPolicy.isRestrictedField('unit_cost_inr'), isTrue);
+        expect(InventoryExportPolicy.isRestrictedField('cost'), isTrue);
+        expect(InventoryExportPolicy.isRestrictedField('supplier'), isTrue);
+        expect(InventoryExportPolicy.isRestrictedField('sku'), isFalse);
+        expect(InventoryExportPolicy.isRestrictedField('product_name'), isFalse);
       });
     });
   });
