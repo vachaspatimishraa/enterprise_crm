@@ -403,4 +403,238 @@ void main() {
       });
     });
 
+  group('PDF Text Integrity & Non-Truncation (INVENTORY-7.7)', () {
+    final List<CustomFieldDefinition> customFields = [
+      CustomFieldDefinition(
+        key: 'qa_notes',
+        label: 'QA Notes',
+        id: 'cf-qa',
+        dataType: CustomFieldDataType.text,
+      ),
+    ];
+
+    InventoryItemSummary fullSummary({
+      String sku = 'SKU-001',
+      String name = 'Test Product',
+      double qty = 50.0,
+      double cost = 120.50,
+      double price = 199.99,
+      double gst = 18.0,
+      String category = 'Hardware',
+      Map<String, dynamic>? customValues,
+    }) {
+      return InventoryItemSummary(
+        item: InventoryItem(
+          id: sku,
+          sku: sku,
+          name: name,
+          category: category,
+          brand: 'Apex',
+          unitCostInr: cost,
+          sellingPriceInr: price,
+          gstPercent: gst,
+          customFields: customValues ?? const {},
+        ),
+        quantityOnHand: qty,
+      );
+    }
+
+    test('Case A: Long Product Name wraps across multiple lines without truncation', () {
+      const longName =
+          'Enterprise Grade High Precision Ergonomic Optical Scanner With Extended Wireless Dock';
+      final item = summary(name: longName, sku: 'SCAN-001');
+      final bytes = serializer.convertToBytes(
+        [item],
+        columns: ['sku', 'product_name'],
+        isLegacy: false,
+      );
+      final text = ascii.decode(bytes);
+
+      // Verify full logical value is represented across generated PDF lines without ellipsis
+      expect(text, isNot(contains('...')));
+      expect(text, contains('Enterprise Grade'));
+      expect(text, contains('Ergonomic'));
+      expect(text, contains('Wireless Dock'));
+    });
+
+    test('Case B: Long continuous SKU with no spaces wraps without dropping characters', () {
+      const longContinuousSku = 'SKU98765432101234567890ABCDEF1234567890XYZ';
+      final item = summary(name: 'Widget', sku: longContinuousSku);
+      final bytes = serializer.convertToBytes(
+        [item],
+        columns: ['sku', 'product_name'],
+        isLegacy: false,
+      );
+      final text = ascii.decode(bytes);
+
+      expect(text, isNot(contains('...')));
+      // Both wrapped line chunks are present without dropping characters
+      expect(text, contains('SKU98765432101234567890ABCDEF123456789'));
+      expect(text, contains('0XYZ'));
+    });
+
+    test('Case C: Long custom text field survives wrapping with zero truncation', () {
+      const longCustomNote =
+          'Inspection confirmed unit passed stress test in ambient facility room 4B with zero faults observed';
+      final item = fullSummary(
+        sku: 'QA-001',
+        customValues: {'qa_notes': longCustomNote},
+      );
+      final bytes = serializer.convertToBytes(
+        [item],
+        columns: ['sku', 'qa_notes'],
+        customFieldDefinitions: customFields,
+        isLegacy: false,
+      );
+      final text = ascii.decode(bytes);
+
+      expect(text, isNot(contains('...')));
+      expect(text, contains('Inspection confirmed'));
+      expect(text, contains('ambient facility'));
+      expect(text, contains('zero faults'));
+      expect(text, contains('observed'));
+    });
+
+    test('Case D: Wide 5-10 column table wraps long cell values without truncation', () {
+      const longDescription =
+          'Specialized heavy duty industrial motor controller module assembly';
+      final item = fullSummary(
+        sku: 'WID-001',
+        name: longDescription,
+        category: 'Industrial Machinery Components',
+      );
+      final bytes = serializer.convertToBytes(
+        [item],
+        columns: [
+          'sku',
+          'product_name',
+          'category',
+          'brand',
+          'unit_cost_inr',
+          'selling_price_inr',
+        ],
+        isLegacy: false,
+      );
+      final text = ascii.decode(bytes);
+
+      expect(text, contains('/MediaBox [0 0 842.0 595.0]'));
+      // Data cells must preserve full text across lines without data-level truncation
+      expect(text, contains('Specialized heavy duty industrial motor'));
+      expect(text, contains('controller module assembly'));
+      expect(text, contains('Industrial Machinery'));
+      expect(text, contains('Components'));
+      expect(text, isNot(contains('Specialized...')));
+      expect(text, isNot(contains('Industrial...')));
+    });
+
+    test('Case E: >10 column record card layout preserves long field content', () {
+      const longSupplier =
+          'Global Unified Logistics And Distribution Consortium Private Limited';
+      const longNotes =
+          'Fragile optical equipment handle with extreme care during warehouse transit';
+      final allCols = [
+        'sku',
+        'product_name',
+        'category',
+        'brand',
+        'supplier',
+        'unit_cost_inr',
+        'selling_price_inr',
+        'gst_percent',
+        'current_quantity',
+        'reorder_level',
+        'max_stock',
+        'notes',
+      ];
+      final item = InventoryItemSummary(
+        item: InventoryItem(
+          id: 'CARD-001',
+          sku: 'CARD-001',
+          name: 'High Precision Sensor Unit',
+          category: 'Electronics',
+          brand: 'Apex',
+          supplier: longSupplier,
+          unitCostInr: 500,
+          sellingPriceInr: 750,
+          gstPercent: 18,
+          notes: longNotes,
+        ),
+        quantityOnHand: 15,
+      );
+      final bytes = serializer.convertToBytes(
+        [item],
+        columns: allCols,
+        isLegacy: false,
+      );
+      final text = ascii.decode(bytes);
+
+      expect(text, isNot(contains('...')));
+      expect(text, contains('Global Unified'));
+      expect(text, contains('Consortium'));
+      expect(text, contains('Fragile optical'));
+      expect(text, contains('extreme care'));
+    });
+
+    test('Case F: Adaptive row and card heights paginate dynamically and retain repeated headers', () {
+      final multiLineItems = List.generate(
+        45,
+        (i) => fullSummary(
+          sku: 'PAGE-SKU-${i.toString().padLeft(3, '0')}',
+          name: 'Multi-line product name with comprehensive detail requiring 3 lines for item $i in testing',
+        ),
+      );
+      final tableBytes = serializer.convertToBytes(
+        multiLineItems,
+        columns: ['sku', 'product_name', 'unit_cost_inr'],
+        isLegacy: false,
+      );
+      final tableText = ascii.decode(tableBytes);
+      final tablePageCount = RegExp(r'/Type /Page\b').allMatches(tableText).length;
+
+      expect(tablePageCount, greaterThan(1));
+      expect(tableText, contains('Page 1 of $tablePageCount'));
+      expect(tableText, contains('Page $tablePageCount of $tablePageCount'));
+      final headerCount = RegExp(r'\(Product Name\) Tj').allMatches(tableText).length;
+      expect(headerCount, equals(tablePageCount));
+
+      final allCols = [
+        'sku',
+        'product_name',
+        'category',
+        'brand',
+        'supplier',
+        'unit_cost_inr',
+        'selling_price_inr',
+        'gst_percent',
+        'current_quantity',
+        'reorder_level',
+        'max_stock',
+        'notes',
+      ];
+      final multiLineCards = List.generate(
+        15,
+        (i) => InventoryItemSummary(
+          item: InventoryItem(
+            id: 'CARD-$i',
+            sku: 'CARD-$i',
+            name: 'Item $i with long name spanning multiple lines in card header',
+            supplier: 'Very long supplier company name $i that wraps across multiple lines in pair',
+            notes: 'Extended notes field $i that expands the height of this individual record card',
+          ),
+          quantityOnHand: 5,
+        ),
+      );
+      final cardBytes = serializer.convertToBytes(
+        multiLineCards,
+        columns: allCols,
+        isLegacy: false,
+      );
+      final cardText = ascii.decode(cardBytes);
+      final cardPageCount = RegExp(r'/Type /Page\b').allMatches(cardText).length;
+
+      expect(cardPageCount, greaterThan(1));
+      expect(cardText, contains('Page 1 of $cardPageCount'));
+      expect(cardText, contains('Page $cardPageCount of $cardPageCount'));
+    });
+  });
 }

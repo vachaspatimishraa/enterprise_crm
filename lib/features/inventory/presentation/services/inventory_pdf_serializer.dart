@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -278,15 +279,11 @@ class InventoryPdfSerializer {
     switch (orientation) {
       case PdfLayoutOrientation.portrait:
         isLandscape = false;
-        break;
       case PdfLayoutOrientation.landscape:
         isLandscape = true;
-        break;
       case PdfLayoutOrientation.auto:
         isLandscape = columns.length > 4;
-        break;
     }
-
     final double pageWidth = isLandscape ? _a4Height : _a4Width;
     final double pageHeight = isLandscape ? _a4Width : _a4Height;
     final double usableWidth = pageWidth - (2 * _margin);
@@ -304,9 +301,9 @@ class InventoryPdfSerializer {
       );
     }).toList();
 
-    // Data rows formatted and fitted
-    final dataRows = items.map((summary) {
-      final row = <String>[];
+    // Data rows formatted with word-wrapping and adaptive heights (zero truncation)
+    final tableRows = items.map((summary) {
+      final cellLinesPerCol = <List<String>>[];
       for (var i = 0; i < columns.length; i++) {
         final col = columns[i];
         final val = InventoryExportFields.extractValue(
@@ -315,30 +312,41 @@ class InventoryPdfSerializer {
           customFieldDefinitions: customFieldDefinitions,
         );
         final formatted = _formatCustomValue(val, col);
-        final maxChars = ((colWidths[i] - 6) / 5.2).floor().clamp(4, 80);
-        row.add(_fit(_pdfSafeText(formatted), maxChars));
+        final maxChars = math.max(4, ((colWidths[i] - 4) / 4.9).floor());
+        cellLinesPerCol.add(_wrapText(_pdfSafeText(formatted), maxChars));
       }
-      return row;
+      final maxLines = cellLinesPerCol.map((lines) => lines.length).reduce(math.max);
+      final rowHeight = math.max(18.0, 6.0 + (maxLines * 10.5));
+      return _PdfTableRow(
+        cellLines: cellLinesPerCol,
+        maxLines: maxLines,
+        rowHeight: rowHeight,
+      );
     }).toList(growable: false);
 
-    const rowHeight = 18.0;
     // Page 1 has large header (110pt top reserved), Page 2+ has compact header (88pt)
     final p1UsableHeight = pageHeight - 110.0 - 50.0;
     final p2UsableHeight = pageHeight - 88.0 - 50.0;
-    final p1Capacity = (p1UsableHeight / rowHeight).floor();
-    final p2Capacity = (p2UsableHeight / rowHeight).floor();
 
-    // Calculate pagination slices
-    final pageSlices = <List<List<String>>>[];
-    if (dataRows.isEmpty) {
+    // Calculate pagination slices based on adaptive row heights
+    final pageSlices = <List<_PdfTableRow>>[];
+    if (tableRows.isEmpty) {
       pageSlices.add(const []);
     } else {
-      var remaining = dataRows;
-      pageSlices.add(remaining.take(p1Capacity).toList());
-      remaining = remaining.skip(p1Capacity).toList();
-      while (remaining.isNotEmpty) {
-        pageSlices.add(remaining.take(p2Capacity).toList());
-        remaining = remaining.skip(p2Capacity).toList();
+      var currentSlice = <_PdfTableRow>[];
+      var remainingHeight = p1UsableHeight;
+
+      for (final row in tableRows) {
+        if (currentSlice.isNotEmpty && row.rowHeight > remainingHeight) {
+          pageSlices.add(currentSlice);
+          currentSlice = <_PdfTableRow>[];
+          remainingHeight = p2UsableHeight;
+        }
+        currentSlice.add(row);
+        remainingHeight -= row.rowHeight;
+      }
+      if (currentSlice.isNotEmpty) {
+        pageSlices.add(currentSlice);
       }
     }
 
@@ -357,6 +365,8 @@ class InventoryPdfSerializer {
     final boldFontId = regularFontId + 1;
     final kids = pageObjectIds.map((id) => '$id 0 R').join(' ');
     objects[2] = '<< /Type /Pages /Kids [$kids] /Count $pageCount >>';
+
+
 
     for (var pageIndex = 0; pageIndex < pageCount; pageIndex++) {
       final rows = pageSlices[pageIndex];
@@ -418,34 +428,41 @@ class InventoryPdfSerializer {
       }
 
       // Rows
-      final firstRowY = isFirstPage ? pageHeight - 110.0 : pageHeight - 88.0;
+      var currentY = isFirstPage ? pageHeight - 110.0 : pageHeight - 88.0;
       if (rows.isEmpty && isFirstPage) {
         buffer.writeln('BT');
         buffer.writeln('/F1 9 Tf');
-        buffer.writeln('$_margin ${firstRowY - 10} Td');
+        buffer.writeln('$_margin ${currentY - 10} Td');
         buffer.writeln('(${_escapeText('No inventory items found matching the selected scope.')}) Tj');
         buffer.writeln('ET');
       } else {
         for (var rowIdx = 0; rowIdx < rows.length; rowIdx++) {
           final rowData = rows[rowIdx];
-          final y = firstRowY - (rowIdx * rowHeight);
+          final rowTopY = currentY;
+
+          var cellX = _margin;
+          for (var colIdx = 0; colIdx < columns.length; colIdx++) {
+            final lines = rowData.cellLines[colIdx];
+            for (var lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+              final lineY = rowTopY - (lineIdx * 10.5);
+              buffer.writeln('BT');
+              buffer.writeln('/F1 8 Tf');
+              buffer.writeln('$cellX $lineY Td');
+              buffer.writeln('(${_escapeText(lines[lineIdx])}) Tj');
+              buffer.writeln('ET');
+            }
+            cellX += colWidths[colIdx];
+          }
 
           // Subtle horizontal divider between rows
+          final dividerY = rowTopY - (rowData.maxLines * 10.5) - 3.0;
           buffer.writeln('q');
           buffer.writeln('0.9 0.9 0.9 RG');
           buffer.writeln('0.3 w');
-          buffer.writeln('$_margin ${y - 3} m ${pageWidth - _margin} ${y - 3} l S');
+          buffer.writeln('$_margin $dividerY m ${pageWidth - _margin} $dividerY l S');
           buffer.writeln('Q');
 
-          var cellX = _margin;
-          for (var colIdx = 0; colIdx < rowData.length; colIdx++) {
-            buffer.writeln('BT');
-            buffer.writeln('/F1 8 Tf');
-            buffer.writeln('$cellX $y Td');
-            buffer.writeln('(${_escapeText(rowData[colIdx])}) Tj');
-            buffer.writeln('ET');
-            cellX += colWidths[colIdx];
-          }
+          currentY -= rowData.rowHeight;
         }
       }
 
@@ -506,7 +523,7 @@ class InventoryPdfSerializer {
   }) {
     const pageWidth = _a4Width;
     const pageHeight = _a4Height;
-    const usableWidth = pageWidth - (2 * _margin);
+    final double usableWidth = pageWidth - (2 * _margin);
 
     final colHeaders = <String, String>{};
     for (final col in columns) {
@@ -517,32 +534,88 @@ class InventoryPdfSerializer {
       );
     }
 
-    // Number of lines per card = ceil(columns.length / 2)
-    final linesPerCard = (columns.length + 1) ~/ 2;
-    // Card height = header (20pt) + lines (14pt each) + padding (12pt)
-    final cardHeight = 24.0 + (linesPerCard * 14.0) + 10.0;
+    final cardDataList = <_PdfCardData>[];
+    for (var i = 0; i < items.length; i++) {
+      final summary = items[i];
+      final item = summary.item;
+      final cardTitle = 'Item #${i + 1}: ${_pdfSafeText(item.name)}';
+      final skuStr = 'SKU: ${_pdfSafeText(item.sku)}';
+
+      final pairList = <_PdfCardFieldPair>[];
+      for (var fieldIdx = 0; fieldIdx < columns.length; fieldIdx += 2) {
+        final leftColKey = columns[fieldIdx];
+        final leftLabel = colHeaders[leftColKey] ?? leftColKey;
+        final leftVal = InventoryExportFields.extractValue(
+          summary,
+          leftColKey,
+          customFieldDefinitions: customFieldDefinitions,
+        );
+        final leftFormatted = _formatCustomValue(leftVal, leftColKey);
+        final leftLines = _wrapText(_pdfSafeText(leftFormatted), 36);
+
+        List<String>? rightLines;
+        String? rightLabel;
+        if (fieldIdx + 1 < columns.length) {
+          final rightColKey = columns[fieldIdx + 1];
+          rightLabel = colHeaders[rightColKey] ?? rightColKey;
+          final rightVal = InventoryExportFields.extractValue(
+            summary,
+            rightColKey,
+            customFieldDefinitions: customFieldDefinitions,
+          );
+          final rightFormatted = _formatCustomValue(rightVal, rightColKey);
+          rightLines = _wrapText(_pdfSafeText(rightFormatted), 36);
+        }
+
+        final lineCount = math.max(leftLines.length, rightLines?.length ?? 1);
+        final pairHeight = math.max(14.0, lineCount * 11.0);
+        pairList.add(_PdfCardFieldPair(
+          leftLabel: leftLabel,
+          leftLines: leftLines,
+          rightLabel: rightLabel,
+          rightLines: rightLines,
+          height: pairHeight,
+        ));
+      }
+
+      final fieldsHeight = pairList.fold<double>(0.0, (sum, p) => sum + p.height);
+      final cardHeight = 24.0 + fieldsHeight + 10.0;
+      cardDataList.add(_PdfCardData(
+        cardTitle: cardTitle,
+        skuStr: skuStr,
+        pairs: pairList,
+        cardHeight: cardHeight,
+      ));
+    }
 
     const p1Top = pageHeight - 85.0;
     const p2Top = pageHeight - 65.0;
     const footerReservation = 45.0;
+    final p1UsableHeight = p1Top - footerReservation;
+    final p2UsableHeight = p2Top - footerReservation;
 
-    final p1Capacity = ((p1Top - footerReservation) / cardHeight).floor().clamp(1, 10);
-    final p2Capacity = ((p2Top - footerReservation) / cardHeight).floor().clamp(1, 10);
-
-    final pageItemSlices = <List<InventoryItemSummary>>[];
-    if (items.isEmpty) {
-      pageItemSlices.add(const []);
+    final pageCardSlices = <List<_PdfCardData>>[];
+    if (cardDataList.isEmpty) {
+      pageCardSlices.add(const []);
     } else {
-      var remaining = items;
-      pageItemSlices.add(remaining.take(p1Capacity).toList());
-      remaining = remaining.skip(p1Capacity).toList();
-      while (remaining.isNotEmpty) {
-        pageItemSlices.add(remaining.take(p2Capacity).toList());
-        remaining = remaining.skip(p2Capacity).toList();
+      var currentSlice = <_PdfCardData>[];
+      var remainingHeight = p1UsableHeight;
+
+      for (final card in cardDataList) {
+        if (currentSlice.isNotEmpty && card.cardHeight > remainingHeight) {
+          pageCardSlices.add(currentSlice);
+          currentSlice = <_PdfCardData>[];
+          remainingHeight = p2UsableHeight;
+        }
+        currentSlice.add(card);
+        remainingHeight -= card.cardHeight;
+      }
+      if (currentSlice.isNotEmpty) {
+        pageCardSlices.add(currentSlice);
       }
     }
 
-    final pageCount = pageItemSlices.length;
+    final pageCount = pageCardSlices.length;
     final objects = <int, String>{};
     objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
 
@@ -558,10 +631,13 @@ class InventoryPdfSerializer {
     final kids = pageObjectIds.map((id) => '$id 0 R').join(' ');
     objects[2] = '<< /Type /Pages /Kids [$kids] /Count $pageCount >>';
 
-    var globalItemIndex = 0;
+
+
+    const leftColX = _margin + 8.0;
+    final rightColX = _margin + (usableWidth / 2.0) + 8.0;
 
     for (var pageIndex = 0; pageIndex < pageCount; pageIndex++) {
-      final pageItems = pageItemSlices[pageIndex];
+      final pageCards = pageCardSlices[pageIndex];
       final isFirstPage = pageIndex == 0;
       final buffer = StringBuffer();
 
@@ -576,10 +652,11 @@ class InventoryPdfSerializer {
         buffer.writeln('(${_escapeText(_pdfSafeText('$scopeLabel  |  Generated: $dateStr'))}) Tj');
         buffer.writeln('ET');
 
+        // Divider
         buffer.writeln('q');
         buffer.writeln('0.7 0.7 0.7 RG');
         buffer.writeln('0.5 w');
-        buffer.writeln('$_margin ${pageHeight - 74} m ${pageWidth - _margin} ${pageHeight - 74} l S');
+        buffer.writeln('$_margin ${pageHeight - 72} m ${pageWidth - _margin} ${pageHeight - 72} l S');
         buffer.writeln('Q');
       } else {
         buffer.writeln('BT');
@@ -595,86 +672,88 @@ class InventoryPdfSerializer {
         buffer.writeln('Q');
       }
 
-      final startY = isFirstPage ? pageHeight - 96.0 : pageHeight - 74.0;
+      var cardTop = isFirstPage ? p1Top : p2Top;
 
-      if (pageItems.isEmpty && isFirstPage) {
+      if (pageCards.isEmpty && isFirstPage) {
         buffer.writeln('BT');
         buffer.writeln('/F1 9 Tf');
-        buffer.writeln('$_margin ${startY - 10} Td');
+        buffer.writeln('$_margin ${cardTop - 15} Td');
         buffer.writeln('(${_escapeText('No inventory items found matching the selected scope.')}) Tj');
         buffer.writeln('ET');
       } else {
-        for (var cardIdx = 0; cardIdx < pageItems.length; cardIdx++) {
-          final summary = pageItems[cardIdx];
-          final item = summary.item;
-          globalItemIndex++;
-          final cardTop = startY - (cardIdx * cardHeight);
+        for (var cardIdx = 0; cardIdx < pageCards.length; cardIdx++) {
+          final card = pageCards[cardIdx];
 
           // Card header background
           buffer.writeln('q');
-          buffer.writeln('0.94 0.94 0.94 rg');
+          buffer.writeln('0.92 0.94 0.97 rg');
           buffer.writeln('$_margin ${cardTop - 18} $usableWidth 18 re');
           buffer.writeln('f');
-          buffer.writeln('0.7 0.7 0.7 RG');
-          buffer.writeln('0.5 w');
-          buffer.writeln('$_margin ${cardTop - 18} $usableWidth 18 re');
-          buffer.writeln('S');
           buffer.writeln('Q');
 
-          // Card title text: Item #X: Name | SKU: sku
-          final cardTitle = 'Item #$globalItemIndex: ${_fit(item.name, 45)}';
-          final skuStr = 'SKU: ${item.sku}';
+          // Header text: title & SKU
           buffer.writeln('BT');
           buffer.writeln('/F2 9 Tf');
           buffer.writeln('${_margin + 6} ${cardTop - 13} Td');
-          buffer.writeln('(${_escapeText(_pdfSafeText(cardTitle))}) Tj');
+          buffer.writeln('(${_escapeText(_pdfSafeText(card.cardTitle))}) Tj');
           buffer.writeln('ET');
 
-          final skuX = pageWidth - _margin - (skuStr.length * 5.4) - 6;
+          final skuX = pageWidth - _margin - (card.skuStr.length * 5.4) - 6;
           buffer.writeln('BT');
           buffer.writeln('/F2 9 Tf');
           buffer.writeln('$skuX ${cardTop - 13} Td');
-          buffer.writeln('(${_escapeText(_pdfSafeText(skuStr))}) Tj');
+          buffer.writeln('(${_escapeText(_pdfSafeText(card.skuStr))}) Tj');
           buffer.writeln('ET');
 
-          // Card fields in 2 columns
-          const leftColX = _margin + 8;
-          final rightColX = _margin + (usableWidth / 2) + 8;
-          final colWidth = (usableWidth / 2) - 16;
-          final maxValChars = ((colWidth - 80) / 4.8).floor().clamp(10, 40);
-
-          for (var fieldIdx = 0; fieldIdx < columns.length; fieldIdx++) {
-            final colKey = columns[fieldIdx];
-            final label = colHeaders[colKey] ?? colKey;
-            final val = InventoryExportFields.extractValue(
-              summary,
-              colKey,
-              customFieldDefinitions: customFieldDefinitions,
-            );
-            final formattedVal = _fit(_formatCustomValue(val, colKey), maxValChars);
-
-            final lineIdx = fieldIdx ~/ 2;
-            final isRight = fieldIdx % 2 == 1;
-            final x = isRight ? rightColX : leftColX;
-            final y = cardTop - 32 - (lineIdx * 14.0);
-
+          // Card fields
+          var fieldY = cardTop - 32.0;
+          for (final pair in card.pairs) {
+            // Left field
             buffer.writeln('BT');
             buffer.writeln('/F2 8 Tf');
-            buffer.writeln('$x $y Td');
-            buffer.writeln('(${_escapeText(_pdfSafeText('$label:'))}) Tj');
-            buffer.writeln('/F1 8 Tf');
-            buffer.writeln('75 0 Td');
-            buffer.writeln('(${_escapeText(_pdfSafeText(formattedVal))}) Tj');
+            buffer.writeln('$leftColX $fieldY Td');
+            buffer.writeln('(${_escapeText(_pdfSafeText('${pair.leftLabel}:'))}) Tj');
             buffer.writeln('ET');
+
+            for (var l = 0; l < pair.leftLines.length; l++) {
+              buffer.writeln('BT');
+              buffer.writeln('/F1 8 Tf');
+              buffer.writeln('${leftColX + 75} ${fieldY - (l * 10.5)} Td');
+              buffer.writeln('(${_escapeText(pair.leftLines[l])}) Tj');
+              buffer.writeln('ET');
+            }
+
+            // Right field
+            final rightLabel = pair.rightLabel;
+            final rightLines = pair.rightLines;
+            if (rightLabel != null && rightLines != null) {
+              buffer.writeln('BT');
+              buffer.writeln('/F2 8 Tf');
+              buffer.writeln('$rightColX $fieldY Td');
+              buffer.writeln('(${_escapeText(_pdfSafeText('$rightLabel:'))}) Tj');
+              buffer.writeln('ET');
+
+              for (var l = 0; l < rightLines.length; l++) {
+                buffer.writeln('BT');
+                buffer.writeln('/F1 8 Tf');
+                buffer.writeln('${rightColX + 75} ${fieldY - (l * 10.5)} Td');
+                buffer.writeln('(${_escapeText(rightLines[l])}) Tj');
+                buffer.writeln('ET');
+              }
+            }
+
+            fieldY -= pair.height;
           }
 
           // Card outer boundary line
-          final cardBottom = cardTop - cardHeight + 6;
+          final cardBottom = cardTop - card.cardHeight + 6;
           buffer.writeln('q');
           buffer.writeln('0.85 0.85 0.85 RG');
           buffer.writeln('0.4 w');
           buffer.writeln('$_margin $cardBottom m ${pageWidth - _margin} $cardBottom l S');
           buffer.writeln('Q');
+
+          cardTop -= card.cardHeight;
         }
       }
 
@@ -770,6 +849,43 @@ class InventoryPdfSerializer {
   static String _escapeText(String value) =>
       value.replaceAll(r'\', r'\\').replaceAll('(', r'\(').replaceAll(')', r'\)');
 
+  static List<String> _wrapText(String text, int maxCharsPerLine) {
+    if (text.isEmpty) return const [''];
+    if (text.length <= maxCharsPerLine) return [text];
+
+    final lines = <String>[];
+    final words = text.split(' ');
+    var currentLine = StringBuffer();
+
+    for (final word in words) {
+      if (word.isEmpty) continue;
+      if (word.length > maxCharsPerLine) {
+        if (currentLine.isNotEmpty) {
+          lines.add(currentLine.toString());
+          currentLine = StringBuffer();
+        }
+        var remaining = word;
+        while (remaining.length > maxCharsPerLine) {
+          lines.add(remaining.substring(0, maxCharsPerLine));
+          remaining = remaining.substring(maxCharsPerLine);
+        }
+        currentLine.write(remaining);
+      } else if (currentLine.isEmpty) {
+        currentLine.write(word);
+      } else if (currentLine.length + 1 + word.length <= maxCharsPerLine) {
+        currentLine.write(' ');
+        currentLine.write(word);
+      } else {
+        lines.add(currentLine.toString());
+        currentLine = StringBuffer(word);
+      }
+    }
+    if (currentLine.isNotEmpty) {
+      lines.add(currentLine.toString());
+    }
+    return lines.isEmpty ? const [''] : lines;
+  }
+
   static String _fit(String value, int maxChars) {
     if (value.length <= maxChars) return value;
     if (maxChars <= 3) return value.substring(0, maxChars);
@@ -851,4 +967,46 @@ class InventoryPdfSerializer {
     final min = dt.minute.toString().padLeft(2, '0');
     return '$y-$m-$d $h:$min';
   }
+}
+
+class _PdfTableRow {
+  final List<List<String>> cellLines;
+  final int maxLines;
+  final double rowHeight;
+
+  const _PdfTableRow({
+    required this.cellLines,
+    required this.maxLines,
+    required this.rowHeight,
+  });
+}
+
+class _PdfCardFieldPair {
+  final String leftLabel;
+  final List<String> leftLines;
+  final String? rightLabel;
+  final List<String>? rightLines;
+  final double height;
+
+  const _PdfCardFieldPair({
+    required this.leftLabel,
+    required this.leftLines,
+    this.rightLabel,
+    this.rightLines,
+    required this.height,
+  });
+}
+
+class _PdfCardData {
+  final String cardTitle;
+  final String skuStr;
+  final List<_PdfCardFieldPair> pairs;
+  final double cardHeight;
+
+  const _PdfCardData({
+    required this.cardTitle,
+    required this.skuStr,
+    required this.pairs,
+    required this.cardHeight,
+  });
 }
