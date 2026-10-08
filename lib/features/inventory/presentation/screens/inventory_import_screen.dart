@@ -12,8 +12,10 @@ import '../../domain/repositories/inventory_repository.dart';
 import '../bloc/inventory_import_cubit.dart';
 import '../bloc/inventory_import_state.dart';
 import '../services/inventory_import_file_picker.dart';
+import '../services/inventory_import_error_report_service.dart';
 import '../services/inventory_import_parser.dart';
 import '../services/inventory_import_preview_builder.dart';
+import '../services/inventory_export_file_delivery_service.dart';
 import '../utils/inventory_display_formatters.dart';
 import '../widgets/inventory_form_sections.dart';
 
@@ -68,10 +70,7 @@ class _InventoryImportView extends StatelessWidget {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Import Inventory'),
-        elevation: 0,
-      ),
+      appBar: AppBar(title: const Text('Import Inventory'), elevation: 0),
       body: BlocConsumer<InventoryImportCubit, InventoryImportState>(
         listener: (context, state) {
           if (state is InventoryImportErrorState) {
@@ -86,23 +85,28 @@ class _InventoryImportView extends StatelessWidget {
         builder: (context, state) {
           return switch (state) {
             InventoryImportInitial() => const _FilePickerView(),
-            InventoryImportLoading(:final message) =>
-              _LoadingView(message: message),
+            InventoryImportLoading(:final message) => _LoadingView(
+              message: message,
+            ),
             InventoryImportSheetSelect() => _SheetSelectView(state: state),
             InventoryImportHeaderSelect() => _HeaderSelectView(state: state),
             InventoryImportMappingState() => _MappingView(state: state),
             InventoryImportPreviewState() => _PreviewView(state: state),
-            InventoryImportSubmitting() =>
-              const _LoadingView(message: 'Importing inventory items...'),
-            InventoryImportSuccessState(:final result) =>
-              _ResultView(result: result),
+            InventoryImportSubmitting() => const _LoadingView(
+              message: 'Importing inventory items...',
+            ),
+            InventoryImportSuccessState(:final result) => _ResultView(
+              result: result,
+            ),
             InventoryImportErrorState(:final message, :final fallbackState) =>
               fallbackState != null
                   ? switch (fallbackState) {
-                      InventoryImportMappingState() =>
-                        _MappingView(state: fallbackState),
-                      InventoryImportPreviewState() =>
-                        _PreviewView(state: fallbackState),
+                      InventoryImportMappingState() => _MappingView(
+                        state: fallbackState,
+                      ),
+                      InventoryImportPreviewState() => _PreviewView(
+                        state: fallbackState,
+                      ),
                       _ => _ErrorView(message: message),
                     }
                   : _ErrorView(message: message),
@@ -325,7 +329,9 @@ class _SheetSelectView extends StatelessWidget {
                           Expanded(
                             child: Text(
                               sheet.name,
-                              style: const TextStyle(fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                           if (isMasterCandidate)
@@ -413,9 +419,11 @@ class _HeaderSelectView extends StatelessWidget {
                 showCheckboxColumn: false,
                 columns: [
                   const DataColumn(label: Text('Row')),
-                  for (var c = 0;
-                      c < (previewRows.isNotEmpty ? previewRows[0].length : 0);
-                      c++)
+                  for (
+                    var c = 0;
+                    c < (previewRows.isNotEmpty ? previewRows[0].length : 0);
+                    c++
+                  )
                     DataColumn(label: Text('Col ${c + 1}')),
                 ],
                 rows: List<DataRow>.generate(previewRows.length, (rowIdx) {
@@ -496,8 +504,9 @@ class _MappingView extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final cubit = context.read<InventoryImportCubit>();
     final user = cubit.user;
-    final canManageCustomFields =
-        InventoryImportPolicy.canManageCustomFields(user);
+    final canManageCustomFields = InventoryImportPolicy.canManageCustomFields(
+      user,
+    );
 
     final isWide = MediaQuery.of(context).size.width >= 720;
 
@@ -584,7 +593,8 @@ class _MappingView extends StatelessWidget {
                             _buildLegacyFieldRow(
                               context,
                               field: InventoryImportField.openingStock,
-                              currentColumn: state.mapping.openingStockColumnIndex,
+                              currentColumn:
+                                  state.mapping.openingStockColumnIndex,
                               dropdownKey: const Key(
                                 'inventory_import_map_opening_stock_dropdown',
                               ),
@@ -624,7 +634,10 @@ class _MappingView extends StatelessWidget {
                               items: InventoryImportMode.values.map((mode) {
                                 return DropdownMenuItem(
                                   value: mode,
-                                  child: Text(mode.label, overflow: TextOverflow.ellipsis),
+                                  child: Text(
+                                    mode.label,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 );
                               }).toList(),
                               onChanged: (mode) {
@@ -638,7 +651,8 @@ class _MappingView extends StatelessWidget {
                                 isExpanded: true,
                                 value: state.mapping.blankValuePolicy,
                                 decoration: const InputDecoration(
-                                  labelText: 'Blank Values Policy for Existing Items',
+                                  labelText:
+                                      'Blank Values Policy for Existing Items',
                                   border: OutlineInputBorder(),
                                 ),
                                 items: BlankValuePolicy.values.map((policy) {
@@ -674,9 +688,8 @@ class _MappingView extends StatelessWidget {
                                 Expanded(
                                   child: Text(
                                     'All Discovered Columns (${state.availableColumns.length})',
-                                    style: theme.textTheme.titleMedium?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                                    style: theme.textTheme.titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.bold),
                                   ),
                                 ),
                                 if (canManageCustomFields)
@@ -699,7 +712,9 @@ class _MappingView extends StatelessWidget {
                                   const Divider(height: 16),
                               itemBuilder: (context, colIdx) {
                                 final colName = state.availableColumns[colIdx];
-                                final isSkipped = state.mapping.skippedColumnIndices
+                                final isSkipped = state
+                                    .mapping
+                                    .skippedColumnIndices
                                     .contains(colIdx);
                                 final standardField =
                                     state.mapping.standardFieldMappings[colIdx];
@@ -727,12 +742,15 @@ class _MappingView extends StatelessWidget {
                                                     state.headerRowIndex,
                                                     colIdx,
                                                   ),
-                                                  style: theme.textTheme.bodySmall
+                                                  style: theme
+                                                      .textTheme
+                                                      .bodySmall
                                                       ?.copyWith(
-                                                    color: colorScheme
-                                                        .onSurfaceVariant,
-                                                  ),
-                                                  overflow: TextOverflow.ellipsis,
+                                                        color: colorScheme
+                                                            .onSurfaceVariant,
+                                                      ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
                                                 ),
                                               ],
                                             ),
@@ -740,19 +758,21 @@ class _MappingView extends StatelessWidget {
                                           const SizedBox(width: 16),
                                           Expanded(
                                             flex: 4,
-                                            child: _buildColumnDestinationDropdown(
-                                              context,
-                                              cubit: cubit,
-                                              columnIndex: colIdx,
-                                              standardField: standardField,
-                                              customKey: customKey,
-                                              isSkipped: isSkipped,
-                                            ),
+                                            child:
+                                                _buildColumnDestinationDropdown(
+                                                  context,
+                                                  cubit: cubit,
+                                                  columnIndex: colIdx,
+                                                  standardField: standardField,
+                                                  customKey: customKey,
+                                                  isSkipped: isSkipped,
+                                                ),
                                           ),
                                         ],
                                       )
                                     : Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             colName,
@@ -766,9 +786,11 @@ class _MappingView extends StatelessWidget {
                                               state.headerRowIndex,
                                               colIdx,
                                             ),
-                                            style: theme.textTheme.bodySmall?.copyWith(
-                                              color: colorScheme.onSurfaceVariant,
-                                            ),
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
                                           ),
                                           const SizedBox(height: 8),
                                           _buildColumnDestinationDropdown(
@@ -872,10 +894,7 @@ class _MappingView extends StatelessWidget {
       ...state.customFieldDefinitions.map((def) {
         return DropdownMenuItem(
           value: 'custom:${def.key}',
-          child: Text(
-            'Custom: ${def.label}',
-            overflow: TextOverflow.ellipsis,
-          ),
+          child: Text('Custom: ${def.label}', overflow: TextOverflow.ellipsis),
         );
       }),
     ];
@@ -948,10 +967,7 @@ class _MappingView extends StatelessWidget {
             value: currentColumn,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
+              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             ),
             items: [
               const DropdownMenuItem<int?>(
@@ -980,10 +996,8 @@ class _MappingView extends StatelessWidget {
   ) async {
     final def = await showDialog<CustomFieldDefinition>(
       context: context,
-      builder: (dialogCtx) => AddCustomFieldDialog(
-        repository: cubit.repository,
-        user: cubit.user,
-      ),
+      builder: (dialogCtx) =>
+          AddCustomFieldDialog(repository: cubit.repository, user: cubit.user),
     );
     if (def != null) {
       cubit.addStagedCustomDefinition(def, -1);
@@ -1022,7 +1036,9 @@ class _PreviewView extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           decoration: BoxDecoration(
             color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-            border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
+            border: Border(
+              bottom: BorderSide(color: colorScheme.outlineVariant),
+            ),
           ),
           child: Wrap(
             spacing: 12,
@@ -1045,7 +1061,8 @@ class _PreviewView extends StatelessWidget {
                     color: Colors.green,
                   ),
                   _SummaryChip(
-                    label: 'Errors: ${preview.invalidCount + preview.duplicateCount}',
+                    label:
+                        'Errors: ${preview.invalidCount + preview.duplicateCount}',
                     color: colorScheme.error,
                   ),
                   _SummaryChip(
@@ -1110,8 +1127,9 @@ class _PreviewView extends StatelessWidget {
                         Checkbox(
                           value: row.isSelected,
                           onChanged: row.isSelectable
-                              ? (_) =>
-                                  cubit.toggleRowSelection(row.sourceRowNumber)
+                              ? (_) => cubit.toggleRowSelection(
+                                  row.sourceRowNumber,
+                                )
                               : null,
                         ),
                       ),
@@ -1213,13 +1231,44 @@ class _PreviewView extends StatelessWidget {
   }
 }
 
-class _ResultView extends StatelessWidget {
+class _ResultView extends StatefulWidget {
   const _ResultView({required this.result});
 
   final InventoryImportResult result;
 
   @override
+  State<_ResultView> createState() => _ResultViewState();
+}
+
+class _ResultViewState extends State<_ResultView> {
+  bool _isDownloading = false;
+
+  Future<void> _downloadErrorReport() async {
+    if (_isDownloading) return;
+    final cubit = context.read<InventoryImportCubit>();
+    setState(() => _isDownloading = true);
+    final bytes = const InventoryImportErrorReportService().toBytes(
+      widget.result.failures,
+    );
+    final delivery = await InventoryExportFileDeliveryService()
+        .deliverImportErrorReport(
+          bytes: bytes,
+          currentUserProvider: () => cubit.user,
+          boundUserId: cubit.user.id,
+        );
+    if (!mounted) return;
+    setState(() => _isDownloading = false);
+    final message = delivery.isDownloadInitiated || delivery.isSaved
+        ? 'Import error report download started.'
+        : (delivery.message ?? 'Unable to download the error report.');
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final result = widget.result;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final cubit = context.read<InventoryImportCubit>();
@@ -1317,6 +1366,20 @@ class _ResultView extends StatelessWidget {
                         },
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      key: const Key(
+                        'inventory_import_download_error_report_button',
+                      ),
+                      onPressed: _isDownloading ? null : _downloadErrorReport,
+                      icon: _isDownloading
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.download_outlined),
+                      label: const Text('Download Error Report (CSV)'),
+                    ),
                   ],
                   const SizedBox(height: 32),
                   FilledButton(
@@ -1335,11 +1398,7 @@ class _ResultView extends StatelessWidget {
 }
 
 class _SummaryChip extends StatelessWidget {
-  const _SummaryChip({
-    super.key,
-    required this.label,
-    required this.color,
-  });
+  const _SummaryChip({super.key, required this.label, required this.color});
 
   final String label;
   final Color color;

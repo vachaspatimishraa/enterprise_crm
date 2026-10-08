@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import '../../../auth/domain/entities/current_user.dart';
 import '../../domain/entities/inventory_export_artifact.dart';
 import '../../domain/policies/inventory_export_policy.dart';
+import '../../domain/policies/inventory_import_policy.dart';
 
 /// Status indicating the outcome of an inventory export file delivery attempt.
 enum InventoryExportDeliveryStatus {
@@ -27,28 +28,22 @@ class InventoryExportDeliveryResult {
   });
 
   const InventoryExportDeliveryResult.saved({Uri? uri})
-      : this._(status: InventoryExportDeliveryStatus.saved, uri: uri);
+    : this._(status: InventoryExportDeliveryStatus.saved, uri: uri);
 
   const InventoryExportDeliveryResult.downloadInitiated()
-      : this._(status: InventoryExportDeliveryStatus.downloadInitiated);
+    : this._(status: InventoryExportDeliveryStatus.downloadInitiated);
 
   const InventoryExportDeliveryResult.cancelled({String? message})
-      : this._(
-          status: InventoryExportDeliveryStatus.cancelled,
-          message: message,
-        );
+    : this._(status: InventoryExportDeliveryStatus.cancelled, message: message);
 
   const InventoryExportDeliveryResult.restricted(String message)
-      : this._(
-          status: InventoryExportDeliveryStatus.restricted,
-          message: message,
-        );
+    : this._(
+        status: InventoryExportDeliveryStatus.restricted,
+        message: message,
+      );
 
   const InventoryExportDeliveryResult.failure(String message)
-      : this._(
-          status: InventoryExportDeliveryStatus.failure,
-          message: message,
-        );
+    : this._(status: InventoryExportDeliveryStatus.failure, message: message);
 
   bool get isSaved => status == InventoryExportDeliveryStatus.saved;
   bool get isDownloadInitiated =>
@@ -117,8 +112,8 @@ class InventoryExportFileDeliveryService {
   InventoryExportFileDeliveryService({
     InventoryExportFileSaver? fileSaver,
     bool? isWeb,
-  })  : _fileSaver = fileSaver ?? const DefaultInventoryExportFileSaver(),
-        _isWeb = isWeb ?? kIsWeb;
+  }) : _fileSaver = fileSaver ?? const DefaultInventoryExportFileSaver(),
+       _isWeb = isWeb ?? kIsWeb;
 
   /// Returns true if a delivery operation is actively in flight.
   bool get isDelivering => _isDelivering;
@@ -165,9 +160,15 @@ class InventoryExportFileDeliveryService {
 
       // 4. Authorization policy check immediately before delivery
       final isAuthorized = switch (artifact.format) {
-        InventoryExportFormat.csv => InventoryExportPolicy.canExportCsv(currentUser),
-        InventoryExportFormat.xlsx => InventoryExportPolicy.canExportXlsx(currentUser),
-        InventoryExportFormat.pdf => InventoryExportPolicy.canExportPdf(currentUser),
+        InventoryExportFormat.csv => InventoryExportPolicy.canExportCsv(
+          currentUser,
+        ),
+        InventoryExportFormat.xlsx => InventoryExportPolicy.canExportXlsx(
+          currentUser,
+        ),
+        InventoryExportFormat.pdf => InventoryExportPolicy.canExportPdf(
+          currentUser,
+        ),
       };
 
       if (!isAuthorized) {
@@ -187,11 +188,15 @@ class InventoryExportFileDeliveryService {
       }
 
       // 5. Filename determination & safety validation
-      final effectiveFileName = (customFileName != null && customFileName.trim().isNotEmpty)
+      final effectiveFileName =
+          (customFileName != null && customFileName.trim().isNotEmpty)
           ? customFileName.trim()
           : artifact.defaultFileName();
 
-      final validationError = _validateFileName(effectiveFileName, artifact.fileExtension);
+      final validationError = _validateFileName(
+        effectiveFileName,
+        artifact.fileExtension,
+      );
       if (validationError != null) {
         return InventoryExportDeliveryResult.failure(validationError);
       }
@@ -230,13 +235,76 @@ class InventoryExportFileDeliveryService {
     }
   }
 
+  /// Delivers a CSV import error report for the currently authenticated
+  /// importer. This intentionally checks import authorization rather than
+  /// export authorization: users may need to retrieve validation failures even
+  /// when they are not allowed to export the inventory catalog.
+  Future<InventoryExportDeliveryResult> deliverImportErrorReport({
+    required Uint8List bytes,
+    required CurrentUser? Function() currentUserProvider,
+    String? boundUserId,
+    String fileName = 'inventory_import_errors.csv',
+  }) async {
+    if (_isDelivering) {
+      return const InventoryExportDeliveryResult.restricted(
+        'A file delivery operation is already in progress.',
+      );
+    }
+    _isDelivering = true;
+    try {
+      final currentUser = currentUserProvider();
+      if (currentUser == null) {
+        return const InventoryExportDeliveryResult.restricted(
+          'User session expired or unauthenticated.',
+        );
+      }
+      if (boundUserId != null && currentUser.id != boundUserId) {
+        return const InventoryExportDeliveryResult.restricted(
+          'User identity changed since the import was processed.',
+        );
+      }
+      if (!InventoryImportPolicy.canImport(currentUser)) {
+        return const InventoryExportDeliveryResult.restricted(
+          'User is not authorized to download import error reports.',
+        );
+      }
+      final validationError = _validateFileName(fileName, '.csv');
+      if (validationError != null) {
+        return InventoryExportDeliveryResult.failure(validationError);
+      }
+      final uri = await _fileSaver.saveFile(
+        fileName: fileName,
+        bytes: bytes,
+        mimeType: 'text/csv',
+        extension: 'csv',
+        dialogTitle: 'Save Inventory Import Error Report',
+      );
+      if (_isWeb)
+        return const InventoryExportDeliveryResult.downloadInitiated();
+      if (uri == null) {
+        return const InventoryExportDeliveryResult.cancelled(
+          message: 'User cancelled error report saving.',
+        );
+      }
+      return InventoryExportDeliveryResult.saved(uri: uri);
+    } catch (e) {
+      return InventoryExportDeliveryResult.failure(
+        'Failed to deliver import error report: $e',
+      );
+    } finally {
+      _isDelivering = false;
+    }
+  }
+
   /// Validates that filename is safe, non-empty, contains no path traversals,
   /// and terminates with the expected format extension.
   String? _validateFileName(String fileName, String expectedExtension) {
     if (fileName.trim().isEmpty) {
       return 'Filename cannot be empty.';
     }
-    if (fileName.contains('/') || fileName.contains('\\') || fileName.contains('..')) {
+    if (fileName.contains('/') ||
+        fileName.contains('\\') ||
+        fileName.contains('..')) {
       return 'Filename cannot contain path traversal or separator characters.';
     }
     // Check for control characters

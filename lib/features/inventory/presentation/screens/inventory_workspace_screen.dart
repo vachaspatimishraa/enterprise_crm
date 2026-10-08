@@ -22,6 +22,7 @@ import '../widgets/inventory_pagination_controls.dart';
 import '../../domain/policies/inventory_export_policy.dart';
 import '../widgets/inventory_export_dialog.dart';
 import 'create_inventory_item_screen.dart';
+import 'inventory_bulk_entry_screen.dart';
 import 'inventory_import_screen.dart';
 import 'inventory_item_details_screen.dart';
 
@@ -82,6 +83,7 @@ class _InventoryWorkspaceView extends StatefulWidget {
 class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
   final TextEditingController _searchController = TextEditingController();
   List<PendingInventoryDeletion> _pendingDeletions = [];
+  final Set<String> _selectedItemIds = <String>{};
 
   @override
   void initState() {
@@ -141,6 +143,22 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
     final created = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => CreateInventoryItemScreen(
+          user: widget.user,
+          repository: widget.repository,
+        ),
+      ),
+    );
+    if (created == true && mounted) {
+      _loadPendingDeletions();
+      cubit.refresh();
+    }
+  }
+
+  void _openBulkEntry(BuildContext context) async {
+    final cubit = context.read<InventoryCubit>();
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => InventoryBulkEntryScreen(
           user: widget.user,
           repository: widget.repository,
         ),
@@ -214,6 +232,7 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
       repository: widget.repository,
       currentUserProvider: _resolveCurrentUser,
       currentQuery: cubit?.state.query,
+      selectedItemIds: Set<String>.unmodifiable(_selectedItemIds),
     );
   }
 
@@ -261,6 +280,13 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
+          if (InventoryItemAdministrationPolicy.canCreate(widget.user))
+            IconButton(
+              key: const Key('inventory_workspace_bulk_entry_appbar_button'),
+              icon: const Icon(Icons.table_rows_outlined),
+              tooltip: 'Bulk Entry',
+              onPressed: () => _openBulkEntry(context),
+            ),
           IconButton(
             key: const Key('inventory_refresh_button'),
             icon: const Icon(Icons.refresh),
@@ -456,7 +482,8 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
           );
           final canImport = InventoryImportPolicy.canImport(widget.user);
           final liveUser = _watchCurrentUser(context);
-          final canExport = liveUser != null && InventoryExportPolicy.canExport(liveUser);
+          final canExport =
+              liveUser != null && InventoryExportPolicy.canExport(liveUser);
 
           if (isCompact) {
             return Column(
@@ -510,6 +537,18 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
                             onPressed: () => _openCreateItem(context),
                             icon: const Icon(Icons.add, size: 18),
                             label: const Text('Add Item'),
+                          ),
+                        if (canCreate)
+                          OutlinedButton.icon(
+                            key: const Key(
+                              'inventory_workspace_bulk_entry_button',
+                            ),
+                            onPressed: () => _openBulkEntry(context),
+                            icon: const Icon(
+                              Icons.table_rows_outlined,
+                              size: 18,
+                            ),
+                            label: const Text('Bulk Entry'),
                           ),
                       ],
                     ),
@@ -706,6 +745,17 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
                         ],
                       ),
                     ),
+                    Checkbox(
+                      key: Key('inventory_item_select_${item.id}'),
+                      value: _selectedItemIds.contains(item.id),
+                      onChanged: (selected) => setState(() {
+                        if (selected == true) {
+                          _selectedItemIds.add(item.id);
+                        } else {
+                          _selectedItemIds.remove(item.id);
+                        }
+                      }),
+                    ),
                     OutlinedButton(
                       key: Key('inventory_item_view_details_${item.id}'),
                       style: OutlinedButton.styleFrom(
@@ -774,6 +824,7 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
             colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
           ),
           columns: const [
+            DataColumn(label: Text('Select')),
             DataColumn(label: Text('Name')),
             DataColumn(label: Text('SKU')),
             DataColumn(label: Text('Quantity on hand'), numeric: true),
@@ -788,6 +839,19 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
             return DataRow(
               key: ValueKey('inventory_item_row_${item.id}'),
               cells: [
+                DataCell(
+                  Checkbox(
+                    key: Key('inventory_item_select_${item.id}'),
+                    value: _selectedItemIds.contains(item.id),
+                    onChanged: (selected) => setState(() {
+                      if (selected == true) {
+                        _selectedItemIds.add(item.id);
+                      } else {
+                        _selectedItemIds.remove(item.id);
+                      }
+                    }),
+                  ),
+                ),
                 DataCell(
                   Text(
                     item.name,
