@@ -163,9 +163,9 @@ class InventoryImportPreviewBuilder {
           if (parsed == null || !parsed.isFinite) {
             status = InventoryImportRowStatus.invalid;
             errorMessage = 'Opening stock must be a valid number.';
-          } else if (parsed <= 0) {
+          } else if (parsed < 0) {
             status = InventoryImportRowStatus.invalid;
-            errorMessage = 'Opening stock must be greater than zero.';
+            errorMessage = 'Opening stock cannot be negative.';
           } else {
             openingStock = parsed;
           }
@@ -364,6 +364,7 @@ class InventoryImportPreviewBuilder {
           errorMessage = 'You do not have permission to edit inventory items.';
         } else if (action == InventoryImportAction.create &&
             openingStock != null &&
+            openingStock > 0 &&
             !InventoryImportPolicy.canImportWithStock(user)) {
           status = InventoryImportRowStatus.invalid;
           errorMessage = 'You do not have permission to manage opening stock.';

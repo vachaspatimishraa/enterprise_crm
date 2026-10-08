@@ -414,9 +414,9 @@ INVENTORY-4 implements the CSV and XLSX inventory bulk import workflow for admin
   - Revalidation: Freshness enforced by re-checking SKU uniqueness at repository import execution time
 - **Opening Stock Semantics:**
   - Blank / unmapped: Valid, item created with 0 movements and derived quantity 0.0; item remains eligible for later `Set Opening Stock`
-  - Explicit zero (`0`, `0.0`): Invalid ("Opening stock must be greater than zero.")
+  - Explicit zero (`0`, `0.0`): Valid, item created with 0 movements and derived quantity 0.0
   - Positive numeric: Valid finite `double > 0`, creates exactly one `StockMovementType.openingStock`
-  - Invalid values: Negative numbers, non-numeric strings, NaN, Infinity rejected
+  - Invalid values: Negative numbers (rejected with "Opening stock cannot be negative."), non-numeric strings, NaN, Infinity rejected
 - **Stock Ledger Integrity:**
   - Opening stock NEVER directly sets quantity on `InventoryItem`
   - Derived balance strictly calculated as `SUM(StockMovement.quantityDelta)`
@@ -512,7 +512,7 @@ INVENTORY-ACCESS-1 extends the Inventory module with:
      - `reason`: `null`.
      - `createdAt`: deterministic injected clock.
      - Derived quantity: matches the initial stock value.
-   - **Invalid Values:** `0`, `0.0`, negative numbers, non-numeric strings, NaN, Infinity are rejected with validation error ("Opening stock must be greater than zero.").
+   - **Invalid Values:** Negative numbers (rejected with "Opening stock cannot be negative."), non-numeric strings, NaN, Infinity are rejected with validation error. Explicit zero (`0`, `0.0`) and blank/omitted values are valid and create no ledger movement.
 3. **Atomicity Guarantee:**
    - Item creation and its optional opening stock movement are atomic at the repository/service boundary. If movement creation fails, the item is rolled back / not persisted.
 

@@ -1137,12 +1137,12 @@ class MockInventoryRepository implements InventoryRepository {
 
         // Opening stock validation
         if (row.openingStock != null) {
-          if (!row.openingStock!.isFinite || row.openingStock! <= 0) {
+          if (!row.openingStock!.isFinite || row.openingStock! < 0) {
             failures.add(
               InventoryImportRowFailure(
                 sourceRowNumber: row.sourceRowNumber,
                 sku: row.sku,
-                reason: 'Opening stock must be greater than zero.',
+                reason: 'Opening stock cannot be negative.',
               ),
             );
             continue;
