@@ -212,9 +212,12 @@ class InventoryImportCubit extends Cubit<InventoryImportState> {
     final standardMappings = <int, InventoryImportField>{};
     final customMappings = <int, String>{};
     final mappedStandard = <InventoryImportField>{};
+    final stagedCustomDefs = <CustomFieldDefinition>[];
+    final allCustomDefs = List<CustomFieldDefinition>.from(customDefs);
 
     for (var i = 0; i < headerRow.length; i++) {
       final text = headerRow[i].trim();
+      if (text.isEmpty) continue;
       final norm = text.toLowerCase().replaceAll(RegExp(r'[\s\-_]+'), '_');
 
       final stdMatch = _autoMatchStandardField(norm);
@@ -224,14 +227,40 @@ class InventoryImportCubit extends Cubit<InventoryImportState> {
         continue;
       }
 
-      for (final def in customDefs) {
+      var customMatched = false;
+      for (final def in allCustomDefs) {
         final defKeyNorm =
             def.key.toLowerCase().replaceAll(RegExp(r'[\s\-_]+'), '_');
         final defLabelNorm =
             def.label.toLowerCase().replaceAll(RegExp(r'[\s\-_]+'), '_');
         if (norm == defKeyNorm || norm == defLabelNorm) {
           customMappings[i] = def.key;
+          customMatched = true;
           break;
+        }
+      }
+      if (customMatched) continue;
+
+      // Auto-register unrecognized headers as staged Text custom fields
+      if (InventoryImportPolicy.canManageCustomFields(user)) {
+        final cleanKey = norm.replaceAll(RegExp(r'[^a-z0-9_]'), '');
+        if (cleanKey.isNotEmpty && !allCustomDefs.any((d) => d.key == cleanKey)) {
+          final titleLabel = text
+              .replaceAll('_', ' ')
+              .replaceAll('-', ' ')
+              .split(' ')
+              .where((w) => w.isNotEmpty)
+              .map((w) => '${w[0].toUpperCase()}${w.substring(1)}')
+              .join(' ');
+          final newDef = CustomFieldDefinition(
+            id: 'cf_auto_$cleanKey',
+            key: cleanKey,
+            label: titleLabel,
+            dataType: CustomFieldDataType.text,
+          );
+          stagedCustomDefs.add(newDef);
+          allCustomDefs.add(newDef);
+          customMappings[i] = cleanKey;
         }
       }
     }
@@ -242,7 +271,7 @@ class InventoryImportCubit extends Cubit<InventoryImportState> {
         sheetIndex: curr.sheetIndex,
         headerRowIndex: curr.selectedHeaderRowIndex,
         availableColumns: List.unmodifiable(availableColumns),
-        customFieldDefinitions: customDefs,
+        customFieldDefinitions: List.unmodifiable(allCustomDefs),
         catalogs: catalogs,
         mapping: InventoryImportColumnMapping(
           sheetIndex: curr.sheetIndex,
@@ -261,6 +290,7 @@ class InventoryImportCubit extends Cubit<InventoryImportState> {
               ?.key,
           standardFieldMappings: Map.unmodifiable(standardMappings),
           customFieldMappings: Map.unmodifiable(customMappings),
+          stagedCustomFieldDefinitions: List.unmodifiable(stagedCustomDefs),
         ),
       ),
     );
