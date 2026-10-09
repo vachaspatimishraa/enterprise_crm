@@ -413,7 +413,7 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isCompact = constraints.maxWidth < 600;
+          final isCompact = constraints.maxWidth < 960;
 
           final searchWidget = TextField(
             key: const Key('inventory_search_field'),

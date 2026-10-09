@@ -1,4 +1,4 @@
-import '../../domain/entities/custom_field_definition.dart';
+﻿import '../../domain/entities/custom_field_definition.dart';
 import '../../domain/entities/inventory_catalogs.dart';
 import '../../domain/entities/inventory_import_models.dart';
 import '../services/inventory_import_parser.dart';
@@ -117,6 +117,8 @@ class InventoryImportPreviewState extends InventoryImportState {
     required this.mapping,
     required this.preview,
     this.filter = 'all',
+    this.selectedColumnKeys = const {},
+    this.customFieldDefinitions = const [],
   });
 
   final InventoryImportParsedFile file;
@@ -124,10 +126,14 @@ class InventoryImportPreviewState extends InventoryImportState {
   final InventoryImportColumnMapping mapping;
   final InventoryImportPreview preview;
   final String filter; // 'all', 'valid', 'errors'
+  final Set<String> selectedColumnKeys;
+  final List<CustomFieldDefinition> customFieldDefinitions;
 
   InventoryImportPreviewState copyWith({
     InventoryImportPreview? preview,
     String? filter,
+    Set<String>? selectedColumnKeys,
+    List<CustomFieldDefinition>? customFieldDefinitions,
   }) {
     return InventoryImportPreviewState(
       file: file,
@@ -135,6 +141,8 @@ class InventoryImportPreviewState extends InventoryImportState {
       mapping: mapping,
       preview: preview ?? this.preview,
       filter: filter ?? this.filter,
+      selectedColumnKeys: selectedColumnKeys ?? this.selectedColumnKeys,
+      customFieldDefinitions: customFieldDefinitions ?? this.customFieldDefinitions,
     );
   }
 }

@@ -1,4 +1,4 @@
-// ignore_for_file: deprecated_member_use
+﻿// ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -16,7 +16,6 @@ import '../services/inventory_import_error_report_service.dart';
 import '../services/inventory_import_parser.dart';
 import '../services/inventory_import_preview_builder.dart';
 import '../services/inventory_export_file_delivery_service.dart';
-import '../utils/inventory_display_formatters.dart';
 import '../widgets/inventory_form_sections.dart';
 
 /// Screen coordinating the full CSV/XLSX Inventory Import workflow.
@@ -197,6 +196,13 @@ class _FilePickerView extends StatelessWidget {
                         vertical: 16,
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    key: const Key('inventory_import_load_sample_button'),
+                    onPressed: () => cubit.loadSampleData(),
+                    icon: const Icon(Icons.table_chart_outlined),
+                    label: const Text('Load Sample File'),
                   ),
                 ],
               ),
@@ -1005,6 +1011,22 @@ class _MappingView extends StatelessWidget {
   }
 }
 
+class _PreviewColumnDescriptor {
+  final String key;
+  final String label;
+  final bool isMandatory;
+  final bool isSelectable;
+  final String Function(InventoryImportPreviewRow row) getValue;
+
+  const _PreviewColumnDescriptor({
+    required this.key,
+    required this.label,
+    required this.isMandatory,
+    required this.isSelectable,
+    required this.getValue,
+  });
+}
+
 class _PreviewView extends StatelessWidget {
   const _PreviewView({required this.state});
 
@@ -1016,6 +1038,7 @@ class _PreviewView extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final cubit = context.read<InventoryImportCubit>();
     final preview = state.preview;
+    final user = cubit.user;
 
     final filteredRows = preview.rows.where((r) {
       if (state.filter == 'valid') {
@@ -1029,9 +1052,54 @@ class _PreviewView extends StatelessWidget {
       return true;
     }).toList();
 
+    final eligibleRows = preview.rows.where((r) => r.isSelectable).toList();
+
+    // Keep source order and every source column visible, including explicit skips.
+    final sheet = state.file.sheets[state.sheetIndex];
+    final headers = sheet.rows[state.mapping.headerRowIndex];
+    final descriptors = <_PreviewColumnDescriptor>[];
+    final sourceColumnCount = sheet.rows.fold<int>(
+      0,
+      (count, row) => row.length > count ? row.length : count,
+    );
+    for (var index = 0; index < sourceColumnCount; index++) {
+      final field = state.mapping.standardFieldMappings[index];
+      final customKey = state.mapping.customFieldMappings[index];
+      final skipped = state.mapping.skippedColumnIndices.contains(index);
+      final restricted = (field == InventoryImportField.unitCostInr &&
+              !InventoryImportPolicy.canViewCost(user)) ||
+          (field == InventoryImportField.supplier &&
+              !InventoryImportPolicy.canViewSupplier(user));
+      final calculated = field == InventoryImportField.expectedStockStatus;
+      final key = field?.name ??
+          (customKey == null ? 'source_$index' : 'custom_$customKey');
+      final header = index < headers.length && headers[index].trim().isNotEmpty
+          ? headers[index]
+          : 'Column ${index + 1}';
+      descriptors.add(_PreviewColumnDescriptor(
+        key: key,
+        label: '$header${skipped ? ' (skipped)' : restricted ? ' (restricted)' : calculated ? ' (calculated; not imported)' : ''}',
+        isMandatory: field == InventoryImportField.name ||
+            field == InventoryImportField.sku,
+        isSelectable: !skipped && !restricted && !calculated &&
+            (field != null || customKey != null),
+        getValue: (row) => restricted
+            ? 'Restricted'
+            : index < row.rawValues.length ? row.rawValues[index] : '',
+      ));
+    }
+
+    final allSelectableRowsCount = eligibleRows.length;
+    final allSelectedRowsCount = eligibleRows.where((r) => r.isSelected).length;
+    final totalMappedColumns = descriptors.length;
+    final selectedColumnsCount = descriptors
+        .where((d) => d.isSelectable &&
+            (d.isMandatory || state.selectedColumnKeys.contains(d.key)))
+        .length;
+
     return Column(
       children: [
-        // Summary bar
+        // Summary & Gallery Selection Control Bar
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           decoration: BoxDecoration(
@@ -1040,42 +1108,50 @@ class _PreviewView extends StatelessWidget {
               bottom: BorderSide(color: colorScheme.outlineVariant),
             ),
           ),
-          child: Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Wrap(
-                spacing: 8,
-                runSpacing: 4,
+                spacing: 12,
+                runSpacing: 8,
+                alignment: WrapAlignment.spaceBetween,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  _SummaryChip(
-                    key: const Key('inventory_import_summary_total'),
-                    label: 'Total: ${preview.totalRows}',
-                    color: colorScheme.primary,
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _SummaryChip(
+                        key: const Key('inventory_import_summary_total'),
+                        label: 'Total: ${preview.totalRows}',
+                        color: colorScheme.primary,
+                      ),
+                      _SummaryChip(
+                        key: const Key('inventory_import_summary_valid'),
+                        label: 'Valid: ${preview.validCount}',
+                        color: Colors.green,
+                      ),
+                      _SummaryChip(
+                        key: const Key('inventory_import_summary_errors'),
+                        label:
+                            'Errors: ${preview.invalidCount + preview.duplicateCount}',
+                        color: colorScheme.error,
+                      ),
+                      _SummaryChip(
+                        key: const Key('inventory_import_selected_rows_chip'),
+                        label:
+                            'Selected: ${preview.selectedCount} / Total: ${preview.totalRows} rows',
+                        color: colorScheme.secondary,
+                      ),
+                      _SummaryChip(
+                        key: const Key('inventory_import_selected_cols_chip'),
+                        label:
+                            'Selected: $selectedColumnsCount / Total: $totalMappedColumns columns',
+                        color: colorScheme.tertiary,
+                      ),
+                    ],
                   ),
-                  _SummaryChip(
-                    label: 'Valid: ${preview.validCount}',
-                    color: Colors.green,
-                  ),
-                  _SummaryChip(
-                    label:
-                        'Errors: ${preview.invalidCount + preview.duplicateCount}',
-                    color: colorScheme.error,
-                  ),
-                  _SummaryChip(
-                    label: 'Selected: ${preview.selectedCount}',
-                    color: colorScheme.secondary,
-                  ),
-                ],
-              ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
                   SegmentedButton<String>(
                     segments: const [
                       ButtonSegment(value: 'all', label: Text('All')),
@@ -1086,13 +1162,46 @@ class _PreviewView extends StatelessWidget {
                     onSelectionChanged: (set) =>
                         cubit.setPreviewFilter(set.first),
                   ),
-                  TextButton(
-                    onPressed: () => cubit.selectAllValid(),
-                    child: const Text('Select All Valid'),
+                ],
+              ),
+              const SizedBox(height: 10),
+              // Gallery-Style Multi-Select Actions
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  FilledButton.icon(
+                    key: const Key('inventory_import_select_all_btn'),
+                    icon: const Icon(Icons.select_all, size: 18),
+                    label: const Text('Select All'),
+                    onPressed: () => cubit.selectAll(),
+                  ),
+                  OutlinedButton.icon(
+                    key: const Key('inventory_import_clear_selection_btn'),
+                    icon: const Icon(Icons.clear_all, size: 18),
+                    label: const Text('Clear Selection'),
+                    onPressed: () => cubit.clearSelection(),
                   ),
                   TextButton(
-                    onPressed: () => cubit.deselectAll(),
-                    child: const Text('Clear Selection'),
+                    key: const Key('inventory_import_select_all_rows_btn'),
+                    onPressed: () => cubit.selectAllRows(),
+                    child: const Text('Select All Rows'),
+                  ),
+                  TextButton(
+                    key: const Key('inventory_import_deselect_all_rows_btn'),
+                    onPressed: () => cubit.deselectAllRows(),
+                    child: const Text('Deselect All Rows'),
+                  ),
+                  TextButton(
+                    key: const Key('inventory_import_select_all_cols_btn'),
+                    onPressed: () => cubit.selectAllColumns(),
+                    child: const Text('Select All Columns'),
+                  ),
+                  TextButton(
+                    key: const Key('inventory_import_deselect_optional_cols_btn'),
+                    onPressed: () => cubit.deselectOptionalColumns(),
+                    child: const Text('Deselect Optional Columns'),
                   ),
                 ],
               ),
@@ -1100,21 +1209,60 @@ class _PreviewView extends StatelessWidget {
           ),
         ),
 
-        // Scrollable Preview Table
+        // Scrollable Excel-like Preview Table with Highlighting
         Expanded(
           child: SingleChildScrollView(
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
-                columns: const [
-                  DataColumn(label: Text('Select')),
-                  DataColumn(label: Text('Row #')),
-                  DataColumn(label: Text('Action')),
-                  DataColumn(label: Text('Status')),
-                  DataColumn(label: Text('SKU')),
-                  DataColumn(label: Text('Product Name')),
-                  DataColumn(label: Text('Qty / Stock')),
-                  DataColumn(label: Text('Issues / Notes')),
+                showCheckboxColumn: false,
+                columns: [
+                  DataColumn(
+                    label: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Checkbox(
+                          key: const Key('inventory_import_select_all_rows_checkbox'),
+                          value: allSelectableRowsCount > 0 &&
+                                  allSelectedRowsCount == allSelectableRowsCount
+                              ? true
+                              : (allSelectedRowsCount > 0 ? null : false),
+                          tristate: true,
+                          onChanged: (val) {
+                            if (val == true) {
+                              cubit.selectAllRows();
+                            } else {
+                              cubit.deselectAllRows();
+                            }
+                          },
+                        ),
+                        const Text('Select'),
+                      ],
+                    ),
+                  ),
+                  const DataColumn(label: Text('Row #')),
+                  const DataColumn(label: Text('Action')),
+                  const DataColumn(label: Text('Status')),
+                  for (final col in descriptors)
+                    DataColumn(
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Checkbox(
+                            key: Key('inventory_import_col_check_${col.key}'),
+                            value: col.isMandatory
+                                ? true
+                                : col.isSelectable && state.selectedColumnKeys.contains(col.key),
+                            onChanged: !col.isSelectable || col.isMandatory
+                                ? null
+                                : (_) => cubit.toggleColumnSelection(col.key),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(col.label),
+                        ],
+                      ),
+                    ),
+                  const DataColumn(label: Text('Issues / Notes')),
                 ],
                 rows: filteredRows.map((row) {
                   return DataRow(
@@ -1125,6 +1273,7 @@ class _PreviewView extends StatelessWidget {
                     cells: [
                       DataCell(
                         Checkbox(
+                          key: Key('inventory_import_row_check_${row.sourceRowNumber}'),
                           value: row.isSelected,
                           onChanged: row.isSelectable
                               ? (_) => cubit.toggleRowSelection(
@@ -1159,25 +1308,14 @@ class _PreviewView extends StatelessWidget {
                         ),
                       ),
                       DataCell(_StatusBadge(status: row.status)),
-                      DataCell(Text(row.sku)),
-                      DataCell(
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 180),
-                          child: Text(
-                            row.name,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                      for (final col in descriptors)
+                        _buildPreviewDataCell(
+                          col: col,
+                          row: row,
+                          state: state,
+                          colorScheme: colorScheme,
+                          theme: theme,
                         ),
-                      ),
-                      DataCell(
-                        Text(
-                          row.openingStock != null
-                              ? InventoryDisplayFormatters.formatQuantity(
-                                  row.openingStock!,
-                                )
-                              : '—',
-                        ),
-                      ),
                       DataCell(
                         ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 260),
@@ -1214,14 +1352,13 @@ class _PreviewView extends StatelessWidget {
                 onPressed: () => cubit.backToMapping(),
                 child: const Text('Back to Mapping'),
               ),
-              const SizedBox(width: 16),
-              FilledButton.icon(
+              const SizedBox(width: 12),
+              FilledButton(
                 key: const Key('inventory_import_submit_button'),
                 onPressed: preview.selectedCount > 0
                     ? () => cubit.executeImport()
                     : null,
-                icon: const Icon(Icons.check),
-                label: Text('Import (${preview.selectedCount} Rows)'),
+                child: Text('Import Selected (${preview.selectedCount})'),
               ),
             ],
           ),
@@ -1229,8 +1366,56 @@ class _PreviewView extends StatelessWidget {
       ],
     );
   }
-}
+  DataCell _buildPreviewDataCell({
+    required _PreviewColumnDescriptor col,
+    required InventoryImportPreviewRow row,
+    required InventoryImportPreviewState state,
+    required ColorScheme colorScheme,
+    required ThemeData theme,
+  }) {
+    final isColSelected = col.isMandatory ||
+        state.selectedColumnKeys.contains(col.key);
+    final isCellHighlighted = row.isSelected && isColSelected;
+    final valStr = col.getValue(row);
 
+    return DataCell(
+      Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 8,
+          vertical: 4,
+        ),
+        decoration: BoxDecoration(
+          color: isCellHighlighted
+              ? colorScheme.primaryContainer.withValues(alpha: 0.35)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(4),
+          border: isCellHighlighted
+              ? Border.all(
+                  color: colorScheme.primary.withValues(alpha: 0.3),
+                  width: 1,
+                )
+              : null,
+        ),
+        child: Text(
+          valStr,
+          style: isColSelected
+              ? (isCellHighlighted
+                  ? TextStyle(
+                      color: colorScheme.onPrimaryContainer,
+                      fontWeight: FontWeight.w600,
+                    )
+                  : null)
+              : TextStyle(
+                  color: theme.disabledColor,
+                  fontStyle: FontStyle.italic,
+                  decoration: TextDecoration.lineThrough,
+                ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    );
+  }
+}
 class _ResultView extends StatefulWidget {
   const _ResultView({required this.result});
 
@@ -1384,8 +1569,14 @@ class _ResultViewState extends State<_ResultView> {
                   const SizedBox(height: 32),
                   FilledButton(
                     key: const Key('inventory_import_done_button'),
-                    onPressed: () => cubit.backToFileSelection(),
+                    onPressed: () => Navigator.of(context).pop(
+                      result.successCount > 0,
+                    ),
                     child: const Text('Done'),
+                  ),
+                  TextButton(
+                    onPressed: () => cubit.backToFileSelection(),
+                    child: const Text('Import Another File'),
                   ),
                 ],
               ),

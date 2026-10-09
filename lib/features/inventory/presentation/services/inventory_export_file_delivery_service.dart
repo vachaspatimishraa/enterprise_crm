@@ -279,8 +279,9 @@ class InventoryExportFileDeliveryService {
         extension: 'csv',
         dialogTitle: 'Save Inventory Import Error Report',
       );
-      if (_isWeb)
+      if (_isWeb) {
         return const InventoryExportDeliveryResult.downloadInitiated();
+      }
       if (uri == null) {
         return const InventoryExportDeliveryResult.cancelled(
           message: 'User cancelled error report saving.',

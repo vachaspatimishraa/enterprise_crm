@@ -93,6 +93,46 @@ void main() {
     expect(page.totalItems, 2);
   });
 
+  testWidgets('allows optional columns to be selected for the entry grid', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: InventoryBulkEntryScreen(
+          user: admin,
+          repository: MockInventoryRepository(items: [], movements: []),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('inventory_bulk_entry_0_brand')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const Key('inventory_bulk_entry_column_selector')),
+    );
+    await tester.pumpAndSettle();
+
+    final brandToggle = find.byKey(
+      const Key('inventory_bulk_entry_column_brand'),
+    );
+    expect(brandToggle, findsOneWidget);
+    await tester.tap(brandToggle);
+    await tester.tap(
+      find.byKey(const Key('inventory_bulk_entry_column_selector_done')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('inventory_bulk_entry_0_brand')), findsNothing);
+    expect(
+      find.byKey(const Key('inventory_bulk_entry_0_name')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('inventory_bulk_entry_0_sku')), findsOneWidget);
+  });
+
   testWidgets('blocks users without inventory create permission', (
     tester,
   ) async {

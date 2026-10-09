@@ -180,6 +180,13 @@ void main() {
       expect(cubit.state, isA<InventoryImportMappingState>());
       var mappingState = cubit.state as InventoryImportMappingState;
       expect(mappingState.availableColumns.length, 3);
+      expect(mappingState.mapping.nameColumnIndex, 0);
+      expect(mappingState.mapping.skuColumnIndex, 1);
+      expect(mappingState.mapping.isValid, isTrue);
+
+      // Clear Name mapping to test missing required field validation
+      cubit.setFieldMapping(InventoryImportField.name, null);
+      mappingState = cubit.state as InventoryImportMappingState;
       expect(mappingState.mapping.isValid, isFalse);
 
       // Try confirming mapping before required fields are set

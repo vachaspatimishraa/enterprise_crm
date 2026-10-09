@@ -7,6 +7,7 @@ import '../../../auth/presentation/bloc/auth_state.dart';
 import '../../data/repositories/mock_inventory_repository.dart';
 import '../../domain/entities/custom_field_definition.dart';
 import '../../domain/entities/inventory_export_artifact.dart';
+import '../../domain/entities/inventory_item_summary.dart';
 import '../../domain/entities/inventory_export_fields.dart';
 import '../../domain/entities/inventory_field_metadata.dart';
 import '../../domain/entities/inventory_query.dart';
@@ -96,6 +97,11 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   List<CustomFieldDefinition> _customDefinitions = [];
   PdfLayoutOrientation _selectedPdfOrientation = PdfLayoutOrientation.auto;
 
+  Set<String> _selectedItemIds = {};
+  List<InventoryItemSummary> _selectableItems = [];
+  bool _loadingSelectableItems = false;
+  String? _selectableItemsError;
+
   bool _isDelivering = false;
   String? _deliveryFeedback;
   bool _isDeliverySuccess = false;
@@ -153,6 +159,13 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
       _selectedFormat = InventoryExportFormat.pdf;
     }
 
+    // Initialize selected items and selectable items
+    if (widget.selectedItemIds != null && widget.selectedItemIds!.isNotEmpty) {
+      _selectedItemIds = Set<String>.from(widget.selectedItemIds!);
+      _selectedScope = InventoryExportScope.selected;
+      _loadSelectableItems();
+    }
+
     // Initialize custom columns with permitted standard fields
     _initPermittedColumns(activeUser);
 
@@ -182,6 +195,31 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
       _cubit.close();
     }
     super.dispose();
+  }
+
+  Future<void> _loadSelectableItems() async {
+    if (_loadingSelectableItems) return;
+    setState(() {
+      _loadingSelectableItems = true;
+      _selectableItemsError = null;
+    });
+    try {
+      final items = await InventoryExportDataLoader(widget.repository)
+          .loadAllItems();
+      if (mounted) {
+        setState(() {
+          _selectableItems = items;
+          _loadingSelectableItems = false;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _loadingSelectableItems = false;
+          _selectableItemsError = 'Could not load all inventory rows: $error';
+        });
+      }
+    }
   }
 
   void _invalidatePreparedState() {
@@ -218,7 +256,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
       preset: _selectedPreset,
       columns: effectiveColumns,
       query: widget.currentQuery,
-      selectedItemIds: widget.selectedItemIds,
+      selectedItemIds: _selectedItemIds,
       customFieldDefinitions: _customDefinitions,
       orientation: _selectedPdfOrientation,
     );
@@ -287,8 +325,10 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
           final isPdf = _selectedFormat == InventoryExportFormat.pdf;
           final isCustomPreset = _selectedPreset == InventoryExportPreset.custom;
 
-          final hasSelectedItems = widget.selectedItemIds != null && widget.selectedItemIds!.isNotEmpty;
-          final selectedScopeValid = _selectedScope != InventoryExportScope.selected || hasSelectedItems;
+          final hasSelectedItems = _selectedItemIds.isNotEmpty;
+          final selectedScopeValid = _selectedScope != InventoryExportScope.selected ||
+              (hasSelectedItems && !_loadingSelectableItems &&
+                  _selectableItemsError == null);
           final columnsValid = isPdf || !isCustomPreset || _selectedColumns.isNotEmpty;
 
           final canSubmit = !isBusy && _selectedFormat != null && canSelected && selectedScopeValid && columnsValid;
@@ -372,7 +412,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                               value: InventoryExportFormat.pdf,
                               enabled: !isBusy && canPdf,
                               title: const Text('PDF (.pdf)'),
-                              subtitle: const Text('Printable report with the same three columns.'),
+                              subtitle: const Text('Printable report with selected columns.'),
                               dense: true,
                               visualDensity: VisualDensity.compact,
                               contentPadding: EdgeInsets.zero,
@@ -408,6 +448,9 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                                 _selectedScope = s;
                                 _invalidatePreparedState();
                               });
+                              if (s == InventoryExportScope.selected && _selectableItems.isEmpty) {
+                                _loadSelectableItems();
+                              }
                             }
                           },
                           child: Column(
@@ -442,7 +485,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                                 value: InventoryExportScope.selected,
                                 enabled: !isBusy,
                                 title: Text(
-                                  'Selected Records (${widget.selectedItemIds?.length ?? 0} items)',
+                                  'Selected Records (${_selectedItemIds.length} items)',
                                 ),
                                 subtitle: const Text('Export only currently selected items.'),
                                 dense: true,
@@ -452,7 +495,83 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                             ],
                           ),
                         ),
-
+                        if (_selectedScope == InventoryExportScope.selected) ...[
+                          const SizedBox(height: 8),
+                          if (_loadingSelectableItems)
+                            const LinearProgressIndicator(),
+                          if (_selectableItemsError != null)
+                            Text(_selectableItemsError!,
+                                style: TextStyle(color: colorScheme.error)),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                'Selected: ${_selectedItemIds.length} / ${_selectableItems.length} rows',
+                                key: const Key('inventory_export_rows_counter'),
+                                style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                              TextButton(
+                                key: const Key('inventory_export_select_all_rows'),
+                                onPressed: isBusy
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _selectedItemIds = _selectableItems.map((e) => e.item.id).toSet();
+                                          _invalidatePreparedState();
+                                        });
+                                      },
+                                child: const Text('Select All Rows'),
+                              ),
+                              TextButton(
+                                key: const Key('inventory_export_deselect_all_rows'),
+                                onPressed: isBusy
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _selectedItemIds.clear();
+                                          _invalidatePreparedState();
+                                        });
+                                      },
+                                child: const Text('Deselect All Rows'),
+                              ),
+                            ],
+                          ),
+                          if (_selectableItems.isNotEmpty)
+                            Container(
+                              decoration: BoxDecoration(
+                                border: Border.all(color: colorScheme.outlineVariant),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  for (final summary in _selectableItems)
+                                    CheckboxListTile(
+                                      key: Key('inventory_export_row_${summary.item.id}'),
+                                      value: _selectedItemIds.contains(summary.item.id),
+                                      dense: true,
+                                      visualDensity: VisualDensity.compact,
+                                      title: Text(summary.item.name, overflow: TextOverflow.ellipsis),
+                                      subtitle: Text('SKU: ${summary.item.sku} | Stock: ${summary.quantityOnHand.toInt()}'),
+                                      onChanged: isBusy
+                                          ? null
+                                          : (val) {
+                                              setState(() {
+                                                if (val == true) {
+                                                  _selectedItemIds.add(summary.item.id);
+                                                } else {
+                                                  _selectedItemIds.remove(summary.item.id);
+                                                }
+                                                _invalidatePreparedState();
+                                              });
+                                            },
+                                    ),
+                                ],
+                              ),
+                            ),
+                        ],
                         const SizedBox(height: 16),
                         Text(
                           'Columns & Presets',
@@ -546,7 +665,13 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                           Wrap(
                             spacing: 8,
                             runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
+                              Text(
+                                'Selected: ${_selectedColumns.length} columns',
+                                key: const Key('inventory_export_columns_counter'),
+                                style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
+                              ),
                               TextButton(
                                 key: const Key('inventory_export_select_all_columns'),
                                 onPressed: isBusy

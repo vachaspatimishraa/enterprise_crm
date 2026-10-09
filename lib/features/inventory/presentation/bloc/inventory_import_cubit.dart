@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../auth/domain/entities/current_user.dart';
@@ -39,6 +41,50 @@ class InventoryImportCubit extends Cubit<InventoryImportState> {
   bool _isImporting = false;
 
   Future<void> selectFileAndParse() async => pickAndParseFile();
+
+  Future<void> loadSampleData() async {
+    emit(const InventoryImportLoading('Loading sample inventory file...'));
+    final sampleCsv =
+        'Product Name,SKU,Category,Selling Price,Cost Price,Reorder Level,Description\r\n'
+        'Ultra HD 4K Monitor,SKU-SAMPLE-101,Electronics,349.99,220.00,10,High resolution monitor\r\n'
+        'Mechanical Keyboard RGB,SKU-SAMPLE-102,Electronics,89.50,45.00,15,Tactile blue switches\r\n'
+        'Ergonomic Office Chair,SKU-SAMPLE-103,Stationery,199.00,110.00,5,Mesh high back\r\n'
+        'Wireless Laser Mouse,SKU-SAMPLE-104,Electronics,49.99,25.00,20,Rechargeable Bluetooth\r\n'
+        'Desk Lamp Dimmable,SKU-SAMPLE-105,Stationery,29.99,14.00,8,Touch sensor LED lamp\r\n';
+    final sampleBytes = utf8.encode(sampleCsv);
+    final selectedFile = InventoryImportSelectedFile(
+      name: 'sample_inventory.csv',
+      extension: 'csv',
+      sizeBytes: sampleBytes.length,
+      bytes: Uint8List.fromList(sampleBytes),
+    );
+
+    try {
+      emit(const InventoryImportLoading('Parsing file...'));
+      final parsed = await parser.parse(selectedFile);
+      emit(
+        InventoryImportHeaderSelect(
+          file: parsed,
+          sheetIndex: 0,
+          selectedHeaderRowIndex: 0,
+        ),
+      );
+    } on InventoryImportParseException catch (e) {
+      emit(
+        InventoryImportErrorState(
+          message: e.message,
+          fallbackState: const InventoryImportInitial(),
+        ),
+      );
+    } catch (e) {
+      emit(
+        InventoryImportErrorState(
+          message: 'An unexpected error occurred: $e',
+          fallbackState: const InventoryImportInitial(),
+        ),
+      );
+    }
+  }
 
   Future<void> pickAndParseFile() async {
     emit(const InventoryImportLoading('Selecting file...'));
@@ -146,8 +192,12 @@ class InventoryImportCubit extends Cubit<InventoryImportState> {
         ? sheet.rows[curr.selectedHeaderRowIndex]
         : <String>[];
 
-    final availableColumns = List<String>.generate(headerRow.length, (i) {
-      final text = headerRow[i].trim();
+    final columnCount = sheet.rows.fold<int>(
+      headerRow.length,
+      (count, row) => row.length > count ? row.length : count,
+    );
+    final availableColumns = List<String>.generate(columnCount, (i) {
+      final text = i < headerRow.length ? headerRow[i].trim() : '';
       return text.isEmpty ? 'Column ${i + 1}' : 'Col ${i + 1}: $text';
     });
 
@@ -197,9 +247,18 @@ class InventoryImportCubit extends Cubit<InventoryImportState> {
         mapping: InventoryImportColumnMapping(
           sheetIndex: curr.sheetIndex,
           headerRowIndex: curr.selectedHeaderRowIndex,
-          nameColumnIndex: null,
-          skuColumnIndex: null,
-          openingStockColumnIndex: null,
+          nameColumnIndex: standardMappings.entries
+              .where((entry) => entry.value == InventoryImportField.name)
+              .firstOrNull
+              ?.key,
+          skuColumnIndex: standardMappings.entries
+              .where((entry) => entry.value == InventoryImportField.sku)
+              .firstOrNull
+              ?.key,
+          openingStockColumnIndex: standardMappings.entries
+              .where((entry) => entry.value == InventoryImportField.openingStock)
+              .firstOrNull
+              ?.key,
           standardFieldMappings: Map.unmodifiable(standardMappings),
           customFieldMappings: Map.unmodifiable(customMappings),
         ),
@@ -589,6 +648,21 @@ class InventoryImportCubit extends Cubit<InventoryImportState> {
       return;
     }
 
+    final unhandledColumns = <String>[];
+    for (var index = 0; index < curr.availableColumns.length; index++) {
+      if (!curr.mapping.mappedColumnIndices.contains(index) &&
+          !curr.mapping.skippedColumnIndices.contains(index)) {
+        unhandledColumns.add(curr.availableColumns[index]);
+      }
+    }
+    if (unhandledColumns.isNotEmpty) {
+      emit(curr.copyWith(
+        validationError:
+            'Map or explicitly skip every source column: ${unhandledColumns.join(', ')}',
+      ));
+      return;
+    }
+
     emit(const InventoryImportLoading('Building preview...'));
 
     try {
@@ -610,12 +684,15 @@ class InventoryImportCubit extends Cubit<InventoryImportState> {
         existingItemsBySku: existingItems,
       );
 
+      final initialSelectedCols = _getAllAuthorizedColumnKeys(curr, null);
       emit(
         InventoryImportPreviewState(
           file: curr.file,
           sheetIndex: curr.sheetIndex,
           mapping: curr.mapping,
           preview: preview,
+          selectedColumnKeys: initialSelectedCols,
+          customFieldDefinitions: curr.customFieldDefinitions,
         ),
       );
     } catch (e) {
@@ -626,6 +703,107 @@ class InventoryImportCubit extends Cubit<InventoryImportState> {
         ),
       );
     }
+  }
+
+  Set<String> _getAllAuthorizedColumnKeys(
+    InventoryImportMappingState? mappingState,
+    InventoryImportPreviewState? previewState,
+  ) {
+    final mapping = mappingState?.mapping ?? previewState?.mapping;
+    if (mapping == null) return {'name', 'sku'};
+    final keys = <String>{'name', 'sku'};
+    for (final f in mapping.standardFieldMappings.values) {
+      if (f == InventoryImportField.expectedStockStatus) {
+        continue; // Calculated from ledger stock and item status.
+      }
+      if (f == InventoryImportField.unitCostInr &&
+          !InventoryImportPolicy.canViewCost(user)) {
+        continue;
+      }
+      if (f == InventoryImportField.supplier &&
+          !InventoryImportPolicy.canViewSupplier(user)) {
+        continue;
+      }
+      keys.add(f.name);
+    }
+    if (mapping.openingStockColumnIndex != null) {
+      keys.add('openingStock');
+    }
+    final customDefs = [
+      if (mappingState != null) ...mappingState.customFieldDefinitions,
+      if (previewState != null) ...previewState.customFieldDefinitions,
+      ...mapping.stagedCustomFieldDefinitions,
+    ];
+    for (final def in customDefs) {
+      if (mapping.customFieldMappings.containsValue(def.key)) {
+        keys.add('custom_${def.key}');
+      }
+    }
+    return keys;
+  }
+
+  void toggleColumnSelection(String columnKey) {
+    if (state is! InventoryImportPreviewState) return;
+    final curr = state as InventoryImportPreviewState;
+    if (columnKey == 'name' || columnKey == 'sku') return;
+
+    final updated = Set<String>.from(curr.selectedColumnKeys);
+    if (updated.contains(columnKey)) {
+      updated.remove(columnKey);
+    } else {
+      updated.add(columnKey);
+    }
+    emit(curr.copyWith(selectedColumnKeys: Set.unmodifiable(updated)));
+  }
+
+  void selectAllColumns() {
+    if (state is! InventoryImportPreviewState) return;
+    final curr = state as InventoryImportPreviewState;
+    final allCols = _getAllAuthorizedColumnKeys(null, curr);
+    emit(curr.copyWith(selectedColumnKeys: Set.unmodifiable(allCols)));
+  }
+
+  void deselectOptionalColumns() {
+    if (state is! InventoryImportPreviewState) return;
+    final curr = state as InventoryImportPreviewState;
+    emit(curr.copyWith(selectedColumnKeys: const {'name', 'sku'}));
+  }
+
+  void selectAllRows() {
+    selectAllValid();
+  }
+
+  void deselectAllRows() {
+    deselectAll();
+  }
+
+  void selectAll() {
+    if (state is! InventoryImportPreviewState) return;
+    final curr = state as InventoryImportPreviewState;
+    final allCols = _getAllAuthorizedColumnKeys(null, curr);
+    final updatedRows = curr.preview.rows
+        .map((row) => row.isSelectable ? row.copyWith(isSelected: true) : row)
+        .toList(growable: false);
+    emit(
+      curr.copyWith(
+        preview: InventoryImportPreview(rows: updatedRows),
+        selectedColumnKeys: Set.unmodifiable(allCols),
+      ),
+    );
+  }
+
+  void clearSelection() {
+    if (state is! InventoryImportPreviewState) return;
+    final curr = state as InventoryImportPreviewState;
+    final updatedRows = curr.preview.rows
+        .map((row) => row.copyWith(isSelected: false))
+        .toList(growable: false);
+    emit(
+      curr.copyWith(
+        preview: InventoryImportPreview(rows: updatedRows),
+        selectedColumnKeys: const {'name', 'sku'},
+      ),
+    );
   }
 
   void toggleRowSelection(int sourceRowNumber) {
@@ -736,61 +914,69 @@ class InventoryImportCubit extends Cubit<InventoryImportState> {
       final clearOptional =
           curr.mapping.blankValuePolicy == BlankValuePolicy.clearOptional;
 
+      bool isColSelected(String key) => curr.selectedColumnKeys.contains(key);
+
       final selectedInputs = curr.preview.selectedRows
           .map((r) {
             final mv = r.mappedValues;
             final isUpdate = r.action == InventoryImportAction.update;
 
+            final rawCustom = (mv['customFields'] as Map<String, dynamic>?) ?? const {};
+            final filteredCustom = <String, dynamic>{};
+            for (final entry in rawCustom.entries) {
+              if (isColSelected('custom_${entry.key}')) {
+                filteredCustom[entry.key] = entry.value;
+              }
+            }
+
             return InventoryImportRowInput(
               sourceRowNumber: r.sourceRowNumber,
               name: r.name,
               sku: r.sku,
-              openingStock: r.openingStock,
-              category: mv['category'] as String?,
-              brand: mv['brand'] as String?,
-              unit: mv['unit'] as String?,
-              barcode: mv['barcode'] as String?,
-              warehouse: mv['warehouse'] as String?,
-              binLocation: mv['binLocation'] as String?,
-              supplier: mv['supplier'] as String?,
-              unitCostInr: mv['unitCostInr'] as double?,
-              sellingPriceInr: mv['sellingPriceInr'] as double?,
-              reorderLevel: mv['reorderLevel'] as double?,
-              maxStock: mv['maxStock'] as double?,
-              gstPercent: mv['gstPercent'] as double?,
-              batchNumber: mv['batchNumber'] as String?,
-              expiryDate: mv['expiryDate'] as DateTime?,
-              lastRestockedDate: mv['lastRestockedDate'] as DateTime?,
-              isActive: (mv['isActive'] as bool?) ?? true,
-              notes: mv['notes'] as String?,
-              customFields:
-                  (mv['customFields'] as Map<String, dynamic>?) ?? const {},
+              openingStock: isColSelected('openingStock') ? r.openingStock : null,
+              category: isColSelected('category') ? mv['category'] as String? : null,
+              brand: isColSelected('brand') ? mv['brand'] as String? : null,
+              unit: isColSelected('unit') ? mv['unit'] as String? : null,
+              barcode: isColSelected('barcode') ? mv['barcode'] as String? : null,
+              warehouse: isColSelected('warehouse') ? mv['warehouse'] as String? : null,
+              binLocation: isColSelected('binLocation') ? mv['binLocation'] as String? : null,
+              supplier: isColSelected('supplier') ? mv['supplier'] as String? : null,
+              unitCostInr: isColSelected('unitCostInr') ? mv['unitCostInr'] as double? : null,
+              sellingPriceInr: isColSelected('sellingPriceInr') ? mv['sellingPriceInr'] as double? : null,
+              reorderLevel: isColSelected('reorderLevel') ? mv['reorderLevel'] as double? : null,
+              maxStock: isColSelected('maxStock') ? mv['maxStock'] as double? : null,
+              gstPercent: isColSelected('gstPercent') ? mv['gstPercent'] as double? : null,
+              batchNumber: isColSelected('batchNumber') ? mv['batchNumber'] as String? : null,
+              expiryDate: isColSelected('expiryDate') ? mv['expiryDate'] as DateTime? : null,
+              lastRestockedDate: isColSelected('lastRestockedDate') ? mv['lastRestockedDate'] as DateTime? : null,
+              isActive: isColSelected('isActive') ? ((mv['isActive'] as bool?) ?? true) : true,
+              notes: isColSelected('notes') ? mv['notes'] as String? : null,
+              customFields: filteredCustom,
               isUpdate: isUpdate,
               existingItemId: r.existingItemId,
-              clearBarcode: isUpdate && clearOptional && mv['barcode'] == null,
+              clearBarcode: isUpdate && clearOptional && isColSelected('barcode') && mv['barcode'] == null,
               clearSupplier:
-                  isUpdate && clearOptional && mv['supplier'] == null,
+                  isUpdate && clearOptional && isColSelected('supplier') && mv['supplier'] == null,
               clearUnitCost:
-                  isUpdate && clearOptional && mv['unitCostInr'] == null,
-              clearNotes: isUpdate && clearOptional && mv['notes'] == null,
+                  isUpdate && clearOptional && isColSelected('unitCostInr') && mv['unitCostInr'] == null,
+              clearNotes: isUpdate && clearOptional && isColSelected('notes') && mv['notes'] == null,
               clearBatchNumber:
-                  isUpdate && clearOptional && mv['batchNumber'] == null,
+                  isUpdate && clearOptional && isColSelected('batchNumber') && mv['batchNumber'] == null,
               clearExpiryDate:
-                  isUpdate && clearOptional && mv['expiryDate'] == null,
+                  isUpdate && clearOptional && isColSelected('expiryDate') && mv['expiryDate'] == null,
               clearLastRestockedDate:
-                  isUpdate && clearOptional && mv['lastRestockedDate'] == null,
+                  isUpdate && clearOptional && isColSelected('lastRestockedDate') && mv['lastRestockedDate'] == null,
               clearBinLocation:
-                  isUpdate && clearOptional && mv['binLocation'] == null,
+                  isUpdate && clearOptional && isColSelected('binLocation') && mv['binLocation'] == null,
               clearReorderLevel:
-                  isUpdate && clearOptional && mv['reorderLevel'] == null,
+                  isUpdate && clearOptional && isColSelected('reorderLevel') && mv['reorderLevel'] == null,
               clearMaxStock:
-                  isUpdate && clearOptional && mv['maxStock'] == null,
+                  isUpdate && clearOptional && isColSelected('maxStock') && mv['maxStock'] == null,
               clearGstPercent:
-                  isUpdate && clearOptional && mv['gstPercent'] == null,
+                  isUpdate && clearOptional && isColSelected('gstPercent') && mv['gstPercent'] == null,
             );
           })
           .toList(growable: false);
-
       final request = InventoryImportRequest(
         performedByUserId: user.id,
         rows: selectedInputs,

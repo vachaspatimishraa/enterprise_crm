@@ -543,7 +543,7 @@ class _CreateInventoryItemViewState extends State<_CreateInventoryItemView> {
                                     key: const Key('inventory_form_category'),
                                     initialValue: _category,
                                     decoration: const InputDecoration(
-                                      labelText: 'Category *',
+                                      labelText: 'Category (optional)',
                                       prefixIcon: Icon(Icons.category_outlined),
                                       border: OutlineInputBorder(),
                                     ),
@@ -578,7 +578,7 @@ class _CreateInventoryItemViewState extends State<_CreateInventoryItemView> {
                               key: const Key('inventory_form_category'),
                               initialValue: _category,
                               decoration: const InputDecoration(
-                                labelText: 'Category *',
+                                labelText: 'Category (optional)',
                                 prefixIcon: Icon(Icons.category_outlined),
                                 border: OutlineInputBorder(),
                               ),
@@ -613,7 +613,7 @@ class _CreateInventoryItemViewState extends State<_CreateInventoryItemView> {
                                     key: const Key('inventory_form_unit'),
                                     initialValue: _unit,
                                     decoration: const InputDecoration(
-                                      labelText: 'Unit of Measure *',
+                                      labelText: 'Unit of Measure (optional)',
                                       prefixIcon: Icon(Icons.straighten_outlined),
                                       border: OutlineInputBorder(),
                                     ),
@@ -648,7 +648,7 @@ class _CreateInventoryItemViewState extends State<_CreateInventoryItemView> {
                               key: const Key('inventory_form_unit'),
                               initialValue: _unit,
                               decoration: const InputDecoration(
-                                labelText: 'Unit of Measure *',
+                                labelText: 'Unit of Measure (optional)',
                                 prefixIcon: Icon(Icons.straighten_outlined),
                                 border: OutlineInputBorder(),
                               ),
@@ -691,7 +691,7 @@ class _CreateInventoryItemViewState extends State<_CreateInventoryItemView> {
                                     key: const Key('inventory_form_warehouse'),
                                     initialValue: _warehouse,
                                     decoration: const InputDecoration(
-                                      labelText: 'Warehouse *',
+                                      labelText: 'Warehouse (optional)',
                                       prefixIcon: Icon(Icons.store_mall_directory_outlined),
                                       border: OutlineInputBorder(),
                                     ),
@@ -726,7 +726,7 @@ class _CreateInventoryItemViewState extends State<_CreateInventoryItemView> {
                               key: const Key('inventory_form_warehouse'),
                               initialValue: _warehouse,
                               decoration: const InputDecoration(
-                                labelText: 'Warehouse *',
+                                labelText: 'Warehouse (optional)',
                                 prefixIcon: Icon(Icons.store_mall_directory_outlined),
                                 border: OutlineInputBorder(),
                               ),

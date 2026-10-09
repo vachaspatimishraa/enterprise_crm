@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:excel/excel.dart';
 
 import '../../domain/entities/custom_field_definition.dart';
@@ -48,8 +50,10 @@ class InventoryXlsxSerializer {
           ? columns
           : InventoryExportFields.legacyHeaders;
 
-      final effectiveIsLegacy = isLegacy ||
-          (columns == null && effectiveColumns == InventoryExportFields.legacyHeaders);
+      final effectiveIsLegacy =
+          isLegacy ||
+          (columns == null &&
+              effectiveColumns == InventoryExportFields.legacyHeaders);
 
       final headerCells = effectiveColumns
           .map<CellValue>(
@@ -96,11 +100,7 @@ class InventoryXlsxSerializer {
             rowCells.add(BoolCellValue(val));
           } else if (val is DateTime) {
             rowCells.add(
-              DateCellValue(
-                year: val.year,
-                month: val.month,
-                day: val.day,
-              ),
+              DateCellValue(year: val.year, month: val.month, day: val.day),
             );
           } else {
             rowCells.add(TextCellValue(val.toString()));
@@ -117,7 +117,42 @@ class InventoryXlsxSerializer {
         );
       }
 
-      return Uint8List.fromList(bytes);
+      // excel 4.0.6 leaves the worksheet dimension at A1 even after rows are
+      // appended. Readers that trust this OOXML range (including openpyxl's
+      // streaming reader) then see only the first cell of an otherwise full
+      // workbook. Correct the range before offering the file for download.
+      final archive = ZipDecoder().decodeBytes(bytes);
+      const worksheetPath = 'xl/worksheets/sheet1.xml';
+      final worksheet = archive.findFile(worksheetPath);
+      if (worksheet == null) {
+        throw const InventoryXlsxSerializerException(
+          'Encoded workbook is missing its inventory worksheet',
+        );
+      }
+      worksheet.decompress();
+      final xml = utf8.decode(worksheet.content as List<int>);
+      final dimension =
+          'A1:${_columnLabel(effectiveColumns.length)}${items.length + 1}';
+      final updatedXml = xml.replaceFirst(
+        RegExp(r'<dimension ref="[^"]*"\s*/>'),
+        '<dimension ref="$dimension"/>',
+      );
+      if (updatedXml == xml) {
+        throw const InventoryXlsxSerializerException(
+          'Encoded workbook has no worksheet dimension',
+        );
+      }
+      final updatedBytes = utf8.encode(updatedXml);
+      archive.addFile(
+        ArchiveFile(worksheetPath, updatedBytes.length, updatedBytes),
+      );
+      final corrected = ZipEncoder().encode(archive);
+      if (corrected == null) {
+        throw const InventoryXlsxSerializerException(
+          'Failed to finalize Excel workbook',
+        );
+      }
+      return Uint8List.fromList(corrected);
     } on InventoryXlsxSerializerException {
       rethrow;
     } catch (e) {
@@ -125,5 +160,16 @@ class InventoryXlsxSerializer {
         'Failed to serialize XLSX workbook: $e',
       );
     }
+  }
+
+  String _columnLabel(int count) {
+    var index = count;
+    var label = '';
+    while (index > 0) {
+      index--;
+      label = String.fromCharCode(65 + index % 26) + label;
+      index ~/= 26;
+    }
+    return label;
   }
 }

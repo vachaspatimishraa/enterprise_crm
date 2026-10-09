@@ -79,11 +79,14 @@ class _InventoryBulkEntryScreenState extends State<InventoryBulkEntryScreen> {
 
   final List<_BulkRow> _rows = [];
   List<CustomFieldDefinition> _customDefinitions = const [];
+  final Set<String> _selectedColumnKeys = {
+    for (final column in _standardColumns) column.keyName,
+  };
   bool _isSaving = false;
   InventoryImportResult? _result;
   String? _fatalMessage;
 
-  List<_BulkColumn> get _columns => [
+  List<_BulkColumn> get _allColumns => [
     ..._standardColumns.where((column) {
       if (column.keyName == 'unitCostInr') {
         return InventoryFieldAccessPolicy.canViewCost(widget.user);
@@ -102,7 +105,13 @@ class _InventoryBulkEntryScreenState extends State<InventoryBulkEntryScreen> {
     ),
   ];
 
-  Iterable<String> get _columnKeys => _columns.map((column) => column.keyName);
+  List<_BulkColumn> get _columns => [
+    for (final column in _allColumns)
+      if (_selectedColumnKeys.contains(column.keyName)) column,
+  ];
+
+  Iterable<String> get _columnKeys =>
+      _allColumns.map((column) => column.keyName);
 
   @override
   void initState() {
@@ -128,6 +137,9 @@ class _InventoryBulkEntryScreenState extends State<InventoryBulkEntryScreen> {
       if (!mounted) return;
       setState(() {
         _customDefinitions = definitions;
+        _selectedColumnKeys.addAll(
+          definitions.map((definition) => 'custom:${definition.key}'),
+        );
         for (final row in _rows) {
           for (final key in _columnKeys) {
             row.controllers.putIfAbsent(key, TextEditingController.new);
@@ -147,6 +159,90 @@ class _InventoryBulkEntryScreenState extends State<InventoryBulkEntryScreen> {
     setState(() {
       _rows.removeAt(index).dispose();
     });
+  }
+
+  Future<void> _openColumnSelector() async {
+    final draftSelectedColumnKeys = Set<String>.from(_selectedColumnKeys);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final columns = _allColumns;
+            return AlertDialog(
+              key: const Key('inventory_bulk_entry_column_selector_dialog'),
+              title: const Text('Select columns'),
+              content: SizedBox(
+                width: 440,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Choose the fields shown in the entry grid. Name and SKU are always required.',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      for (final column in columns)
+                        CheckboxListTile(
+                          key: Key(
+                            'inventory_bulk_entry_column_${column.keyName}',
+                          ),
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(column.label),
+                          value: draftSelectedColumnKeys.contains(
+                            column.keyName,
+                          ),
+                          onChanged:
+                              column.keyName == 'name' ||
+                                  column.keyName == 'sku'
+                              ? null
+                              : (selected) {
+                                  setDialogState(() {
+                                    if (selected == true) {
+                                      draftSelectedColumnKeys.add(
+                                        column.keyName,
+                                      );
+                                    } else {
+                                      draftSelectedColumnKeys.remove(
+                                        column.keyName,
+                                      );
+                                    }
+                                  });
+                                },
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  key: const Key('inventory_bulk_entry_column_selector_cancel'),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  key: const Key('inventory_bulk_entry_column_selector_done'),
+                  onPressed: () {
+                    setState(() {
+                      _selectedColumnKeys
+                        ..clear()
+                        ..addAll(draftSelectedColumnKeys);
+                    });
+                    Navigator.of(dialogContext).pop();
+                  },
+                  child: const Text('Apply columns'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (mounted) setState(() {});
   }
 
   bool _hasData(_BulkRow row) =>
@@ -172,10 +268,12 @@ class _InventoryBulkEntryScreenState extends State<InventoryBulkEntryScreen> {
   bool _boolean(String value, List<String> errors) {
     if (value.isEmpty) return true;
     final normalized = value.toLowerCase();
-    if (normalized == 'true' || normalized == '1' || normalized == 'yes')
+    if (normalized == 'true' || normalized == '1' || normalized == 'yes') {
       return true;
-    if (normalized == 'false' || normalized == '0' || normalized == 'no')
+    }
+    if (normalized == 'false' || normalized == '0' || normalized == 'no') {
       return false;
+    }
     errors.add('Is Active must be true or false.');
     return true;
   }
@@ -199,8 +297,9 @@ class _InventoryBulkEntryScreenState extends State<InventoryBulkEntryScreen> {
         return number;
       case CustomFieldDataType.date:
         final date = DateTime.tryParse(raw);
-        if (date == null)
+        if (date == null) {
           errors.add('${definition.label} must use YYYY-MM-DD format.');
+        }
         return date;
       case CustomFieldDataType.boolean:
         return _boolean(raw, errors);
@@ -229,8 +328,9 @@ class _InventoryBulkEntryScreenState extends State<InventoryBulkEntryScreen> {
       'Opening Stock',
       errors,
     );
-    if (openingStock != null && openingStock < 0)
+    if (openingStock != null && openingStock < 0) {
       errors.add('Opening Stock cannot be negative.');
+    }
     if (openingStock != null &&
         openingStock > 0 &&
         !InventoryImportPolicy.canImportWithStock(widget.user)) {
@@ -242,10 +342,12 @@ class _InventoryBulkEntryScreenState extends State<InventoryBulkEntryScreen> {
       errors,
     );
     final maxStock = _number(row.value('maxStock'), 'Max Stock', errors);
-    if (reorderLevel != null && reorderLevel < 0)
+    if (reorderLevel != null && reorderLevel < 0) {
       errors.add('Reorder Level cannot be negative.');
-    if (maxStock != null && maxStock < 0)
+    }
+    if (maxStock != null && maxStock < 0) {
       errors.add('Max Stock cannot be negative.');
+    }
     if (maxStock != null && reorderLevel != null && maxStock < reorderLevel) {
       errors.add('Max Stock cannot be lower than Reorder Level.');
     }
@@ -256,12 +358,15 @@ class _InventoryBulkEntryScreenState extends State<InventoryBulkEntryScreen> {
       errors,
     );
     final gst = _number(row.value('gstPercent'), 'GST', errors);
-    if (unitCost != null && unitCost < 0)
+    if (unitCost != null && unitCost < 0) {
       errors.add('Unit Cost cannot be negative.');
-    if (sellingPrice != null && sellingPrice < 0)
+    }
+    if (sellingPrice != null && sellingPrice < 0) {
       errors.add('Selling Price cannot be negative.');
-    if (gst != null && (gst < 0 || gst > 100))
+    }
+    if (gst != null && (gst < 0 || gst > 100)) {
       errors.add('GST must be between 0 and 100.');
+    }
     final expiry = _date(row.value('expiryDate'), 'Expiry Date', errors);
     final restocked = _date(
       row.value('lastRestockedDate'),
@@ -274,8 +379,9 @@ class _InventoryBulkEntryScreenState extends State<InventoryBulkEntryScreen> {
     for (final definition in _customDefinitions) {
       final value = _customValue(row, definition, errors);
       if (value != null) customFields[definition.key] = value;
-      if (definition.isRequired && value == null)
+      if (definition.isRequired && value == null) {
         errors.add('${definition.label} is required.');
+      }
     }
 
     if (errors.isNotEmpty) {
@@ -407,15 +513,31 @@ class _InventoryBulkEntryScreenState extends State<InventoryBulkEntryScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Text(
-                    'Enter multiple item records in a spreadsheet-style grid. SKU and Product Name are required; stock is recorded through the movement ledger.',
-                    style: theme.textTheme.bodyMedium,
-                  ),
+                Text(
+                  'Enter multiple item records in a spreadsheet-style grid. SKU and Product Name are required; stock is recorded through the movement ledger.',
+                  style: theme.textTheme.bodyMedium,
                 ),
-                Text('${_rows.length} rows', style: theme.textTheme.labelLarge),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      key: const Key('inventory_bulk_entry_column_selector'),
+                      onPressed: _isSaving ? null : _openColumnSelector,
+                      icon: const Icon(Icons.view_column_outlined),
+                      label: Text(
+                        'Columns (${_columns.length}/${_allColumns.length})',
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${_rows.length} rows',
+                      style: theme.textTheme.labelLarge,
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
