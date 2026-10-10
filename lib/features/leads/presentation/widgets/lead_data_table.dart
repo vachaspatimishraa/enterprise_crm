@@ -10,6 +10,7 @@ class LeadDataTable extends StatelessWidget {
   final void Function(Lead lead)? onToggleSelect;
   final void Function(bool? selectAll)? onSelectAll;
   final bool allEligibleSelected;
+  final ScrollController? horizontalScrollController;
 
   const LeadDataTable({
     super.key,
@@ -20,6 +21,7 @@ class LeadDataTable extends StatelessWidget {
     this.onToggleSelect,
     this.onSelectAll,
     this.allEligibleSelected = false,
+    this.horizontalScrollController,
   });
 
   @override
@@ -27,7 +29,8 @@ class LeadDataTable extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return SingleChildScrollView(
+    Widget content = SingleChildScrollView(
+      controller: horizontalScrollController,
       scrollDirection: Axis.horizontal,
       child: SingleChildScrollView(
         scrollDirection: Axis.vertical,
@@ -183,5 +186,17 @@ class LeadDataTable extends StatelessWidget {
         ),
       ),
     );
+
+    if (horizontalScrollController != null) {
+      return Scrollbar(
+        controller: horizontalScrollController,
+        thumbVisibility: true,
+        trackVisibility: true,
+        interactive: true,
+        child: content,
+      );
+    }
+
+    return content;
   }
 }
