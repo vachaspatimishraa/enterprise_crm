@@ -3,6 +3,7 @@ import 'package:enterprise_crm/features/auth/domain/entities/crm_module.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
 import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dart';
 import 'package:enterprise_crm/features/inventory/data/repositories/mock_inventory_repository.dart';
+import 'package:enterprise_crm/features/inventory/domain/entities/inventory_item.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/create_inventory_item_input.dart';
 import 'package:enterprise_crm/features/inventory/domain/inputs/update_inventory_item_input.dart';
 import 'package:enterprise_crm/features/inventory/presentation/screens/inventory_item_details_screen.dart';
@@ -343,5 +344,66 @@ void main() {
       expect(find.text('Item not found'), findsOneWidget);
       expect(find.text('Back to Inventory'), findsOneWidget);
     });
+    testWidgets(
+      'renders all comprehensive fields saved by user (pricing, warehouse, tracking, custom fields)',
+      (tester) async {
+        final repo = MockInventoryRepository(
+          items: [
+            InventoryItem(
+              id: 'item_comp',
+              name: 'Enterprise Router Pro',
+              sku: 'ROUTER-99',
+              category: 'Electronics',
+              brand: 'Cisco',
+              unit: 'box',
+              barcode: '8901234567890',
+              warehouse: 'Main Warehouse',
+              binLocation: 'Rack-B2',
+              supplier: 'Tech Supplies Ltd',
+              unitCostInr: 12500.0,
+              sellingPriceInr: 18999.0,
+              gstPercent: 18.0,
+              reorderLevel: 5.0,
+              maxStock: 50.0,
+              batchNumber: 'BATCH-2026-X',
+              expiryDate: DateTime(2028, 12, 31),
+              lastRestockedDate: DateTime(2026, 3, 15),
+              isActive: true,
+              notes: 'High reliability core router',
+              customFields: {'warranty_period': '5 Years'},
+            ),
+          ],
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: InventoryItemDetailsScreen(
+              user: adminUser,
+              repository: repo,
+              itemId: 'item_comp',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Enterprise Router Pro'), findsOneWidget);
+        expect(find.text('SKU: ROUTER-99'), findsOneWidget);
+        expect(find.text('Electronics'), findsOneWidget);
+        expect(find.text('Cisco'), findsOneWidget);
+        expect(find.text('box'), findsOneWidget);
+        expect(find.text('8901234567890'), findsOneWidget);
+        expect(find.text('Main Warehouse'), findsOneWidget);
+        expect(find.text('Rack-B2'), findsOneWidget);
+        expect(find.text('Tech Supplies Ltd'), findsOneWidget);
+        expect(find.text('₹12500.00'), findsOneWidget);
+        expect(find.text('₹18999.00'), findsOneWidget);
+        expect(find.text('18%'), findsOneWidget);
+        expect(find.text('BATCH-2026-X'), findsOneWidget);
+        expect(find.text('2028-12-31'), findsOneWidget);
+        expect(find.text('2026-03-15'), findsOneWidget);
+        expect(find.text('High reliability core router'), findsOneWidget);
+        expect(find.text('5 Years'), findsOneWidget);
+      },
+    );
   });
 }
