@@ -1,3 +1,5 @@
+import '../../../auth/domain/entities/current_user.dart';
+import '../policies/inventory_export_policy.dart';
 import 'custom_field_definition.dart';
 import 'inventory_item_summary.dart';
 
@@ -143,6 +145,13 @@ abstract final class InventoryExportFields {
       }
     }
 
+    if (key.contains('_')) {
+      return key
+          .split('_')
+          .map((part) => part.isNotEmpty ? '${part[0].toUpperCase()}${part.substring(1)}' : '')
+          .join(' ');
+    }
+
     return key;
   }
 
@@ -196,10 +205,11 @@ abstract final class InventoryExportFields {
     }
   }
 
-  /// Validates whether [key] is recognized as a standard or registered custom field.
+  /// Validates whether [key] is recognized as a standard, registered custom, or discovered custom field.
   static bool isValidKey(
     String key, {
     List<CustomFieldDefinition>? customFieldDefinitions,
+    Iterable<String>? extraCustomKeys,
   }) {
     final norm = normalizeKey(key);
     if (standardFieldKeys.contains(norm)) return true;
@@ -211,7 +221,48 @@ abstract final class InventoryExportFields {
         }
       }
     }
+
+    if (extraCustomKeys != null) {
+      for (final k in extraCustomKeys) {
+        if (k.toLowerCase() == norm || normalizeKey(k) == norm) {
+          return true;
+        }
+      }
+    }
     return false;
+  }
+
+  /// Resolves all standard and custom field keys permitted for [user].
+  static List<String> getAllPermittedColumns({
+    required CurrentUser? user,
+    List<CustomFieldDefinition>? customFieldDefinitions,
+    Iterable<String>? extraCustomKeys,
+  }) {
+    final list = <String>[];
+    for (final key in standardFieldKeys) {
+      if (InventoryExportPolicy.isRestrictedField(key)) {
+        if (InventoryExportPolicy.canExportField(user, key)) {
+          list.add(key);
+        }
+      } else {
+        list.add(key);
+      }
+    }
+    if (customFieldDefinitions != null) {
+      for (final def in customFieldDefinitions) {
+        if (!list.contains(def.key)) {
+          list.add(def.key);
+        }
+      }
+    }
+    if (extraCustomKeys != null) {
+      for (final k in extraCustomKeys) {
+        if (!list.contains(k) && !list.contains(normalizeKey(k))) {
+          list.add(k);
+        }
+      }
+    }
+    return list;
   }
 
   /// Extracts the typed value of [key] from an [InventoryItemSummary].

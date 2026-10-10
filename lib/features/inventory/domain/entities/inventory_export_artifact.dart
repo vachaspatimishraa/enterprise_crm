@@ -16,6 +16,7 @@ enum InventoryExportScope {
 
 /// Configuration presets for inventory export columns.
 enum InventoryExportPreset {
+  allDetails,
   legacyThreeColumn,
   custom,
 }
@@ -38,7 +39,7 @@ class InventoryExportArtifact {
     DateTime? generatedAt,
     List<String>? columns,
     this.scope = InventoryExportScope.all,
-    this.preset = InventoryExportPreset.legacyThreeColumn,
+    this.preset = InventoryExportPreset.allDetails,
   })  : bytes = Uint8List.fromList(bytes),
         generatedAt = generatedAt ?? DateTime.now(),
         columns = List.unmodifiable(columns ?? const ['Item Name', 'SKU', 'Current Quantity']);

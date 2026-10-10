@@ -118,7 +118,9 @@ void main() {
       );
 
       final csvText = String.fromCharCodes(artifact.bytes);
-      expect(csvText, contains('Trackball Mouse,MOU-TRK-01,25'));
+      expect(csvText, contains('MOU-TRK-01'));
+      expect(csvText, contains('Trackball Mouse'));
+      expect(csvText, contains('25'));
     });
 
     test('Flow 4: Import to Listing adds new items and reflects in query', () async {

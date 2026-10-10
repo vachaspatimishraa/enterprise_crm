@@ -30,7 +30,7 @@ class InventoryExportCubit extends Cubit<InventoryExportState> {
   Future<void> export(
     InventoryExportFormat format, {
     InventoryExportScope scope = InventoryExportScope.all,
-    InventoryExportPreset preset = InventoryExportPreset.legacyThreeColumn,
+    InventoryExportPreset preset = InventoryExportPreset.allDetails,
     List<String>? columns,
     InventoryQuery? query,
     Set<String>? selectedItemIds,
@@ -51,8 +51,8 @@ class InventoryExportCubit extends Cubit<InventoryExportState> {
       return;
     }
 
-    // Immediate field-level check for custom column selection
-    if (columns != null && preset == InventoryExportPreset.custom) {
+    // Immediate field-level check for custom or allDetails column selection
+    if (columns != null && (preset == InventoryExportPreset.custom || preset == InventoryExportPreset.allDetails)) {
       for (final col in columns) {
         if (InventoryExportPolicy.isRestrictedField(col) &&
             !InventoryExportPolicy.canExportField(initialUser, col)) {

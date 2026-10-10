@@ -30,6 +30,7 @@ Future<bool?> showInventoryExportDialog({
   InventoryExportFileDeliveryService? fileDeliveryService,
   InventoryQuery? currentQuery,
   Set<String>? selectedItemIds,
+  InventoryExportPreset initialPreset = InventoryExportPreset.allDetails,
 }) {
   CurrentUser? Function()? effectiveProvider = currentUserProvider;
   if (effectiveProvider == null) {
@@ -54,6 +55,7 @@ Future<bool?> showInventoryExportDialog({
       fileDeliveryService: fileDeliveryService,
       currentQuery: currentQuery,
       selectedItemIds: selectedItemIds,
+      initialPreset: initialPreset,
     ),
   );
 }
@@ -67,6 +69,7 @@ class InventoryExportDialog extends StatefulWidget {
   final InventoryExportFileDeliveryService? fileDeliveryService;
   final InventoryQuery? currentQuery;
   final Set<String>? selectedItemIds;
+  final InventoryExportPreset initialPreset;
 
   const InventoryExportDialog({
     super.key,
@@ -77,6 +80,7 @@ class InventoryExportDialog extends StatefulWidget {
     this.fileDeliveryService,
     this.currentQuery,
     this.selectedItemIds,
+    this.initialPreset = InventoryExportPreset.allDetails,
   });
 
   @override
@@ -91,7 +95,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
 
   String? _initiatingUserId;
   InventoryExportFormat? _selectedFormat;
-  InventoryExportPreset _selectedPreset = InventoryExportPreset.legacyThreeColumn;
+  late InventoryExportPreset _selectedPreset;
   InventoryExportScope _selectedScope = InventoryExportScope.all;
   List<String> _selectedColumns = [];
   List<CustomFieldDefinition> _customDefinitions = [];
@@ -117,6 +121,7 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
   @override
   void initState() {
     super.initState();
+    _selectedPreset = widget.initialPreset;
     _currentUserProvider = widget.currentUserProvider ??
         () {
           try {
@@ -176,6 +181,11 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         if (mounted) {
           setState(() {
             _customDefinitions = defs;
+            for (final def in defs) {
+              if (!_selectedColumns.contains(def.key)) {
+                _selectedColumns.add(def.key);
+              }
+            }
           });
         }
       });
@@ -187,6 +197,31 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
         .where((f) => f.canView(user))
         .map((f) => f.key)
         .toList();
+    for (final def in _customDefinitions) {
+      if (!_selectedColumns.contains(def.key)) {
+        _selectedColumns.add(def.key);
+      }
+    }
+  }
+
+  List<String> _getAllPermittedColumns(CurrentUser? user) {
+    final list = <String>[];
+    for (final field in InventoryFieldMetadata.allStandardFields) {
+      if (field.canView(user)) {
+        list.add(field.key);
+      }
+    }
+    for (final def in _customDefinitions) {
+      if (!list.contains(def.key)) {
+        list.add(def.key);
+      }
+    }
+    for (final col in _selectedColumns) {
+      if (!list.contains(col)) {
+        list.add(col);
+      }
+    }
+    return list;
   }
 
   @override
@@ -246,9 +281,11 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
       _isDeliverySuccess = false;
     });
 
-    final effectiveColumns = _selectedPreset == InventoryExportPreset.custom
-        ? _selectedColumns
-        : InventoryExportFields.legacyHeaders;
+    final effectiveColumns = switch (_selectedPreset) {
+      InventoryExportPreset.allDetails => _getAllPermittedColumns(activeUser),
+      InventoryExportPreset.custom => _selectedColumns,
+      InventoryExportPreset.legacyThreeColumn => InventoryExportFields.legacyHeaders,
+    };
 
     _cubit.export(
       format,
@@ -592,14 +629,12 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                           child: Column(
                             children: [
                               RadioListTile<InventoryExportPreset>(
-                                key: const Key('inventory_export_preset_legacy'),
-                                value: InventoryExportPreset.legacyThreeColumn,
+                                key: const Key('inventory_export_preset_all'),
+                                value: InventoryExportPreset.allDetails,
                                 enabled: !isBusy,
-                                title: const Text('Legacy Three-Column Preset'),
-                                subtitle: Text(
-                                  isPdf
-                                      ? 'Printable report with frozen three columns (Item Name, SKU, Current Quantity).'
-                                      : 'Item Name, SKU, Current Quantity',
+                                title: const Text('All Details (Complete Inventory)'),
+                                subtitle: const Text(
+                                  'Includes all product fields and saved custom attributes.',
                                 ),
                                 dense: true,
                                 visualDensity: VisualDensity.compact,
@@ -612,6 +647,20 @@ class _InventoryExportDialogState extends State<InventoryExportDialog> {
                                 title: const Text('Custom Columns'),
                                 subtitle: Text(
                                   '${_selectedColumns.length} columns selected.',
+                                ),
+                                dense: true,
+                                visualDensity: VisualDensity.compact,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                              RadioListTile<InventoryExportPreset>(
+                                key: const Key('inventory_export_preset_legacy'),
+                                value: InventoryExportPreset.legacyThreeColumn,
+                                enabled: !isBusy,
+                                title: const Text('Legacy Three-Column Preset'),
+                                subtitle: Text(
+                                  isPdf
+                                      ? 'Printable report with frozen three columns (Item Name, SKU, Current Quantity).'
+                                      : 'Item Name, SKU, Current Quantity only',
                                 ),
                                 dense: true,
                                 visualDensity: VisualDensity.compact,

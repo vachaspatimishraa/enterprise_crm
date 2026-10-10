@@ -142,11 +142,19 @@ void main() {
       expect(fileSaver.lastFileName, startsWith('inventory_export_'));
       expect(fileSaver.lastFileName, endsWith('.csv'));
 
-      // Verify CSV content integrity: all 25 active items exported with 3 columns
+      // Verify CSV content integrity: all 25 active items exported with complete details
       final csvText = utf8.decode(fileSaver.lastBytes!);
       final lines = csvText.trim().split('\n');
       expect(lines.length, equals(26)); // Header + 25 rows
-      expect(lines.first.trim(), equals('Item Name,SKU,Current Quantity'));
+      final headerLine = lines.first.trim();
+      expect(headerLine.split(',').length, equals(21));
+      expect(headerLine, contains('Product Name'));
+      expect(headerLine, contains('SKU'));
+      expect(headerLine, contains('Current Quantity'));
+      expect(headerLine, contains('Unit Cost (INR)'));
+      expect(headerLine, contains('Supplier'));
+      expect(headerLine, contains('Selling Price (INR)'));
+      expect(headerLine, contains('Warehouse'));
 
       expect(find.text('Inventory exported successfully.'), findsOneWidget);
     });
@@ -208,10 +216,12 @@ void main() {
       expect(excel.tables.keys, contains('Inventory'));
       final sheet = excel.tables['Inventory']!;
       expect(sheet.maxRows, equals(26)); // Header + 25 rows
-      expect(sheet.maxColumns, equals(3));
-      expect(sheet.rows.first[0]?.value.toString(), equals('Item Name'));
-      expect(sheet.rows.first[1]?.value.toString(), equals('SKU'));
-      expect(sheet.rows.first[2]?.value.toString(), equals('Current Quantity'));
+      expect(sheet.maxColumns, equals(19)); // 19 permitted non-sensitive fields
+      final headers = sheet.rows.first.map((c) => c?.value.toString()).toList();
+      expect(headers, contains('Product Name'));
+      expect(headers, contains('SKU'));
+      expect(headers, contains('Current Quantity'));
+      expect(headers, contains('Warehouse'));
     });
 
     testWidgets('Platform failure shows failure feedback and does not claim success', (tester) async {
@@ -250,6 +260,46 @@ void main() {
       expect(find.text('Inventory exported successfully.'), findsNothing);
       expect(find.byKey(const Key('inventory_export_dialog_delivery_feedback')), findsOneWidget);
       expect(find.textContaining('Disk write failed'), findsOneWidget);
+    });
+
+    testWidgets('Legacy Three-Column preset exports frozen 3 columns when selected', (tester) async {
+      final deliveryService = InventoryExportFileDeliveryService(
+        fileSaver: fileSaver,
+        isWeb: false,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: InventoryWorkspaceScreen(user: adminUser, currentUserProvider: () => adminUser, repository: mockRepo),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final context = tester.element(find.byType(InventoryWorkspaceScreen));
+      showInventoryExportDialog(
+        context: context,
+        user: adminUser,
+        currentUserProvider: () => adminUser,
+        repository: mockRepo,
+        fileDeliveryService: deliveryService,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('inventory_export_format_csv')));
+      await tester.ensureVisible(find.byKey(const Key('inventory_export_preset_legacy')));
+      await tester.tap(find.byKey(const Key('inventory_export_preset_legacy')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_submit_button')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('inventory_export_dialog_download_button')));
+      await tester.pumpAndSettle();
+
+      expect(fileSaver.callCount, equals(1));
+      final csvText = utf8.decode(fileSaver.lastBytes!);
+      final lines = csvText.trim().split('\n');
+      expect(lines.first.trim(), equals('Item Name,SKU,Current Quantity'));
     });
   });
 }

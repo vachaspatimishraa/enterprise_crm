@@ -44,7 +44,7 @@ class InventoryExportService {
     required CurrentUser initialUser,
     required CurrentUser? Function() currentUserProvider,
     InventoryExportScope scope = InventoryExportScope.all,
-    InventoryExportPreset preset = InventoryExportPreset.legacyThreeColumn,
+    InventoryExportPreset preset = InventoryExportPreset.allDetails,
     List<String>? columns,
     InventoryQuery? query,
     Set<String>? selectedItemIds,
@@ -61,9 +61,25 @@ class InventoryExportService {
     final initialUserId = initialUser.id;
 
     // Resolve column list based on preset
-    final List<String> effectiveColumns;
+    List<String> effectiveColumns;
     if (preset == InventoryExportPreset.legacyThreeColumn) {
       effectiveColumns = InventoryExportFields.legacyHeaders;
+    } else if (preset == InventoryExportPreset.allDetails) {
+      final permitted = InventoryExportFields.getAllPermittedColumns(
+        user: initialUser,
+        customFieldDefinitions: customFieldDefinitions,
+        extraCustomKeys: columns,
+      );
+      effectiveColumns = (columns != null && columns.isNotEmpty)
+          ? columns
+              .where((c) =>
+                  permitted.contains(c) ||
+                  permitted.contains(InventoryExportFields.normalizeKey(c)))
+              .toList()
+          : permitted;
+      if (effectiveColumns.isEmpty) {
+        effectiveColumns = permitted;
+      }
     } else {
       if (columns == null || columns.isEmpty) {
         throw const InventoryExportException('No export columns selected.');
@@ -95,6 +111,23 @@ class InventoryExportService {
       query: query,
       selectedItemIds: selectedItemIds,
     );
+
+    // Discover any custom fields saved on items when exporting all details
+    if (preset == InventoryExportPreset.allDetails) {
+      final discoveredCustomKeys = <String>{};
+      for (final s in items) {
+        discoveredCustomKeys.addAll(s.item.customFields.keys);
+      }
+      if (discoveredCustomKeys.isNotEmpty) {
+        final merged = List<String>.from(effectiveColumns);
+        for (final k in discoveredCustomKeys) {
+          if (!merged.contains(k) && !merged.contains(InventoryExportFields.normalizeKey(k))) {
+            merged.add(k);
+          }
+        }
+        effectiveColumns = List.unmodifiable(merged);
+      }
+    }
 
     // 3. Revalidation check after async operation
     final revalidatedUser = currentUserProvider();
