@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -23,7 +24,6 @@ import '../widgets/inventory_pagination_controls.dart';
 import '../../domain/policies/inventory_export_policy.dart';
 import '../widgets/inventory_export_dialog.dart';
 import 'create_inventory_item_screen.dart';
-import 'inventory_bulk_entry_screen.dart';
 import 'inventory_import_screen.dart';
 import 'inventory_item_details_screen.dart';
 
@@ -159,22 +159,6 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
     }
   }
 
-  void _openBulkEntry(BuildContext context) async {
-    final cubit = context.read<InventoryCubit>();
-    final created = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => InventoryBulkEntryScreen(
-          user: widget.user,
-          repository: widget.repository,
-        ),
-      ),
-    );
-    if (created == true && mounted) {
-      _loadPendingDeletions();
-      cubit.refresh();
-    }
-  }
-
   CurrentUser? _resolveCurrentUser([BuildContext? contextOverride]) {
     if (widget.currentUserProvider != null) {
       try {
@@ -285,13 +269,6 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
-          if (InventoryItemAdministrationPolicy.canCreate(widget.user))
-            IconButton(
-              key: const Key('inventory_workspace_bulk_entry_appbar_button'),
-              icon: const Icon(Icons.table_rows_outlined),
-              tooltip: 'Bulk Entry',
-              onPressed: () => _openBulkEntry(context),
-            ),
           IconButton(
             key: const Key('inventory_refresh_button'),
             icon: const Icon(Icons.refresh),
@@ -542,18 +519,6 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
                             onPressed: () => _openCreateItem(context),
                             icon: const Icon(Icons.add, size: 18),
                             label: const Text('Add Item'),
-                          ),
-                        if (canCreate)
-                          OutlinedButton.icon(
-                            key: const Key(
-                              'inventory_workspace_bulk_entry_button',
-                            ),
-                            onPressed: () => _openBulkEntry(context),
-                            icon: const Icon(
-                              Icons.table_rows_outlined,
-                              size: 18,
-                            ),
-                            label: const Text('Bulk Entry'),
                           ),
                       ],
                     ),
@@ -1118,50 +1083,58 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final tableWidget = Scrollbar(
-          controller: _horizontalScrollController,
+        final isAndroidApk = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+        final innerTable = Scrollbar(
+          controller: _verticalScrollController,
           thumbVisibility: true,
           trackVisibility: true,
           interactive: true,
           child: SingleChildScrollView(
-            controller: _horizontalScrollController,
-            scrollDirection: Axis.horizontal,
-            child: Scrollbar(
-              controller: _verticalScrollController,
-              thumbVisibility: true,
-              trackVisibility: true,
-              interactive: true,
-              child: SingleChildScrollView(
-                controller: _verticalScrollController,
-                scrollDirection: Axis.vertical,
-                padding: const EdgeInsets.all(16.0),
-                child: DataTable(
-                  key: const Key('inventory_items_table'),
-                  headingRowColor: WidgetStateProperty.all(const Color(0xFF1A365D)),
-                  headingTextStyle: headerTextStyle,
-                  border: TableBorder.all(
-                    color: colorScheme.outlineVariant.withValues(alpha: 0.4),
-                    width: 1,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  dataRowMinHeight: 48,
-                  dataRowMaxHeight: 56,
-                  columnSpacing: 24,
-                  horizontalMargin: 16,
-                  columns: columns,
-                  rows: rows,
-                ),
+            controller: _verticalScrollController,
+            scrollDirection: Axis.vertical,
+            padding: const EdgeInsets.all(16.0),
+            child: DataTable(
+              key: const Key('inventory_items_table'),
+              headingRowColor: WidgetStateProperty.all(const Color(0xFF1A365D)),
+              headingTextStyle: headerTextStyle,
+              border: TableBorder.all(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+                width: 1,
+                borderRadius: BorderRadius.circular(4),
               ),
+              dataRowMinHeight: 48,
+              dataRowMaxHeight: 56,
+              columnSpacing: 24,
+              horizontalMargin: 16,
+              columns: columns,
+              rows: rows,
             ),
           ),
         );
+
+        final tableWidget = isAndroidApk
+            ? SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: innerTable,
+              )
+            : Scrollbar(
+                controller: _horizontalScrollController,
+                thumbVisibility: true,
+                trackVisibility: true,
+                interactive: true,
+                child: SingleChildScrollView(
+                  controller: _horizontalScrollController,
+                  scrollDirection: Axis.horizontal,
+                  child: innerTable,
+                ),
+              );
 
         if (constraints.maxHeight.isFinite) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(child: tableWidget),
-              _buildHorizontalScrollNavigation(context),
+              if (!isAndroidApk) _buildHorizontalScrollNavigation(context),
             ],
           );
         }
@@ -1171,7 +1144,7 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             tableWidget,
-            _buildHorizontalScrollNavigation(context),
+            if (!isAndroidApk) _buildHorizontalScrollNavigation(context),
           ],
         );
       },
