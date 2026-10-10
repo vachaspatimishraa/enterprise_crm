@@ -24,6 +24,14 @@ import '../features/leads/data/services/lead_export_file_saver.dart';
 import '../features/leads/presentation/screens/lead_list_screen.dart';
 import '../features/calling/domain/repositories/lead_call_activity_repository.dart';
 import '../features/calling/domain/repositories/lead_follow_up_repository.dart';
+import '../features/hr/data/repositories/mock_attendance_repository.dart';
+import '../features/hr/data/repositories/mock_employee_document_repository.dart';
+import '../features/hr/data/repositories/mock_employee_kpi_repository.dart';
+import '../features/hr/data/repositories/mock_employee_repository.dart';
+import '../features/hr/domain/repositories/attendance_repository.dart';
+import '../features/hr/domain/repositories/employee_document_repository.dart';
+import '../features/hr/domain/repositories/employee_kpi_repository.dart';
+import '../features/hr/domain/repositories/employee_repository.dart';
 import '../features/inventory/domain/repositories/inventory_repository.dart';
 import '../features/leads/presentation/services/lead_import_file_picker.dart';
 import '../features/leads/presentation/widgets/lead_export_dialog.dart';
@@ -38,6 +46,10 @@ class CrmApp extends StatefulWidget {
   final UserLeadLinkRepository? userLeadLinkRepository;
   final LeadCallActivityRepository? leadCallActivityRepository;
   final LeadFollowUpRepository? leadFollowUpRepository;
+  final EmployeeRepository? employeeRepository;
+  final EmployeeDocumentRepository? employeeDocumentRepository;
+  final AttendanceRepository? attendanceRepository;
+  final EmployeeKpiRepository? employeeKpiRepository;
   final InventoryRepository? inventoryRepository;
 
   const CrmApp({
@@ -50,6 +62,10 @@ class CrmApp extends StatefulWidget {
     this.userLeadLinkRepository,
     this.leadCallActivityRepository,
     this.leadFollowUpRepository,
+    this.employeeRepository,
+    this.employeeDocumentRepository,
+    this.attendanceRepository,
+    this.employeeKpiRepository,
     this.inventoryRepository,
   }) : assert(
          authRepository == null || userManagementRepository != null,
@@ -80,11 +96,22 @@ class CrmApp extends StatefulWidget {
 
 class _CrmAppState extends State<CrmApp> {
   AuthCubit? _authCubit;
+  late final EmployeeRepository _employeeRepository;
+  late final EmployeeDocumentRepository _employeeDocumentRepository;
+  late final AttendanceRepository _attendanceRepository;
+  late final EmployeeKpiRepository _employeeKpiRepository;
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
     super.initState();
+    _employeeRepository = widget.employeeRepository ?? MockEmployeeRepository();
+    _employeeDocumentRepository =
+        widget.employeeDocumentRepository ?? MockEmployeeDocumentRepository();
+    _attendanceRepository =
+        widget.attendanceRepository ?? MockAttendanceRepository();
+    _employeeKpiRepository =
+        widget.employeeKpiRepository ?? MockEmployeeKpiRepository();
     if (widget.authRepository != null) {
       _authCubit = AuthCubit(widget.authRepository!);
     }
@@ -129,6 +156,10 @@ class _CrmAppState extends State<CrmApp> {
                     onLogout: () => _authCubit!.logout(),
                     inventoryRepository: widget.inventoryRepository!,
                     userManagementRepository: widget.userManagementRepository,
+                    employeeRepository: _employeeRepository,
+                    employeeDocumentRepository: _employeeDocumentRepository,
+                    attendanceRepository: _attendanceRepository,
+                    employeeKpiRepository: _employeeKpiRepository,
                     onOpenLeadManagement: () {
                       _navigatorKey.currentState?.push(
                         MaterialPageRoute(
@@ -150,6 +181,10 @@ class _CrmAppState extends State<CrmApp> {
                     leadRepository: widget.leadRepository,
                     callActivityRepository: widget.leadCallActivityRepository!,
                     leadFollowUpRepository: widget.leadFollowUpRepository!,
+                    employeeRepository: _employeeRepository,
+                    employeeDocumentRepository: _employeeDocumentRepository,
+                    attendanceRepository: _attendanceRepository,
+                    employeeKpiRepository: _employeeKpiRepository,
                     inventoryRepository: widget.inventoryRepository!,
                   );
                 }
@@ -216,6 +251,25 @@ class _CrmAppState extends State<CrmApp> {
     if (widget.leadFollowUpRepository != null) {
       app = RepositoryProvider<LeadFollowUpRepository>.value(
         value: widget.leadFollowUpRepository!,
+        child: app,
+      );
+    }
+
+    if (widget.authRepository != null) {
+      app = RepositoryProvider<EmployeeRepository>.value(
+        value: _employeeRepository,
+        child: app,
+      );
+      app = RepositoryProvider<EmployeeDocumentRepository>.value(
+        value: _employeeDocumentRepository,
+        child: app,
+      );
+      app = RepositoryProvider<AttendanceRepository>.value(
+        value: _attendanceRepository,
+        child: app,
+      );
+      app = RepositoryProvider<EmployeeKpiRepository>.value(
+        value: _employeeKpiRepository,
         child: app,
       );
     }

@@ -2,6 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../../auth/domain/entities/crm_module.dart';
 import '../../../auth/domain/entities/current_user.dart';
+import '../../../hr/data/repositories/mock_employee_repository.dart';
+import '../../../hr/domain/repositories/attendance_repository.dart';
+import '../../../hr/domain/repositories/employee_document_repository.dart';
+import '../../../hr/domain/repositories/employee_kpi_repository.dart';
+import '../../../hr/domain/repositories/employee_repository.dart';
+import '../../../hr/presentation/screens/employee_directory_screen.dart';
 import '../../../inventory/domain/repositories/inventory_repository.dart';
 import '../../../inventory/presentation/screens/inventory_workspace_screen.dart';
 import '../../../user_management/domain/repositories/user_management_repository.dart';
@@ -18,6 +24,10 @@ class AdminDashboardScreen extends StatelessWidget {
   final VoidCallback onOpenLeadManagement;
   final InventoryRepository inventoryRepository;
   final UserManagementRepository? userManagementRepository;
+  final EmployeeRepository? employeeRepository;
+  final EmployeeDocumentRepository? employeeDocumentRepository;
+  final AttendanceRepository? attendanceRepository;
+  final EmployeeKpiRepository? employeeKpiRepository;
 
   const AdminDashboardScreen({
     super.key,
@@ -26,11 +36,27 @@ class AdminDashboardScreen extends StatelessWidget {
     required this.onOpenLeadManagement,
     required this.inventoryRepository,
     this.userManagementRepository,
+    this.employeeRepository,
+    this.employeeDocumentRepository,
+    this.attendanceRepository,
+    this.employeeKpiRepository,
   });
 
   void _openModule(BuildContext context, CrmModule module) {
     if (module == CrmModule.leadManagement) {
       onOpenLeadManagement();
+    } else if (module == CrmModule.hrPayroll) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => EmployeeDirectoryScreen(
+            user: user,
+            repository: employeeRepository ?? MockEmployeeRepository(),
+            documentRepository: employeeDocumentRepository,
+            attendanceRepository: attendanceRepository,
+            kpiRepository: employeeKpiRepository,
+          ),
+        ),
+      );
     } else if (module == CrmModule.inventory) {
       Navigator.of(context).push(
         MaterialPageRoute(
