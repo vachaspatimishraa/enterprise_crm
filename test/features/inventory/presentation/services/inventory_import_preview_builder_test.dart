@@ -85,19 +85,19 @@ void main() {
         );
 
         expect(preview.totalRows, 5);
-        expect(preview.validCount, 2);
+        expect(preview.validCount, 3);
 
-        // Row A
+        // Row A (blank opening stock)
         expect(preview.rows[0].status, InventoryImportRowStatus.valid);
         expect(preview.rows[0].openingStock, isNull);
         expect(preview.rows[0].isSelected, isTrue);
 
-        // Row B
+        // Row B (positive opening stock)
         expect(preview.rows[1].status, InventoryImportRowStatus.valid);
         expect(preview.rows[1].openingStock, 25.5);
         expect(preview.rows[1].isSelected, isTrue);
 
-        // Row C
+        // Row C (non-numeric opening stock)
         expect(preview.rows[2].status, InventoryImportRowStatus.invalid);
         expect(
           preview.rows[2].errorMessage,
@@ -105,19 +105,16 @@ void main() {
         );
         expect(preview.rows[2].isSelected, isFalse);
 
-        // Row D
-        expect(preview.rows[3].status, InventoryImportRowStatus.invalid);
-        expect(
-          preview.rows[3].errorMessage,
-          'Opening stock must be greater than zero.',
-        );
-        expect(preview.rows[3].isSelected, isFalse);
+        // Row D (zero opening stock: valid)
+        expect(preview.rows[3].status, InventoryImportRowStatus.valid);
+        expect(preview.rows[3].openingStock, 0.0);
+        expect(preview.rows[3].isSelected, isTrue);
 
-        // Row E
+        // Row E (negative opening stock: invalid)
         expect(preview.rows[4].status, InventoryImportRowStatus.invalid);
         expect(
           preview.rows[4].errorMessage,
-          'Opening stock must be greater than zero.',
+          'Opening stock cannot be negative.',
         );
         expect(preview.rows[4].isSelected, isFalse);
       },

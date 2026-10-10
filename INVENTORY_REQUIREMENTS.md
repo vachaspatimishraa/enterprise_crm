@@ -1,8 +1,8 @@
 # INVENTORY-0 — Inventory Requirements Audit & Architecture Preparation Report (Corrected)
 
-**Date:** 2026-09-21  
-**Project:** Enterprise CRM (`d:\projects\enterprise_crm`)  
-**Status:** AUDIT COMPLETE / AWAITING BUSINESS FREEZE  
+**Date:** 2026-09-21
+**Project:** Enterprise CRM (`d:\projects\enterprise_crm`)
+**Status:** AUDIT COMPLETE / AWAITING BUSINESS FREEZE
 
 ---
 
@@ -414,9 +414,9 @@ INVENTORY-4 implements the CSV and XLSX inventory bulk import workflow for admin
   - Revalidation: Freshness enforced by re-checking SKU uniqueness at repository import execution time
 - **Opening Stock Semantics:**
   - Blank / unmapped: Valid, item created with 0 movements and derived quantity 0.0; item remains eligible for later `Set Opening Stock`
-  - Explicit zero (`0`, `0.0`): Invalid ("Opening stock must be greater than zero.")
+  - Explicit zero (`0`, `0.0`): Valid, item created with 0 movements and derived quantity 0.0
   - Positive numeric: Valid finite `double > 0`, creates exactly one `StockMovementType.openingStock`
-  - Invalid values: Negative numbers, non-numeric strings, NaN, Infinity rejected
+  - Invalid values: Negative numbers (rejected with "Opening stock cannot be negative."), non-numeric strings, NaN, Infinity rejected
 - **Stock Ledger Integrity:**
   - Opening stock NEVER directly sets quantity on `InventoryItem`
   - Derived balance strictly calculated as `SUM(StockMovement.quantityDelta)`
@@ -454,8 +454,8 @@ INVENTORY-4 implements the CSV and XLSX inventory bulk import workflow for admin
 
 ## 12. INVENTORY-ACCESS-1 — Granular Permissions, Opening Stock on Create & Safe Permanent Deletion
 
-**Status:** FROZEN  
-**Date:** 2026-09-27  
+**Status:** FROZEN
+**Date:** 2026-09-27
 
 ### 12.1 Objective & Scope
 INVENTORY-ACCESS-1 extends the Inventory module with:
@@ -512,7 +512,7 @@ INVENTORY-ACCESS-1 extends the Inventory module with:
      - `reason`: `null`.
      - `createdAt`: deterministic injected clock.
      - Derived quantity: matches the initial stock value.
-   - **Invalid Values:** `0`, `0.0`, negative numbers, non-numeric strings, NaN, Infinity are rejected with validation error ("Opening stock must be greater than zero.").
+   - **Invalid Values:** Negative numbers (rejected with "Opening stock cannot be negative."), non-numeric strings, NaN, Infinity are rejected with validation error. Explicit zero (`0`, `0.0`) and blank/omitted values are valid and create no ledger movement.
 3. **Atomicity Guarantee:**
    - Item creation and its optional opening stock movement are atomic at the repository/service boundary. If movement creation fails, the item is rolled back / not persisted.
 
@@ -588,7 +588,7 @@ INVENTORY-ACCESS-1 extends the Inventory module with:
 
 # 13. INVENTORY-ACCESS-2 — Stock Quantity Permissions & Atomic Target-Based Adjustment
 
-**Date:** 2026-09-27  
+**Date:** 2026-09-27
 **Status:** REQUIREMENTS FROZEN
 
 ## 13.1 Canonical Stock Management Permission
@@ -662,4 +662,609 @@ INVENTORY-ACCESS-1 extends the Inventory module with:
 - **User With Stock Management (or Admin):**
   - Authorized to import positive opening stock rows, creating atomic `openingStock` movements.
 
+# 14. INVENTORY-5 — STOCK MOVEMENT HISTORY
 
+**Date:** 2026-09-28
+**Status:** APPROVED / FROZEN
+**Owner:** Vachaspati Mishra
+
+## 14.1 Objective & Scope
+INVENTORY-5 defines the frozen requirements and technical contracts for viewing the immutable, historical audit ledger of stock movements for individual Inventory items.
+
+Stock Movement History is strictly read-only. It exposes the authoritative movement ledger that backs current derived stock balances without ever introducing a secondary stock source of truth or permitting historical record modification.
+
+## 14.2 Confirmed Existing Repository & Domain Facts
+1. **Single Source of Truth:**
+   Current stock quantity on hand is strictly derived:
+   $$\text{Current Quantity} = \sum \text{StockMovement.quantityDelta}$$
+   `InventoryItem` stores only intrinsic identity fields (`id`, `name`, `sku`). It contains no stored quantity field.
+2. **Existing Domain Entities:**
+   - `StockMovement`: Contains `id` (String), `inventoryItemId` (String), `type` (`StockMovementType`), `quantityDelta` (`double`), `createdAt` (`DateTime`), `performedByUserId` (`String?`), and `reason` (`String?`).
+   - `StockMovementType`: Exactly two enum values exist: `openingStock` and `adjustment`. No other types (`purchase`, `dispatch`, `damage`, `transfer`, etc.) exist in the domain.
+3. **Existing Field Semantics & Nullability:**
+   - Seed data / legacy movements: `performedByUserId = null`, `reason = null`, `createdAt = DateTime.utc(2026, 1, 1, 9, 0)`.
+   - `openingStock`: Created with positive finite `quantityDelta`, nonblank `performedByUserId`, and `reason = null`.
+   - `adjustment`: Created with signed non-zero `quantityDelta`, nonblank `performedByUserId`, and nonblank `reason`.
+   - Timestamps: Injected via `_nowProvider` in `MockInventoryRepository`.
+4. **Current Repository API Limitations:**
+   - The only movement-related read method on `InventoryRepository` is `Future<bool> hasStockMovements(String itemId);`.
+   - `InventoryRepository` currently has **NO** method to query, list, count, filter, or paginate `StockMovement` records.
+   - Movements are stored internally in `MockInventoryRepository._movements` as an append-only list.
+5. **Deletion Lifecycle Facts:**
+   - During 60-second pending deletion (`requestItemDeletion`), the item and its movements remain intact in `_items` and `_movements`. Mutations are blocked with `InventoryDeletionConflictException`.
+   - On `undoItemDeletion`, pending deletion is canceled and all original movements remain completely intact.
+   - On `finalizeExpiredDeletions`, the item and all its associated movements are atomically removed from `_items` and `_movements`. No historical movements are retained after finalization.
+6. **Shared Repository Invariant:**
+   `InventoryRepository` is an app-scoped singleton passed through `CrmApp` to `AdminDashboardScreen` and `UserDashboardScreen`, and injected into `InventoryWorkspaceScreen` and `InventoryItemDetailsScreen`.
+
+## 14.3 Approved Business Requirements & Decisions
+
+### 14.3.1 Approved Business Decision 1 — Historical Running Balance
+- **Mandatory Running Balance:** Each historical movement entry displayed in the audit ledger must show the authoritative resulting cumulative balance immediately following that movement.
+- **Authoritative Ledger Calculation:**
+  - Running balances must be calculated from the complete authoritative movement ledger for the selected item.
+  - Calculation iterates chronologically forward from the genesis movement starting at zero ($0.0 \rightarrow + \text{delta}_1 \rightarrow + \text{delta}_2 \rightarrow \dots$).
+  - Each movement record is associated with its immediate resulting cumulative balance.
+  - The derived current quantity must remain the terminal value of this same ledger calculation.
+  - Never introduce a separate stored quantity column or secondary source of truth.
+- **Display Ordering vs Calculation Ordering:**
+  - Movement records are displayed **newest first** (`createdAt DESC`) in the UI.
+  - Reversing the order for display must **NOT** invert or alter the chronologically computed historical balances.
+- **Filter Invariant:**
+  - Historical running balances must **NOT** change when the user applies a movement-type filter.
+  - Hiding a movement (e.g. hiding Opening Stock) filters which rows are rendered on screen, but does not alter the historical running balances associated with the remaining visible movements.
+  - Example:
+    | Movement | Delta | Resulting Balance |
+    |---|---:|---:|
+    | Opening Stock | +50 | 50 |
+    | Adjustment | +20 | 70 |
+    | Adjustment | -10 | 60 |
+    | Adjustment | +15 | 75 |
+    If the user filters to show only "Adjustment", the balance after the first adjustment remains 70 (not 20), because historical calculations reflect the complete ledger.
+
+### 14.3.2 Chronological Ordering Contract & Deterministic Sequencing
+- `createdAt` is the primary ordering attribute.
+- **Secondary Sequencing Contract:**
+  - Timestamps alone may collide if multiple movements occur in rapid succession or are batch-seeded at the same timestamp (e.g. `2026-01-01 09:00:00`).
+  - **Stock History must not fabricate chronological ordering from arbitrary movement IDs.**
+  - The implementation must use an authoritative repository-guaranteed sequence or another documented stable ordering mechanism.
+  - For the mock implementation, internal insertion order may be considered only if the repository explicitly guarantees that it corresponds to movement creation order.
+  - For production backend integration, the corresponding sequence must be supplied or guaranteed by the backend.
+  - This sequencing contract is recorded as a mandatory technical constraint for INVENTORY-5.2.
+
+### 14.3.3 Approved Business Decision 2 — Actor Display & Safe Fallbacks
+- Display the recorded actor identifier directly from `StockMovement.performedByUserId`.
+  - Examples: `Performed By: usr_admin`, `Performed By: sales_01`.
+- **Legacy Null Actor Fallback:**
+  - For legacy or seeded records where `performedByUserId` is null, display: `Not recorded`.
+- **Prohibitions:**
+  - Do not create a dependency on `UserManagementRepository` merely to resolve actor names.
+  - Do not invent historical display names or replace recorded User IDs with guessed names.
+- **Movement Reason Fallback:**
+  - For adjustments: display the recorded non-null trimmed reason.
+  - For null or empty reasons (e.g. Opening Stock or legacy entries), display: `—` (em-dash).
+  - Preserve the distinction between a genuine recorded value and unavailable legacy data.
+
+### 14.3.4 Approved Business Decision 3 — Pending Deletion History
+- Stock History remains accessible in read-only mode throughout the existing 60-second pending-deletion window.
+- **Active Item:** Authorized users can view the item's complete movement history.
+- **Pending Deletion:**
+  - The item and its movement ledger remain intact.
+  - Authorized users can inspect the complete original movement history.
+  - All existing stock mutation restrictions remain enforced (mutations throw `InventoryDeletionConflictException`).
+  - Do not enable editing, adjustment, or movement deletion through the History screen.
+- **Successful Undo:**
+  - The original item and movement ledger remain unchanged.
+  - The History screen continues to display the original records without loss.
+  - Do not recreate movements or reconstruct historical data from snapshots.
+- **Final Permanent Deletion:**
+  - After the 60-second window expires and `finalizeExpiredDeletions` is executed, the item and all associated stock movements are permanently and atomically removed.
+  - History retrieval for finalized items must return an item-not-found outcome.
+  - Deleted movement records must not be exposed.
+  - No secondary archive mechanism.
+
+### 14.3.5 Approved Business Decision 4 — Movement Type Filtering
+- The Stock History UI must provide exactly these initial filter options:
+  - `All Movements` (Default)
+  - `Opening Stock`
+  - `Adjustment`
+- The filter applies strictly to which records are rendered on screen.
+- Filtering must never modify movements or alter running balance calculations.
+- Do not introduce speculative types such as Purchase, Dispatch, Return, Transfer, Reservation, or Damage.
+- Filter UI implementation is scheduled for INVENTORY-5.3.
+
+### 14.3.6 Authorization Requirements
+- History access uses the existing Inventory viewing policy:
+  - **Administrator:** Full, unrestricted access to view history for any item.
+  - **Standard User:** Requires `CrmModule.inventory` assignment + `inventory.view` permission.
+- History access does **NOT** require:
+  - `inventory.create`
+  - `inventory.edit`
+  - `inventory.stock.manage`
+  - `inventory.delete`
+  - `inventory.import.csv`
+  - `inventory.import.xlsx`
+- Stock History is a pure read-only feature.
+- Unauthorized users attempting navigation are redirected to `AccessRestrictedScreen`.
+- Do not introduce a separate Stock History permission without explicit approval.
+
+### 14.3.7 Required Display Information
+- Inventory item name.
+- SKU.
+- Current quantity on hand.
+- Movement type (`Opening Stock` | `Stock Adjustment`).
+- Signed quantity delta (e.g. `+50`, `+25`, `-10`).
+- Running balance immediately after movement (e.g. `Balance After: 75`).
+- Creation date and time (standard formatted timestamp).
+- Recorded actor ID (`performedByUserId` or `Not recorded`).
+- Movement reason (recorded string or `—`).
+
+**Illustrative Display Example:**
+```text
+Wireless Mouse
+SKU: INV-001
+
+Current Quantity: 75
+
+--------------------------------
+Adjustment                  +25
+Balance After:               75
+
+Reason:
+Physical stock count correction
+
+Performed By:
+usr_admin
+
+Date and Time:
+2026-09-28 10:30 AM
+--------------------------------
+Opening Stock               +50
+Balance After:               50
+
+Reason:
+—
+
+Performed By:
+Not recorded
+
+Date and Time:
+2026-09-20 09:00 AM
+--------------------------------
+```
+
+### 14.3.8 UI and Navigation Requirements (for INVENTORY-5.3)
+- Navigation Flow:
+  $$\text{Inventory Workspace} \longrightarrow \text{Inventory Item Details} \longrightarrow \text{Stock Movement History}$$
+- Shared app-scoped `InventoryRepository` instance used throughout. Do not instantiate a separate `MockInventoryRepository`.
+- Planned UI States:
+  - **Loading:** Progress indicator during fetch.
+  - **Empty History:** Clear message for items with 0 movements.
+  - **Successful History:** Chronological timeline/cards with signed deltas and running balances.
+  - **Item Not Found:** Safe fallback if item does not exist.
+  - **Pending Deletion:** Informative notice indicating item is pending deletion; history remains viewable in read-only mode.
+  - **Permanently Deleted:** Item not found error state.
+  - **Error:** Actionable error state with retry.
+- Responsive Breakpoints:
+  - 320 × 568
+  - 360 × 640
+  - 768 × 1024
+  - 1200 × 800
+- Light and Dark themes supported.
+- Movement direction communicated through explicit text and signed indicators (`+`, `-`), never through color alone.
+
+## 14.4 Technical Contracts & Preparation (for INVENTORY-5.2)
+
+### 14.4.1 Repository Contract Preparation
+- A dedicated read-only retrieval method will be added to `InventoryRepository`:
+  ```dart
+  Future<List<StockMovementRecord>> getStockMovements(String itemId);
+  ```
+- **Read Projection (`StockMovementRecord`):**
+  - Encapsulates the immutable `StockMovement` and the authoritative `runningBalance: double`.
+  - Prohibits mutation of historical records.
+- **Contract Rules:**
+  - Item-scoped retrieval.
+  - Complete authoritative movement sequencing.
+  - Historical running-balance calculation.
+  - Immutable result records.
+  - Safe behavior for missing items (e.g. throws `InventoryItemNotFoundException`).
+  - Pending-deletion items return full movement history.
+  - Permanently deleted items return item-not-found.
+  - No mutation through the history contract.
+
+### 14.4.2 State Management
+- `StockMovementHistoryCubit` managing `StockMovementHistoryState` (`Initial`, `Loading`, `Loaded`, `Empty`, `NotFound`, `Failure`).
+
+## 14.5 Backend Boundary
+- The instructor owns production backend integration.
+- Do not invent:
+  - REST endpoints.
+  - JSON wire formats.
+  - HTTP authentication headers.
+  - Database schema / table definitions.
+  - Foreign-key relationships.
+  - Backend movement sequence identifiers.
+  - Server pagination protocols.
+- The backend must eventually provide consistent, authorized movement retrieval with a reliable chronological sequence.
+- Historical running balance calculations must remain mathematically correct across the entire movement ledger even if server-side pagination or filtering is introduced.
+
+## 14.6 Explicitly Deferred Features
+The following features are strictly deferred and out of scope for INVENTORY-5:
+1. Editing an existing movement.
+2. Deleting an individual movement.
+3. Modifying historical reasons.
+4. Changing movement actors.
+5. Changing recorded timestamps.
+6. Direct quantity replacement.
+7. Inventory Export (CSV/XLSX export of movements).
+8. Purchase/Dispatch stock integration.
+9. Returns or transfers.
+10. New stock movement types.
+11. Warehouse/location tracking.
+12. Actor display-name lookup via UserManagementRepository.
+13. Cross-item analytical reports.
+14. Backend API implementation.
+
+
+---
+
+
+---
+
+---
+
+---
+
+# 15. INVENTORY-6 — CSV/XLSX INVENTORY EXPORT
+
+**Status:** APPROVED & FROZEN
+**Feature:** Inventory CSV/XLSX Export
+**Target Platform:** Flutter Android and Flutter Web
+**Architecture:** Flutter + BLoC/Cubit + Repository Pattern
+
+---
+
+## 15.1 Feature Objective
+The Inventory Export feature allows authorized CRM users to extract authoritative Inventory data from the repository into downloadable CSV and XLSX files. Exports provide structured reporting for physical stock counts, auditing, and offline data analysis across Flutter Web and Mobile platforms.
+
+---
+
+## 15.2 Confirmed Existing Architecture
+1. **Core Domain Entities:**
+   - `InventoryItem`: Holds intrinsic item identity (`id`, `name`, `sku`).
+   - `InventoryItemSummary`: Read projection combining `InventoryItem` with derived `quantityOnHand: double`.
+   - `InventoryQuery`: Supports searching (`searchText`), sorting (`InventorySort`), and pagination (`page`, `pageSize`).
+   - `InventoryPage`: Contains `items: List<InventoryItemSummary>`, `currentPage`, `pageSize`, `totalItems`, `hasNext`.
+2. **Repository Contract (`InventoryRepository`):**
+   - Read methods: `getItems(InventoryQuery query)`, `getItemById(String id)`, `getExistingSkus()`.
+   - Mutating & ledger methods: `createItem`, `updateItem`, `recordOpeningStock`, `adjustStock`, `adjustStockToTarget`, `importItems`, `requestItemDeletion`, `undoItemDeletion`, `finalizeExpiredDeletions`, `getStockMovements`.
+   - Data source of truth: Implemented by `MockInventoryRepository`.
+3. **Existing Dependencies (`pubspec.yaml`):**
+   - `csv: ^8.0.0` (Provides `ListToCsvConverter`, `CsvToListConverter`).
+   - `excel: ^4.0.6` (Provides `Excel.createExcel()`, sheet table generation, byte serialization).
+   - `file_picker: ^13.0.0` (Provides platform file dialogs).
+
+---
+
+## 15.3 Approved Export Data Columns
+The Inventory Export feature exports exactly three authoritative columns:
+
+| Position | Column Header | Source Field | Type | Example |
+|---|---|---|---|---|
+| 1 | `Item Name` | `InventoryItemSummary.item.name` | String | `Wireless Mouse` |
+| 2 | `SKU` | `InventoryItemSummary.item.sku` | String | `INV-001` |
+| 3 | `Current Quantity` | `InventoryItemSummary.quantityOnHand` | Numeric | `75` |
+
+**Field Exclusion Rules:**
+- Exclude speculative backend or unscope fields (e.g. internal Item ID, purchase price, selling price, supplier, warehouse location, tax rate, UOM, category, product description, stock valuation).
+
+---
+
+## 15.4 Approved CSV Format Technical Requirements
+- **Encoding:** UTF-8 text encoding without byte order mark.
+- **Delimiter:** Standard comma separation (`,`).
+- **Quoting:** Fields containing commas, quotation marks, or newlines must be enclosed in double quotes (`"`).
+- **Escaping:** Embedded double quotation marks must be escaped with double double-quotes (`""`).
+- **Header Row:** `Item Name,SKU,Current Quantity`.
+- **Line Endings:** Standard CRLF (`
+`) or LF (`
+`) line breaks.
+
+---
+
+## 15.5 Approved XLSX Format Technical Requirements
+- **Workbook Structure:** Single worksheet named `Inventory`.
+- **Header Row (Row 1):** Cell A1: `Item Name`, Cell B1: `SKU`, Cell C1: `Current Quantity`.
+- **Cell Typing:**
+  - `Item Name`: Text cell (`TextCellValue`).
+  - `SKU`: Text cell (`TextCellValue`).
+  - `Current Quantity`: Numeric cell (`DoubleCellValue` or `IntCellValue`).
+- **Binary Output:** Encoded to `Uint8List` using `excel.encode()`.
+
+---
+
+## 15.6 Quantity Source-of-Truth Rules
+1. **Single Source of Truth:** Current quantity must be derived directly from `InventoryItemSummary.quantityOnHand` (which sums `StockMovement.quantityDelta` across the movement ledger).
+2. **Prohibitions:**
+   - Never store a static quantity field on `InventoryItem`.
+   - Never calculate quantity by summing only visible or paged Stock History records.
+   - Never apply UI currency or localized rounding formatting to raw export quantities.
+
+---
+
+## 15.7 Approved Export Permissions Architecture
+Export capabilities require explicit permission checks evaluated against `CurrentUser`:
+
+### Administrator
+- Full, unrestricted access to export Inventory data in CSV and XLSX formats.
+
+### Standard User Requirements
+- CSV Export requires: `CrmModule.inventory` assignment + `inventory.view` + `inventory.export.csv`.
+- XLSX Export requires: `CrmModule.inventory` assignment + `inventory.view` + `inventory.export.xlsx`.
+
+### Approved Permission Keys (To be added to `CrmPermissions` in future implementation phase):
+- `inventory.export.csv`
+- `inventory.export.xlsx`
+
+**Permission Separation Rules:**
+- `inventory.export.csv` does **NOT** grant XLSX export.
+- `inventory.export.xlsx` does **NOT** grant CSV export.
+- `inventory.import.csv` / `inventory.import.xlsx` do **NOT** grant export permissions.
+- `inventory.stock.manage` does **NOT** grant export permissions.
+- `inventory.create` or `inventory.edit` alone does **NOT** grant export access.
+
+---
+
+## 15.8 Excel & CSV Security (Formula Injection Prevention)
+Spreadsheet applications (Excel, Google Sheets) execute cells starting with formula trigger characters (`=`, `+`, `-`, `@`).
+1. **CSV Neutralization Strategy:**
+   - Any string cell beginning with `=`, `+`, `-`, or `@` (after leading whitespace trimming) must be prefixed with a single quote (`'`) or neutralized to prevent formula execution upon opening.
+2. **XLSX Cell Strategy:**
+   - String values must be explicitly written using `TextCellValue` (not `FormulaCellValue`).
+
+---
+
+## 15.9 Dataset Completeness & Pagination Requirements
+1. **Complete Data Export:** Exports must retrieve all matching authorized items across all pages, not just the first page (e.g. 250 items total across 20-item pages).
+2. **Repository Retrieval:** The future implementation must retrieve every eligible record across the entire authorized dataset without accidental single-page truncation.
+
+---
+
+## 15.10 Deletion Lifecycle Behavior
+1. **Active Items:** Included in export.
+2. **Pending Deletion Items:** Excluded from export (matches `getItems()` listing filter `!_isPendingDeletion(item.id)`).
+3. **Restored Items (Undo):** Re-included in export once restored.
+4. **Finalized / Deleted Items:** Permanently excluded.
+
+---
+
+## 15.11 Platform File Handling & Architecture
+Approved clean architectural separation:
+UI Trigger -> ExportCubit -> InventoryRepository -> ExportFormatter (CSV/XLSX) -> Platform Saver (Web/Android)
+
+- Web platform uses browser blob/download helper.
+- Android platform uses `file_picker` or platform save dialog.
+- Shared Dart logic must **never** import `dart:io` directly to maintain Web compatibility.
+
+---
+
+## 15.12 UI & UX Requirements
+- **Entry Point:** Inventory Workspace action bar / toolbar.
+- **States:** `Initial`, `Exporting` (loading indicator), `Success` (download triggered notice), `Failure` (actionable error message), `Restricted` (access denied).
+- **Responsive Layout:** Adaptive design supporting viewports from 320x568 to 1200x800.
+- **Theme Support:** Light and Dark themes following Material 3 guidelines.
+
+---
+
+## 15.13 Test Matrix Plan
+- **Formatters:** CSV escaping, UTF-8 encoding, XLSX cell types, formula injection neutralization, decimal precision.
+- **Cubit / Logic:** Complete item fetch, authorization guards, error handling, state transitions.
+- **Security:** Neutralization of formula triggers (`=`, `+`, `-`, `@`).
+
+---
+
+## 15.14 Approved and Frozen Business Decisions
+
+**Approved by:** Vachaspati Mishra
+**Status:** Frozen for INVENTORY-6 implementation
+
+| # | Decision | Approved Rule |
+|---|---|---|
+| 1 | **Export Formats** | Exactly two initial export formats: CSV and XLSX. |
+| 2 | **Export Columns** | Exactly three columns: `Item Name`, `SKU`, `Current Quantity`. |
+| 3 | **Dataset Scope** | All authorized, active Inventory items (complete dataset across all pages). |
+| 4 | **Export Permissions** | Separate granular permissions: `inventory.export.csv` and `inventory.export.xlsx`. |
+| 5 | **Item Ordering** | Deterministic sorting by `Item Name` ascending, then `SKU` ascending as tie-breaker. |
+| 6 | **Empty Dataset** | Authorized empty export generates a valid file containing column headers only. |
+| 7 | **Movement History** | Stock Movement History export is strictly excluded from INVENTORY-6 scope. |
+| 8 | **Pending Deletion** | Items in 60-second pending-deletion window are excluded (matches active listing). |
+| 9 | **Import Compatibility** | Reporting-oriented export; no automatic round-trip or import upsert guarantee. |
+
+---
+
+## 15.15 Explicitly Deferred Features
+1. Exporting Stock Movement History records.
+2. Direct spreadsheet editing or re-import upserting.
+3. Custom column selection or layout customization.
+4. Scheduled background email exports.
+5. PDF export formatting.
+6. Backend REST export streaming endpoints.
+
+---
+
+## 16. USER-REQUESTED INVENTORY IMPORT / PDF EXTENSION
+
+The attached inventory workbook request authorizes the following narrow extension
+without widening the existing Inventory domain or CSV/XLSX export schema:
+
+1. **PDF export:** A printable PDF report is available for the same three frozen
+   columns: `Item Name`, `SKU`, and `Current Quantity`.
+2. **PDF permissions:** No new permission key is introduced. PDF export is
+   available when the current user already has CSV or XLSX export permission;
+   Administrators retain unrestricted access.
+3. **Workbook import:** The existing CSV/XLSX bulk-import workflow accepts
+   manually mapped `Name`, `SKU`, and optional `Opening Stock` columns from a
+   wider workbook such as `Inventory_Data`. Other workbook fields are shown to
+   the user but are not persisted because the frozen Inventory entity does not
+   define them.
+4. **Zero stock values:** A source value of `0` in a mapped `Opening Stock`
+   column remains invalid under the existing opening-stock rules. Leave the
+   field unmapped or blank when an item should start with zero movements and a
+   derived quantity of `0.0`.
+
+---
+
+# 17. INVENTORY-7: COMPLETE FLEXIBLE INVENTORY DATA MANAGEMENT SPECIFICATION
+
+**Authorized by:** Vachaspati Mishra
+**Status:** Approved for Implementation
+**Scope:** Replaces the former 3-column restriction with a 21-field persistent inventory catalog, reusable custom fields, advanced manual entry/editing, flexible CSV/XLSX column mapping & import, customizable CSV/XLSX/PDF export, and field-level security.
+
+---
+
+## 17.1 Real Mock Test Workbook Inspection & Ground Truth
+
+The uploaded test workbook `inventory_mock_test_data.xlsx` (and companion `inventory_mock_test_data.csv` on Desktop) was inspected directly. It contains four sheets providing concrete requirements and test criteria:
+
+### Sheet 1: `Inventory_Data` (73 rows / 72 product records)
+- Contains 72 fictional commercial product records with INR pricing across 3 Indian warehouse hubs and 9 product categories.
+- Sample reference date: `2026-10-03`.
+- Exactly 21 columns covering identity, classification, warehouse logistics, financial pricing, stock thresholds, batch traceability, and operational lifecycle.
+
+### Sheet 2: `Test_Overview` (Summary & Baseline KPIs)
+- **Total sample SKUs:** 72
+- **Active SKUs:** 70 (2 discontinued items: `ELE-0007`, `SFT-0005` have `is_active = 0`)
+- **Out-of-stock SKUs:** 8 (`stock_quantity = 0`)
+- **Low-stock SKUs:** 16 (`stock_quantity <= reorder_level`)
+- **In-stock SKUs:** 39 (`reorder_level < stock_quantity <= max_stock`)
+- **Overstock SKUs:** 7 (`stock_quantity > max_stock`)
+- **Total on-hand units:** 3,763 units
+- **Total inventory valuation at cost:** INR 2,342,130
+- **Operational Guidelines:**
+  1. `Inventory_Data` sheet and `inventory_mock_test_data.csv` share identical 72 records.
+  2. Map headers to application schema; `expected_stock_status` is informational and derived by the system.
+  3. `Stock_Movements` sheet represents independent post-import test transactions and must NOT be imported as part of item-master setup.
+  4. `Invalid_Examples` sheet defines the mandatory validation test matrix.
+
+### Sheet 3: `Stock_Movements` (25 transaction records)
+- Contains 25 sample stock movement transactions across movement types: `STOCK_IN`, `STOCK_OUT`, `CUSTOMER_RETURN`, `ADJUSTMENT_IN`, `ADJUSTMENT_OUT`, `SUPPLIER_RETURN`.
+- Columns: `movement_id`, `transaction_date`, `sku`, `warehouse`, `movement_type`, `quantity`, `reference`, `notes`.
+- **Architectural Rule:** Stock movements are an immutable transaction log separate from item-master catalog data. They must NOT be merged or auto-imported with item master rows without an explicitly designed, authorized transaction posting workflow.
+
+### Sheet 4: `Invalid_Examples` (16 Negative Validation Test Cases)
+The workbook defines 16 explicit test cases that must be validated across manual entry and bulk import:
+- **INV-001 (Required SKU):** Blank SKU must be rejected with row-level error.
+- **INV-002 (Duplicate SKU):** Existing SKU entered again must be rejected or handled according to explicit upsert policy.
+- **INV-003 (Negative Quantity):** `stock_quantity < 0` must be rejected.
+- **INV-004 (Negative Cost):** `unit_cost_inr < 0` must be rejected.
+- **INV-005 (Invalid Barcode):** Alphanumeric/invalid checksum barcode must be rejected if barcode validation is enabled.
+- **INV-006 (Invalid Date):** Malformed dates (e.g. `31/31/2026`) must be rejected.
+- **INV-007 (Unknown Warehouse):** Unconfigured warehouse code (e.g. `XYZ-99`) must trigger validation error or mapping request.
+- **INV-008 (Unknown Category):** Unlisted category must trigger validation error or dynamic categorization request.
+- **INV-009 (Missing Product Name):** Blank product name must be rejected.
+- **INV-010 (Invalid Quantity Type):** Non-numeric quantity (e.g. `twelve`) must be rejected.
+- **INV-011 (Quantity Overdraw):** Transaction deducting more than available stock must be rejected.
+- **INV-012 (Invalid Reorder Level):** `reorder_level < 0` must be rejected.
+- **INV-013 (Invalid Max Stock):** `max_stock < reorder_level` must be rejected or flagged with validation warning.
+- **INV-014 (Expired Lot):** Items with `expiry_date` prior to current date (`2026-10-03`) must be flagged/quarantined.
+- **INV-015 (Formula Injection):** Fields beginning with `=,+,-,@` (e.g. `=1+1`) must be sanitized/escaped upon import/export.
+- **INV-016 (Leading-Zero Values):** Barcodes and SKUs with leading zeros (e.g. `0012345678905`) must be stored strictly as text, avoiding truncation or scientific notation.
+
+---
+
+## 17.2 The 21-Field Inventory Data Catalog
+
+| # | Column Key | Display Label | Logical Type | Dart / Storage Type | Nullable? | Validation Rules & Constraints | Field Sensitivity & Access Control |
+|---|---|---|---|---|:---:|---|---|
+| 1 | `sku` | SKU | Text | `String` | **No** | 1-64 chars; unique; whitespace trimmed; leading zeros preserved (INV-016); no formula injection. | Standard View |
+| 2 | `product_name` | Product Name | Text | `String` | **No** | 1-255 chars; non-blank; formula escaped. | Standard View |
+| 3 | `category` | Category | Taxonomy / Enum | `String` | **No** | Validated against configured category list or dynamic catalog. 9 seed values: `Cleaning`, `Electronics`, `IT Accessories`, `Maintenance`, `Office Furniture`, `Packaging`, `Pantry`, `Safety`, `Stationery`. | Standard View |
+| 4 | `brand` | Brand | Text | `String?` | Yes | 0-100 chars; optional. 31 unique brands in seed data. | Standard View |
+| 5 | `unit` | Unit of Measure | Taxonomy / Enum | `String` | **No** | Standardized UoM. 11 seed values: `bag`, `bottle`, `box`, `case`, `jar`, `kit`, `pack`, `piece`, `ream`, `roll`, `set`. Defaults to `piece`. | Standard View |
+| 6 | `barcode` | Barcode | Text (EAN/UPC) | `String?` | Yes | Strictly stored as text (prevents numeric truncation). Validated for length & format (e.g. EAN-13 13 numeric digits). | Standard View |
+| 7 | `warehouse` | Warehouse | Location Code | `String` | **No** | Seed values: `BLR-01`, `DEL-01`, `MUM-01`. Validated against facility list. | Standard View |
+| 8 | `bin_location` | Bin Location | Text | `String?` | Yes | Aisle/Rack/Shelf code (e.g. `ELE-A1-01`). Alphanumeric. | Standard View |
+| 9 | `supplier` | Supplier | Text / Link | `String?` | Yes | Vendor company name. 9 seed values in mock data. | **Commercial Sensitivity:** Requires supplier view permission or Admin role; masked if restricted. |
+| 10 | `unit_cost_inr` | Unit Cost (INR) | Currency / Decimal | `double?` | Yes | Non-negative (`>= 0.0`). Currency formatted. | **Highly Sensitive Financial:** Requires `inventory.cost.view` or Admin role; hidden/omitted if unauthorized. |
+| 11 | `selling_price_inr` | Selling Price (INR) | Currency / Decimal | `double?` | Yes | Non-negative (`>= 0.0`). Currency formatted. | Controlled financial pricing field. |
+| 12 | `stock_quantity` | Stock Quantity | Quantity | `double` | **No** | Non-negative (`>= 0`). In CRM, derived from movement ledger; on import, initializes opening stock ledger entry if > 0. | Standard View |
+| 13 | `reorder_level` | Reorder Level | Quantity | `double?` | Yes | Non-negative (`>= 0`). Minimum threshold before reorder alert. | Standard View |
+| 14 | `max_stock` | Max Stock | Quantity | `double?` | Yes | Must be `>= reorder_level` if both are specified. | Standard View |
+| 15 | `gst_percent` | GST (%) | Percentage | `double?` | Yes | Tax rate percentage (e.g. `5.0`, `12.0`, `18.0`). Non-negative. | Financial / Accounting |
+| 16 | `batch_number` | Batch Number | Text | `String?` | Yes | Lot / batch tracking code (e.g. `B26-ELE-01`). | Traceability |
+| 17 | `expiry_date` | Expiry Date | Date | `DateTime?` | Yes | ISO-8601 Date (`YYYY-MM-DD`). Flags quarantine/warning if prior to current date. | Quality / FEFO Control |
+| 18 | `last_restocked_date` | Last Restocked Date | Date | `DateTime?` | Yes | ISO-8601 Date (`YYYY-MM-DD`). Informational restock stamp. | Logistics |
+| 19 | `is_active` | Is Active | Boolean | `bool` | **No** | `true` (active) or `false` (inactive/discontinued). Defaults to `true`. | Standard View |
+| 20 | `expected_stock_status` | Stock Status | Computed Enum | `InventoryStockStatus` | **No** | Informational / derived: `OUT_OF_STOCK`, `LOW_STOCK`, `IN_STOCK`, `OVERSTOCK`, `DISCONTINUED`. Computed by CRM logic. | Standard View |
+| 21 | `notes` | Notes | Text | `String?` | Yes | Remarks / operational flags (up to 1,000 characters). | Standard View |
+
+---
+
+## 17.3 Reusable Custom Field Infrastructure
+
+To support arbitrary business extensions without database schema migrations:
+1. **Custom Field Definition (`CustomFieldDefinition`):**
+   - `id`: Unique identifier (UUID).
+   - `key`: Machine-readable slug (e.g. `shelf_life_days`, `hsn_code`). Must be alphanumeric snake_case.
+   - `label`: Human-readable label (e.g. `Shelf Life (Days)`, `HSN Code`).
+   - `dataType`: `text`, `number`, `date`, `boolean`, `dropdown`.
+   - `isRequired`: Boolean flag indicating mandatory input.
+   - `options`: List of string choices for `dropdown` type.
+   - `defaultValue`: Optional fallback value.
+   - `createdAt`, `createdBy`: Audit trail stamps.
+2. **Entity Storage:**
+   - `InventoryItem` holds `Map<String, dynamic> customFields`.
+   - Keys correspond to `CustomFieldDefinition.key`.
+   - Values are typed and validated against the definition before save.
+3. **Unmapped Column Protection Invariant:**
+   - **Never silently drop unsupported columns.**
+   - When importing a CSV or Excel file containing columns outside the 21 standard fields:
+     - The column mapping screen displays an **Unmapped Columns** alert.
+     - User is offered 4 clear options for each unmatched column:
+       1. Map to an existing Standard Field.
+       2. Map to an existing Custom Field.
+       3. **Create New Custom Field** (one-click dialog pre-populating key, label, and inferred type).
+       4. Explicitly **Skip / Ignore** the column with explicit user acknowledgment.
+
+---
+
+## 17.4 Field-Level Security and Visibility Matrix
+
+To protect sensitive financial and supplier information:
+1. **`unit_cost_inr` (Unit Cost):**
+   - Highly sensitive commercial field.
+   - Restricted to users possessing `inventory.cost.view` permission or Administrator role.
+   - Unauthorized users: field is hidden in UI, masked in details, omitted from manual forms, and excluded from exports.
+2. **`supplier` (Supplier Information):**
+   - Sensitive vendor relationship field.
+   - Restricted to users possessing `inventory.supplier.view` permission or Administrator role.
+3. **`selling_price_inr` (Selling Price):**
+   - Visible to inventory managers and sales agents; editable only with inventory management permission.
+
+---
+
+## 17.5 Granular PDF Export Authorization
+
+1. **Dedicated Permission Key:**
+   - Introducing `CrmPermissions.inventoryExportPdf = 'inventory.export.pdf'`.
+   - PDF export will NOT automatically inherit from `inventory.export.csv` or `inventory.export.xlsx`.
+   - Administrators hold full access. Standard Users require explicit assignment of `inventory.export.pdf`.
+2. **Status of Previous PDF Implementation:**
+   - The initial dependency-free 3-column PDF serializer (`InventoryPdfSerializer`) exists in `lib/features/inventory/presentation/services/inventory_pdf_serializer.dart` with passing unit tests (`inventory_pdf_serializer_test.dart`).
+   - However, because previous automated Flutter test verification stalled on platform runner execution, it is recorded as **UNVERIFIED / PENDING INVENTORY-7.6** until dedicated permission wiring and multi-column PDF formatting are verified.
+
+---
+
+## 17.6 Phased Implementation Roadmap
+
+| Phase | Milestone | Scope Summary |
+|---|---|---|
+| **INVENTORY-7.1** | **Requirements & Catalog Design** | *(Current Checkpoint)* Inspect workbook, define 21 fields, custom field schema, security matrix, unmapped column rules, and PDF permission architecture. |
+| **INVENTORY-7.2** | **Persistent Standard & Custom Fields** | Extend `InventoryItem`, input DTOs, `MockInventoryRepository`, and custom field store to persist all 21 fields and arbitrary custom attributes while maintaining 100% backwards compatibility with existing 1,674 tests. |
+| **INVENTORY-7.3** | **Advanced Add / Edit Forms** | Multi-section responsive forms (General, Logistics, Pricing, Traceability, Custom Fields) with field-level visibility guards, validation, and barcode/SKU formatting. |
+| **INVENTORY-7.4** | **Flexible Import & Column Mapping** | Interactive column mapper supporting Excel (.xlsx) & CSV (.csv), header auto-matching, custom field creation, preview grid, duplicate handling (Reject/Skip/Update), and validation against the 16 negative test cases. |
+| **INVENTORY-7.5** | **Customizable CSV & XLSX Export** | Dynamic column selector, column reordering, export of all vs filtered vs selected records, custom field inclusion, and legacy 3-column preset preservation. |
+| **INVENTORY-7.6** | **Customizable PDF Export & Security** | Multi-column PDF serializer with pagination, header wrapping, formula escaping, and enforcement of the dedicated `inventory.export.pdf` permission. |
+| **INVENTORY-7.7** | **Integration, Regression & Security QA** | Full test suite execution across all modules, mock repository assertions, tamper-resistance, and fail-closed security rechecks. |
+| **INVENTORY-7.8** | **Manual Acceptance & Owner Review** | Real browser (Chrome/Edge) and Android verification, export file inspection, and owner review. |

@@ -1,11 +1,14 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../data/repositories/mock_inventory_repository.dart';
+import '../../domain/entities/custom_field_definition.dart';
+import '../../domain/entities/inventory_catalogs.dart';
 import '../../domain/exceptions/inventory_exception.dart';
 import '../../domain/inputs/update_inventory_item_input.dart';
 import '../../domain/repositories/inventory_repository.dart';
 import 'edit_inventory_item_state.dart';
 
-/// Cubit managing identity editing for an existing inventory item.
+/// Cubit managing editing for an existing inventory item.
 ///
 /// Ensures fresh item loading by [itemId], trimmed input validation,
 /// maps domain exceptions to user-friendly messages, and guarantees double-submit protection.
@@ -26,17 +29,64 @@ class EditInventoryItemCubit extends Cubit<EditInventoryItemState> {
       if (summary == null) {
         emit(const EditInventoryItemNotFound());
       } else {
-        emit(EditInventoryItemLoaded(summary));
+        List<CustomFieldDefinition> defs = const [];
+        InventoryCatalogs catalogs = InventoryCatalogs();
+
+        final repo = _repository;
+        if (repo is MockInventoryRepository) {
+          defs = await repo.getCustomFieldDefinitions();
+          catalogs = repo.catalogs;
+        }
+
+        emit(EditInventoryItemLoaded(
+          summary,
+          customFieldDefinitions: defs,
+          catalogs: catalogs,
+        ));
       }
     } catch (_) {
       emit(const EditInventoryItemFailure('Unable to load inventory item.'));
     }
   }
 
-  /// Validates inputs and updates the inventory item's identity.
+  /// Validates inputs and updates the inventory item.
   ///
   /// Double-submit guard: returns immediately if submission is already in progress.
-  Future<void> submit({required String name, required String sku}) async {
+  Future<void> submit({
+    required String name,
+    required String sku,
+    String? category,
+    String? brand,
+    String? unit,
+    String? barcode,
+    String? warehouse,
+    String? binLocation,
+    String? supplier,
+    double? unitCostInr,
+    double? sellingPriceInr,
+    double? reorderLevel,
+    double? maxStock,
+    double? gstPercent,
+    String? batchNumber,
+    DateTime? expiryDate,
+    DateTime? lastRestockedDate,
+    bool? isActive,
+    String? notes,
+    Map<String, dynamic>? customFields,
+    bool clearBrand = false,
+    bool clearBarcode = false,
+    bool clearBinLocation = false,
+    bool clearSupplier = false,
+    bool clearUnitCostInr = false,
+    bool clearSellingPriceInr = false,
+    bool clearReorderLevel = false,
+    bool clearMaxStock = false,
+    bool clearGstPercent = false,
+    bool clearBatchNumber = false,
+    bool clearExpiryDate = false,
+    bool clearLastRestockedDate = false,
+    bool clearNotes = false,
+  }) async {
     if (state is EditInventoryItemSubmitting) {
       return;
     }
@@ -81,6 +131,37 @@ class EditInventoryItemCubit extends Cubit<EditInventoryItemState> {
           id: targetId,
           name: trimmedName,
           sku: trimmedSku,
+          category: category,
+          brand: brand,
+          unit: unit,
+          barcode: barcode,
+          warehouse: warehouse,
+          binLocation: binLocation,
+          supplier: supplier,
+          unitCostInr: unitCostInr,
+          sellingPriceInr: sellingPriceInr,
+          reorderLevel: reorderLevel,
+          maxStock: maxStock,
+          gstPercent: gstPercent,
+          batchNumber: batchNumber,
+          expiryDate: expiryDate,
+          lastRestockedDate: lastRestockedDate,
+          isActive: isActive,
+          notes: notes,
+          customFields: customFields,
+          clearBrand: clearBrand,
+          clearBarcode: clearBarcode,
+          clearBinLocation: clearBinLocation,
+          clearSupplier: clearSupplier,
+          clearUnitCostInr: clearUnitCostInr,
+          clearSellingPriceInr: clearSellingPriceInr,
+          clearReorderLevel: clearReorderLevel,
+          clearMaxStock: clearMaxStock,
+          clearGstPercent: clearGstPercent,
+          clearBatchNumber: clearBatchNumber,
+          clearExpiryDate: clearExpiryDate,
+          clearLastRestockedDate: clearLastRestockedDate,
+          clearNotes: clearNotes,
         ),
       );
       emit(EditInventoryItemSuccess(updated));

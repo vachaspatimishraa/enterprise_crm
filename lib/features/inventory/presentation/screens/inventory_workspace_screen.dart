@@ -5,8 +5,11 @@ import '../../../auth/domain/entities/crm_module.dart';
 import '../../../auth/domain/entities/current_user.dart';
 import '../../../auth/domain/policies/access_policy.dart';
 import '../../../auth/domain/policies/crm_permissions.dart';
+import '../../../auth/presentation/bloc/auth_cubit.dart';
+import '../../../auth/presentation/bloc/auth_state.dart';
 import '../../../auth/presentation/screens/access_restricted_screen.dart';
 import '../../domain/entities/inventory_item_summary.dart';
+import '../../domain/entities/inventory_stock_status.dart';
 import '../../domain/entities/inventory_sort.dart';
 import '../../domain/entities/pending_inventory_deletion.dart';
 import '../../domain/policies/inventory_deletion_policy.dart';
@@ -17,7 +20,10 @@ import '../bloc/inventory_cubit.dart';
 import '../bloc/inventory_state.dart';
 import '../utils/inventory_display_formatters.dart';
 import '../widgets/inventory_pagination_controls.dart';
+import '../../domain/policies/inventory_export_policy.dart';
+import '../widgets/inventory_export_dialog.dart';
 import 'create_inventory_item_screen.dart';
+import 'inventory_bulk_entry_screen.dart';
 import 'inventory_import_screen.dart';
 import 'inventory_item_details_screen.dart';
 
@@ -28,11 +34,13 @@ import 'inventory_item_details_screen.dart';
 class InventoryWorkspaceScreen extends StatelessWidget {
   final CurrentUser user;
   final InventoryRepository repository;
+  final CurrentUser? Function()? currentUserProvider;
 
   const InventoryWorkspaceScreen({
     super.key,
     required this.user,
     required this.repository,
+    this.currentUserProvider,
   });
 
   @override
@@ -48,7 +56,11 @@ class InventoryWorkspaceScreen extends StatelessWidget {
 
     return BlocProvider<InventoryCubit>(
       create: (_) => InventoryCubit(repository)..loadItems(),
-      child: _InventoryWorkspaceView(user: user, repository: repository),
+      child: _InventoryWorkspaceView(
+        user: user,
+        repository: repository,
+        currentUserProvider: currentUserProvider,
+      ),
     );
   }
 }
@@ -56,8 +68,13 @@ class InventoryWorkspaceScreen extends StatelessWidget {
 class _InventoryWorkspaceView extends StatefulWidget {
   final CurrentUser user;
   final InventoryRepository repository;
+  final CurrentUser? Function()? currentUserProvider;
 
-  const _InventoryWorkspaceView({required this.user, required this.repository});
+  const _InventoryWorkspaceView({
+    required this.user,
+    required this.repository,
+    this.currentUserProvider,
+  });
 
   @override
   State<_InventoryWorkspaceView> createState() =>
@@ -67,6 +84,9 @@ class _InventoryWorkspaceView extends StatefulWidget {
 class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
   final TextEditingController _searchController = TextEditingController();
   List<PendingInventoryDeletion> _pendingDeletions = [];
+  final Set<String> _selectedItemIds = <String>{};
+  final ScrollController _horizontalScrollController = ScrollController();
+  final ScrollController _verticalScrollController = ScrollController();
 
   @override
   void initState() {
@@ -77,6 +97,8 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
   @override
   void dispose() {
     _searchController.dispose();
+    _horizontalScrollController.dispose();
+    _verticalScrollController.dispose();
     super.dispose();
   }
 
@@ -137,6 +159,88 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
     }
   }
 
+  void _openBulkEntry(BuildContext context) async {
+    final cubit = context.read<InventoryCubit>();
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => InventoryBulkEntryScreen(
+          user: widget.user,
+          repository: widget.repository,
+        ),
+      ),
+    );
+    if (created == true && mounted) {
+      _loadPendingDeletions();
+      cubit.refresh();
+    }
+  }
+
+  CurrentUser? _resolveCurrentUser([BuildContext? contextOverride]) {
+    if (widget.currentUserProvider != null) {
+      try {
+        return widget.currentUserProvider!();
+      } catch (_) {
+        return null;
+      }
+    }
+    final ctx = contextOverride ?? context;
+    try {
+      final authCubit = ctx.read<AuthCubit?>();
+      if (authCubit != null) {
+        final authState = authCubit.state;
+        if (authState is AuthAuthenticated) {
+          return authState.user;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  CurrentUser? _watchCurrentUser(BuildContext context) {
+    try {
+      context.watch<AuthCubit?>();
+    } catch (_) {}
+
+    if (widget.currentUserProvider != null) {
+      try {
+        return widget.currentUserProvider!();
+      } catch (_) {
+        return null;
+      }
+    }
+    try {
+      final authCubit = context.read<AuthCubit?>();
+      if (authCubit != null) {
+        final authState = authCubit.state;
+        if (authState is AuthAuthenticated) {
+          return authState.user;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  void _openExport(BuildContext context) {
+    final liveUser = _resolveCurrentUser(context);
+    if (liveUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('User session expired or unauthenticated.'),
+        ),
+      );
+      return;
+    }
+    final cubit = context.read<InventoryCubit?>();
+    showInventoryExportDialog(
+      context: context,
+      user: liveUser,
+      repository: widget.repository,
+      currentUserProvider: _resolveCurrentUser,
+      currentQuery: cubit?.state.query,
+      selectedItemIds: Set<String>.unmodifiable(_selectedItemIds),
+    );
+  }
+
   void _openImport(BuildContext context) async {
     final cubit = context.read<InventoryCubit>();
     final imported = await Navigator.of(context).push<bool>(
@@ -181,6 +285,13 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
+          if (InventoryItemAdministrationPolicy.canCreate(widget.user))
+            IconButton(
+              key: const Key('inventory_workspace_bulk_entry_appbar_button'),
+              icon: const Icon(Icons.table_rows_outlined),
+              tooltip: 'Bulk Entry',
+              onPressed: () => _openBulkEntry(context),
+            ),
           IconButton(
             key: const Key('inventory_refresh_button'),
             icon: const Icon(Icons.refresh),
@@ -307,7 +418,7 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isCompact = constraints.maxWidth < 600;
+          final isCompact = constraints.maxWidth < 960;
 
           final searchWidget = TextField(
             key: const Key('inventory_search_field'),
@@ -375,6 +486,9 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
             widget.user,
           );
           final canImport = InventoryImportPolicy.canImport(widget.user);
+          final liveUser = _watchCurrentUser(context);
+          final canExport =
+              liveUser != null && InventoryExportPolicy.canExport(liveUser);
 
           if (isCompact) {
             return Column(
@@ -406,6 +520,13 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
+                        if (canExport)
+                          OutlinedButton.icon(
+                            key: const Key('inventory_workspace_export_button'),
+                            onPressed: () => _openExport(context),
+                            icon: const Icon(Icons.download_outlined, size: 18),
+                            label: const Text('Export'),
+                          ),
                         if (canImport)
                           OutlinedButton.icon(
                             key: const Key('inventory_workspace_import_button'),
@@ -422,6 +543,18 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
                             icon: const Icon(Icons.add, size: 18),
                             label: const Text('Add Item'),
                           ),
+                        if (canCreate)
+                          OutlinedButton.icon(
+                            key: const Key(
+                              'inventory_workspace_bulk_entry_button',
+                            ),
+                            onPressed: () => _openBulkEntry(context),
+                            icon: const Icon(
+                              Icons.table_rows_outlined,
+                              size: 18,
+                            ),
+                            label: const Text('Bulk Entry'),
+                          ),
                       ],
                     ),
                   ],
@@ -435,6 +568,15 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
               Expanded(child: searchWidget),
               const SizedBox(width: 16),
               sortWidget,
+              if (canExport) ...[
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  key: const Key('inventory_workspace_export_button'),
+                  onPressed: () => _openExport(context),
+                  icon: const Icon(Icons.download_outlined, size: 18),
+                  label: const Text('Export'),
+                ),
+              ],
               if (canImport) ...[
                 const SizedBox(width: 12),
                 OutlinedButton.icon(
@@ -544,7 +686,7 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
             return _buildMobileCardList(context, state.items);
           }
 
-          return _buildDesktopDataTable(context, state.items);
+          return _buildDesktopDataTable(context, state);
         },
       );
     }
@@ -608,6 +750,17 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
                         ],
                       ),
                     ),
+                    Checkbox(
+                      key: Key('inventory_item_select_${item.id}'),
+                      value: _selectedItemIds.contains(item.id),
+                      onChanged: (selected) => setState(() {
+                        if (selected == true) {
+                          _selectedItemIds.add(item.id);
+                        } else {
+                          _selectedItemIds.remove(item.id);
+                        }
+                      }),
+                    ),
                     OutlinedButton(
                       key: Key('inventory_item_view_details_${item.id}'),
                       style: OutlinedButton.styleFrom(
@@ -660,78 +813,573 @@ class _InventoryWorkspaceViewState extends State<_InventoryWorkspaceView> {
 
   Widget _buildDesktopDataTable(
     BuildContext context,
-    List<InventoryItemSummary> items,
+    InventoryLoaded state,
   ) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final items = state.items;
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.vertical,
-        padding: const EdgeInsets.all(16.0),
-        child: DataTable(
-          key: const Key('inventory_items_table'),
-          headingRowColor: WidgetStateProperty.all(
-            colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-          ),
-          columns: const [
-            DataColumn(label: Text('Name')),
-            DataColumn(label: Text('SKU')),
-            DataColumn(label: Text('Quantity on hand'), numeric: true),
-            DataColumn(label: Text('Actions')),
+    // Dataset-wide dynamic column visibility detection
+    final hasCategory = items.any((s) => s.item.category.trim().isNotEmpty);
+    final hasBrand = items.any((s) => s.item.brand?.trim().isNotEmpty == true);
+    final hasUnit = items.any((s) => s.item.unit.trim().isNotEmpty);
+    final hasBarcode = items.any((s) => s.item.barcode?.trim().isNotEmpty == true);
+    final hasWarehouse = items.any((s) => s.item.warehouse.trim().isNotEmpty);
+    final hasBinLocation = items.any((s) => s.item.binLocation?.trim().isNotEmpty == true);
+    final hasSupplier = items.any((s) => s.item.supplier?.trim().isNotEmpty == true);
+    final hasUnitCost = items.any((s) => s.item.unitCostInr != null);
+    final hasSellingPrice = items.any((s) => s.item.sellingPriceInr != null);
+    final hasQuantity = true;
+    final hasReorderLevel = items.any((s) => s.item.reorderLevel != null);
+    final hasMaxStock = items.any((s) => s.item.maxStock != null);
+    final hasGst = items.any((s) => s.item.gstPercent != null);
+    final hasBatchNumber = items.any((s) => s.item.batchNumber?.trim().isNotEmpty == true);
+    final hasExpiryDate = items.any((s) => s.item.expiryDate != null);
+    final hasLastRestocked = items.any((s) => s.item.lastRestockedDate != null);
+    final hasStockStatus = true;
+    final hasIsActive = items.isNotEmpty;
+    final hasNotes = items.any((s) => s.item.notes?.trim().isNotEmpty == true);
+
+    // Dynamic Custom Fields
+    final customFieldKeys = <String>{};
+    for (final s in items) {
+      for (final entry in s.item.customFields.entries) {
+        if (entry.value != null && entry.value.toString().trim().isNotEmpty) {
+          customFieldKeys.add(entry.key);
+        }
+      }
+    }
+    final sortedCustomKeys = customFieldKeys.toList()..sort();
+
+    const headerTextStyle = TextStyle(
+      color: Colors.white,
+      fontWeight: FontWeight.bold,
+      fontSize: 13,
+      letterSpacing: 0.3,
+    );
+
+    final columns = <DataColumn>[
+      DataColumn(
+        label: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Checkbox(
+              key: const Key('inventory_select_all_checkbox'),
+              value: items.isNotEmpty && items.every((s) => _selectedItemIds.contains(s.item.id)),
+              tristate: true,
+              side: const BorderSide(color: Colors.white, width: 1.5),
+              checkColor: const Color(0xFF1A365D),
+              activeColor: Colors.white,
+              onChanged: (checked) {
+                setState(() {
+                  if (checked == true) {
+                    _selectedItemIds.addAll(items.map((s) => s.item.id));
+                  } else {
+                    _selectedItemIds.removeAll(items.map((s) => s.item.id));
+                  }
+                });
+              },
+            ),
+            const SizedBox(width: 4),
+            const Text('#', style: headerTextStyle),
           ],
-          rows: items.map((summary) {
-            final item = summary.item;
-            final qtyStr = InventoryDisplayFormatters.formatQuantity(
-              summary.quantityOnHand,
-            );
+        ),
+      ),
+      const DataColumn(label: Text('Product Name', style: headerTextStyle)),
+      const DataColumn(label: Text('SKU', style: headerTextStyle)),
+      if (hasCategory) const DataColumn(label: Text('Category', style: headerTextStyle)),
+      if (hasBrand) const DataColumn(label: Text('Brand', style: headerTextStyle)),
+      if (hasUnit) const DataColumn(label: Text('Unit', style: headerTextStyle)),
+      if (hasBarcode) const DataColumn(label: Text('Barcode', style: headerTextStyle)),
+      if (hasWarehouse) const DataColumn(label: Text('Warehouse', style: headerTextStyle)),
+      if (hasBinLocation) const DataColumn(label: Text('Bin Location', style: headerTextStyle)),
+      if (hasSupplier) const DataColumn(label: Text('Supplier', style: headerTextStyle)),
+      if (hasUnitCost) const DataColumn(label: Text('Unit Cost (₹)', style: headerTextStyle), numeric: true),
+      if (hasSellingPrice) const DataColumn(label: Text('Selling Price (₹)', style: headerTextStyle), numeric: true),
+      if (hasQuantity) const DataColumn(label: Text('Quantity', style: headerTextStyle), numeric: true),
+      if (hasReorderLevel) const DataColumn(label: Text('Reorder Level', style: headerTextStyle), numeric: true),
+      if (hasMaxStock) const DataColumn(label: Text('Max Stock', style: headerTextStyle), numeric: true),
+      if (hasGst) const DataColumn(label: Text('GST (%)', style: headerTextStyle), numeric: true),
+      if (hasBatchNumber) const DataColumn(label: Text('Batch Number', style: headerTextStyle)),
+      if (hasExpiryDate) const DataColumn(label: Text('Expiry Date', style: headerTextStyle)),
+      if (hasLastRestocked) const DataColumn(label: Text('Last Restocked', style: headerTextStyle)),
+      if (hasIsActive) const DataColumn(label: Text('Active', style: headerTextStyle)),
+      if (hasStockStatus) const DataColumn(label: Text('Status', style: headerTextStyle)),
+      if (hasNotes) const DataColumn(label: Text('Notes', style: headerTextStyle)),
+      for (final key in sortedCustomKeys)
+        DataColumn(label: Text(_formatCustomHeader(key), style: headerTextStyle)),
+      const DataColumn(label: Text('Actions', style: headerTextStyle)),
+    ];
 
-            return DataRow(
-              key: ValueKey('inventory_item_row_${item.id}'),
-              cells: [
-                DataCell(
-                  Text(
-                    item.name,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  onTap: () => _openDetails(context, item.id),
+    final pageOffset = state.page.currentPage > 0
+        ? (state.page.currentPage - 1) * state.page.pageSize
+        : 0;
+
+    final rows = List<DataRow>.generate(items.length, (i) {
+      final summary = items[i];
+      final item = summary.item;
+      final rowNumber = pageOffset + i + 1;
+      final isEven = i % 2 == 0;
+
+      final cells = <DataCell>[
+        DataCell(
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Checkbox(
+                key: Key('inventory_item_select_${item.id}'),
+                value: _selectedItemIds.contains(item.id),
+                onChanged: (selected) => setState(() {
+                  if (selected == true) {
+                    _selectedItemIds.add(item.id);
+                  } else {
+                    _selectedItemIds.remove(item.id);
+                  }
+                }),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '$rowNumber',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
                 ),
-                DataCell(
-                  Text(
-                    item.sku,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
+              ),
+            ],
+          ),
+        ),
+        DataCell(
+          Text(
+            item.name,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: colorScheme.primary,
+            ),
+          ),
+          onTap: () => _openDetails(context, item.id),
+        ),
+        DataCell(
+          Text(
+            item.sku,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontFamily: 'monospace',
+            ),
+          ),
+          onTap: () => _openDetails(context, item.id),
+        ),
+        if (hasCategory)
+          DataCell(
+            Text(item.category.trim().isEmpty ? '—' : item.category),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasBrand)
+          DataCell(
+            Text(item.brand?.trim().isNotEmpty == true ? item.brand! : '—'),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasUnit)
+          DataCell(
+            Text(item.unit.trim().isEmpty ? '—' : item.unit),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasBarcode)
+          DataCell(
+            Text(item.barcode?.trim().isNotEmpty == true ? item.barcode! : '—'),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasWarehouse)
+          DataCell(
+            Text(item.warehouse.trim().isEmpty ? '—' : item.warehouse),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasBinLocation)
+          DataCell(
+            Text(item.binLocation?.trim().isNotEmpty == true ? item.binLocation! : '—'),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasSupplier)
+          DataCell(
+            Text(item.supplier?.trim().isNotEmpty == true ? item.supplier! : '—'),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasUnitCost)
+          DataCell(
+            Text(item.unitCostInr != null ? _formatCurrency(item.unitCostInr!) : '—'),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasSellingPrice)
+          DataCell(
+            Text(item.sellingPriceInr != null ? _formatCurrency(item.sellingPriceInr!) : '—'),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasQuantity)
+          DataCell(
+            Text(
+              InventoryDisplayFormatters.formatQuantity(summary.quantityOnHand),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasReorderLevel)
+          DataCell(
+            Text(
+              item.reorderLevel != null
+                  ? InventoryDisplayFormatters.formatQuantity(item.reorderLevel!)
+                  : '—',
+            ),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasMaxStock)
+          DataCell(
+            Text(
+              item.maxStock != null
+                  ? InventoryDisplayFormatters.formatQuantity(item.maxStock!)
+                  : '—',
+            ),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasGst)
+          DataCell(
+            Text(
+              item.gstPercent != null
+                  ? '${item.gstPercent!.toStringAsFixed(item.gstPercent! % 1 == 0 ? 0 : 2)}%'
+                  : '—',
+            ),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasBatchNumber)
+          DataCell(
+            Text(item.batchNumber?.trim().isNotEmpty == true ? item.batchNumber! : '—'),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasExpiryDate)
+          DataCell(
+            Text(item.expiryDate != null ? _formatDate(item.expiryDate!) : '—'),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasLastRestocked)
+          DataCell(
+            Text(item.lastRestockedDate != null ? _formatDate(item.lastRestockedDate!) : '—'),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasIsActive)
+          DataCell(
+            Text(item.isActive ? 'Active' : 'Inactive'),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasStockStatus)
+          DataCell(
+            _buildStockStatusBadge(context, summary.stockStatus),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        if (hasNotes)
+          DataCell(
+            Text(item.notes?.trim().isNotEmpty == true ? item.notes! : '—'),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        for (final key in sortedCustomKeys)
+          DataCell(
+            Text(
+              item.customFields[key]?.toString().trim().isNotEmpty == true
+                  ? item.customFields[key].toString()
+                  : '—',
+            ),
+            onTap: () => _openDetails(context, item.id),
+          ),
+        DataCell(
+          OutlinedButton(
+            key: Key('inventory_item_view_details_${item.id}'),
+            style: OutlinedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+            ),
+            onPressed: () => _openDetails(context, item.id),
+            child: const Text('View Details'),
+          ),
+        ),
+      ];
+
+      return DataRow(
+        key: ValueKey('inventory_item_row_${item.id}'),
+        color: WidgetStateProperty.resolveWith<Color?>((states) {
+          if (states.contains(WidgetState.hovered)) {
+            return colorScheme.primary.withValues(alpha: 0.05);
+          }
+          if (states.contains(WidgetState.selected)) {
+            return colorScheme.primaryContainer.withValues(alpha: 0.2);
+          }
+          return isEven ? colorScheme.surface : colorScheme.surfaceContainerLowest;
+        }),
+        cells: cells,
+      );
+    });
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final tableWidget = Scrollbar(
+          controller: _horizontalScrollController,
+          thumbVisibility: true,
+          trackVisibility: true,
+          interactive: true,
+          child: SingleChildScrollView(
+            controller: _horizontalScrollController,
+            scrollDirection: Axis.horizontal,
+            child: Scrollbar(
+              controller: _verticalScrollController,
+              thumbVisibility: true,
+              trackVisibility: true,
+              interactive: true,
+              child: SingleChildScrollView(
+                controller: _verticalScrollController,
+                scrollDirection: Axis.vertical,
+                padding: const EdgeInsets.all(16.0),
+                child: DataTable(
+                  key: const Key('inventory_items_table'),
+                  headingRowColor: WidgetStateProperty.all(const Color(0xFF1A365D)),
+                  headingTextStyle: headerTextStyle,
+                  border: TableBorder.all(
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+                    width: 1,
+                    borderRadius: BorderRadius.circular(4),
                   ),
-                  onTap: () => _openDetails(context, item.id),
+                  dataRowMinHeight: 48,
+                  dataRowMaxHeight: 56,
+                  columnSpacing: 24,
+                  horizontalMargin: 16,
+                  columns: columns,
+                  rows: rows,
                 ),
-                DataCell(
-                  Text(
-                    qtyStr,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  onTap: () => _openDetails(context, item.id),
-                ),
-                DataCell(
-                  OutlinedButton(
-                    key: Key('inventory_item_view_details_${item.id}'),
-                    style: OutlinedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    onPressed: () => _openDetails(context, item.id),
-                    child: const Text('View Details'),
-                  ),
-                ),
-              ],
-            );
-          }).toList(),
+              ),
+            ),
+          ),
+        );
+
+        if (constraints.maxHeight.isFinite) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: tableWidget),
+              _buildHorizontalScrollNavigation(context),
+            ],
+          );
+        }
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            tableWidget,
+            _buildHorizontalScrollNavigation(context),
+          ],
+        );
+      },
+    );
+  }
+
+  static String _formatCustomHeader(String key) {
+    return key
+        .replaceAll('_', ' ')
+        .replaceAll('-', ' ')
+        .split(' ')
+        .where((w) => w.isNotEmpty)
+        .map((w) => '${w[0].toUpperCase()}${w.substring(1)}')
+        .join(' ');
+  }
+
+  static String _formatCurrency(double amount) {
+    return '₹${amount.toStringAsFixed(2)}';
+  }
+
+  static String _formatDate(DateTime dt) {
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  Widget _buildStockStatusBadge(
+    BuildContext context,
+    InventoryStockStatus status,
+  ) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color fg;
+    final Color bg;
+    switch (status) {
+      case InventoryStockStatus.inStock:
+        fg = isDark ? Colors.green.shade300 : Colors.green.shade800;
+        bg = isDark
+            ? Colors.green.shade900.withValues(alpha: 0.4)
+            : Colors.green.shade50;
+        break;
+      case InventoryStockStatus.lowStock:
+        fg = isDark ? Colors.orange.shade300 : Colors.orange.shade800;
+        bg = isDark
+            ? Colors.orange.shade900.withValues(alpha: 0.4)
+            : Colors.orange.shade50;
+        break;
+      case InventoryStockStatus.outOfStock:
+        fg = isDark ? Colors.red.shade300 : Colors.red.shade800;
+        bg = isDark
+            ? Colors.red.shade900.withValues(alpha: 0.4)
+            : Colors.red.shade50;
+        break;
+      case InventoryStockStatus.overstock:
+        fg = isDark ? Colors.blue.shade300 : Colors.blue.shade800;
+        bg = isDark
+            ? Colors.blue.shade900.withValues(alpha: 0.4)
+            : Colors.blue.shade50;
+        break;
+      case InventoryStockStatus.discontinued:
+        fg = isDark ? Colors.grey.shade400 : Colors.grey.shade700;
+        bg = isDark
+            ? Colors.grey.shade800.withValues(alpha: 0.4)
+            : Colors.grey.shade100;
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: fg.withValues(alpha: 0.3)),
+      ),
+      child: Text(
+        status.displayName,
+        style: TextStyle(
+          color: fg,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
         ),
       ),
     );
   }
+
+  void _scrollTableHorizontallyBy(double delta) {
+    if (!_horizontalScrollController.hasClients ||
+        !_horizontalScrollController.position.hasContentDimensions) {
+      return;
+    }
+    final maxExtent = _horizontalScrollController.position.maxScrollExtent;
+    final target = (_horizontalScrollController.offset + delta).clamp(0.0, maxExtent);
+    _horizontalScrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _scrollTableHorizontallyTo(double target) {
+    if (!_horizontalScrollController.hasClients ||
+        !_horizontalScrollController.position.hasContentDimensions) {
+      return;
+    }
+    final maxExtent = _horizontalScrollController.position.maxScrollExtent;
+    _horizontalScrollController.animateTo(
+      target.clamp(0.0, maxExtent),
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Widget _buildHorizontalScrollNavigation(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return AnimatedBuilder(
+      animation: _horizontalScrollController,
+      builder: (context, _) {
+        final hasDimensions = _horizontalScrollController.hasClients &&
+            _horizontalScrollController.position.hasContentDimensions;
+        final maxScroll = hasDimensions
+            ? _horizontalScrollController.position.maxScrollExtent
+            : 0.0;
+        final current = hasDimensions
+            ? _horizontalScrollController.offset.clamp(0.0, maxScroll > 0 ? maxScroll : 0.0)
+            : 0.0;
+        final canScroll = maxScroll > 0;
+
+        return Container(
+          key: const Key('inventory_horizontal_scroll_bar'),
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainer,
+            border: Border(
+              top: BorderSide(color: colorScheme.outlineVariant),
+            ),
+          ),
+          child: Row(
+            children: [
+              IconButton.filledTonal(
+                key: const Key('inventory_scroll_start_button'),
+                tooltip: 'Scroll to Start',
+                icon: const Icon(Icons.first_page, size: 20),
+                onPressed: canScroll && current > 0 ? () => _scrollTableHorizontallyTo(0.0) : null,
+              ),
+              const SizedBox(width: 4),
+              IconButton.filledTonal(
+                key: const Key('inventory_scroll_left_button'),
+                tooltip: 'Scroll Left',
+                icon: const Icon(Icons.chevron_left, size: 22),
+                onPressed: canScroll && current > 0 ? () => _scrollTableHorizontallyBy(-350.0) : null,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 6,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+                        activeTrackColor: const Color(0xFF1A365D),
+                        thumbColor: const Color(0xFF1A365D),
+                      ),
+                      child: Slider(
+                        key: const Key('inventory_horizontal_scroll_slider'),
+                        value: canScroll ? current.clamp(0.0, maxScroll) : 0.0,
+                        min: 0.0,
+                        max: canScroll ? maxScroll : 1.0,
+                        onChanged: canScroll
+                            ? (value) {
+                                _horizontalScrollController.jumpTo(value);
+                              }
+                            : null,
+                      ),
+                    ),
+                    Text(
+                      '◀ Scroll Horizontally (Left ↔ Right) to View All Columns ▶',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              IconButton.filledTonal(
+                key: const Key('inventory_scroll_right_button'),
+                tooltip: 'Scroll Right',
+                icon: const Icon(Icons.chevron_right, size: 22),
+                onPressed: canScroll && current < maxScroll ? () => _scrollTableHorizontallyBy(350.0) : null,
+              ),
+              const SizedBox(width: 4),
+              IconButton.filledTonal(
+                key: const Key('inventory_scroll_end_button'),
+                tooltip: 'Scroll to End',
+                icon: const Icon(Icons.last_page, size: 20),
+                onPressed: canScroll && current < maxScroll ? () => _scrollTableHorizontallyTo(maxScroll) : null,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
 }

@@ -158,6 +158,15 @@ void main() {
         findsOneWidget,
       );
 
+      // Unmap Name to test missing required field validation
+      await tester.tap(
+        find.byKey(const Key('inventory_import_map_name_dropdown')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Not Mapped').last);
+      await tester.pumpAndSettle();
+
+      // Try confirming mapping without selecting required fields
       // Try confirming mapping without selecting required fields
       await tester.tap(
         find.byKey(const Key('inventory_import_confirm_mapping_button')),

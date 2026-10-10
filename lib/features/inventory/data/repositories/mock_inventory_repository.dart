@@ -8,6 +8,7 @@ import '../../domain/entities/inventory_query.dart';
 import '../../domain/entities/inventory_sort.dart';
 import '../../domain/entities/inventory_stock_mutation_result.dart';
 import '../../domain/entities/pending_inventory_deletion.dart';
+import '../../domain/entities/stock_movement_record.dart';
 import '../../domain/entities/stock_movement.dart';
 import '../../domain/entities/stock_movement_type.dart';
 import '../../domain/exceptions/inventory_exception.dart';
@@ -18,6 +19,10 @@ import '../../domain/inputs/record_opening_stock_input.dart';
 import '../../domain/inputs/update_inventory_item_input.dart';
 import '../../domain/repositories/inventory_repository.dart';
 import '../mock/mock_inventory_seed_data.dart';
+import '../../domain/entities/custom_field_definition.dart';
+import '../../domain/entities/inventory_catalogs.dart';
+import '../../domain/validation/inventory_validation.dart';
+
 
 /// In-memory mock implementation of [InventoryRepository].
 ///
@@ -33,6 +38,8 @@ class MockInventoryRepository implements InventoryRepository {
   final bool Function(String userId)? _canManageStock;
   final Map<String, PendingInventoryDeletion> _pendingDeletions = {};
   final Set<String> _retiredItemIds = {};
+  final List<CustomFieldDefinition> _customFieldDefinitions;
+  final InventoryCatalogs _catalogs;
 
   MockInventoryRepository({
     List<InventoryItem>? items,
@@ -41,6 +48,8 @@ class MockInventoryRepository implements InventoryRepository {
     bool Function(String sku)? simulateMovementFailure,
     bool Function(String itemId)? hasExternalReference,
     bool Function(String userId)? canManageStock,
+    InventoryCatalogs? catalogs,
+    List<CustomFieldDefinition>? customFieldDefinitions,
   }) : _items = List.of(items ?? MockInventorySeedData.createDefaultItems()),
        _movements = List.of(
          movements ?? MockInventorySeedData.createDefaultMovements(),
@@ -48,7 +57,9 @@ class MockInventoryRepository implements InventoryRepository {
        _nowProvider = nowProvider ?? DateTime.now,
        _simulateMovementFailure = simulateMovementFailure,
        _hasExternalReference = hasExternalReference,
-       _canManageStock = canManageStock {
+       _canManageStock = canManageStock,
+       _catalogs = catalogs ?? InventoryCatalogs(),
+       _customFieldDefinitions = List.of(customFieldDefinitions ?? const []) {
     _validateInvariants();
   }
 
@@ -239,6 +250,92 @@ class MockInventoryRepository implements InventoryRepository {
     );
   }
 
+
+  /// Access to the configurable category, unit, and warehouse catalogs.
+  InventoryCatalogs get catalogs => _catalogs;
+
+  /// Synchronous access to custom field definitions.
+  List<CustomFieldDefinition> get customFieldDefinitions =>
+      List.unmodifiable(_customFieldDefinitions);
+
+  /// Retrieves all registered custom field definitions.
+  Future<List<CustomFieldDefinition>> getCustomFieldDefinitions() async {
+    return List.unmodifiable(_customFieldDefinitions);
+  }
+
+  /// Retrieves a registered custom field definition by its machine [key], or null if not found.
+  Future<CustomFieldDefinition?> getCustomFieldDefinitionByKey(String key) async {
+    final normalized = key.trim().toLowerCase();
+    final matches = _customFieldDefinitions.where(
+      (d) => d.key.toLowerCase() == normalized,
+    );
+    return matches.isEmpty ? null : matches.first;
+  }
+
+  /// Saves or updates a custom field definition.
+  Future<CustomFieldDefinition> saveCustomFieldDefinition(
+    CustomFieldDefinition definition,
+  ) async {
+    final existingIndex = _customFieldDefinitions.indexWhere(
+      (d) =>
+          d.id == definition.id ||
+          d.key.toLowerCase() == definition.key.toLowerCase(),
+    );
+    if (existingIndex >= 0) {
+      final existing = _customFieldDefinitions[existingIndex];
+      if (existing.id != definition.id &&
+          existing.key.toLowerCase() == definition.key.toLowerCase()) {
+        throw InventoryValidationException(
+          'A custom field with key "${definition.key}" already exists.',
+        );
+      }
+      _customFieldDefinitions[existingIndex] = definition;
+    } else {
+      _customFieldDefinitions.add(definition);
+    }
+    return definition;
+  }
+
+  /// Deletes a custom field definition by [id].
+  Future<void> deleteCustomFieldDefinition(String id) async {
+    _customFieldDefinitions.removeWhere((d) => d.id == id);
+  }
+
+  /// Validates and normalizes custom field values against registered definitions.
+  Map<String, dynamic> _validateAndNormalizeCustomFields(
+    Map<String, dynamic> customFields,
+  ) {
+    final normalized = <String, dynamic>{};
+
+    for (final entry in customFields.entries) {
+      final key = entry.key.trim().toLowerCase();
+      final def = _customFieldDefinitions.firstWhere(
+        (d) => d.key.toLowerCase() == key,
+        orElse: () => throw InventoryValidationException(
+          'Unknown custom field key "${entry.key}".',
+        ),
+      );
+      final validated = def.validateValue(entry.value);
+      if (validated != null) {
+        normalized[def.key] = validated;
+      }
+    }
+
+    for (final def in _customFieldDefinitions) {
+      if (!normalized.containsKey(def.key)) {
+        if (def.defaultValue != null && def.defaultValue!.isNotEmpty) {
+          normalized[def.key] = def.validateValue(def.defaultValue);
+        } else if (def.isRequired) {
+          throw InventoryValidationException(
+            'Custom field "${def.label}" is required.',
+          );
+        }
+      }
+    }
+
+    return Map.unmodifiable(normalized);
+  }
+
   @override
   Future<InventoryItemSummary?> getItemById(String id) async {
     _purgeExpiredDeletionsInternal();
@@ -258,15 +355,31 @@ class MockInventoryRepository implements InventoryRepository {
     CreateInventoryItemInput input,
   ) async {
     _purgeExpiredDeletionsInternal();
-    final trimmedName = input.name.trim();
-    final trimmedSku = input.sku.trim();
-
-    if (trimmedName.isEmpty) {
-      throw const InventoryValidationException('Item name cannot be blank.');
-    }
-    if (trimmedSku.isEmpty) {
-      throw const InventoryValidationException('Item SKU cannot be blank.');
-    }
+    final trimmedName = InventoryValidation.validateName(input.name);
+    final trimmedSku = InventoryValidation.validateSku(input.sku);
+    final trimmedCategory = InventoryValidation.validateCategory(
+      input.category,
+      _catalogs,
+    );
+    final trimmedUnit = InventoryValidation.validateUnit(
+      input.unit,
+      _catalogs,
+    );
+    final trimmedWarehouse = InventoryValidation.validateWarehouse(
+      input.warehouse,
+      _catalogs,
+    );
+    final validatedBarcode = InventoryValidation.validateBarcode(input.barcode);
+    final validatedUnitCost = InventoryValidation.validateUnitCost(input.unitCostInr);
+    final validatedSellingPrice = InventoryValidation.validateSellingPrice(input.sellingPriceInr);
+    final validatedReorderLevel = InventoryValidation.validateReorderLevel(input.reorderLevel);
+    final validatedMaxStock = InventoryValidation.validateMaxStock(
+      input.maxStock,
+      validatedReorderLevel,
+    );
+    final validatedGst = InventoryValidation.validateGstPercent(input.gstPercent);
+    final validatedNotes = InventoryValidation.validateNotes(input.notes);
+    final validatedCustomFields = _validateAndNormalizeCustomFields(input.customFields);
 
     final normalizedCandidateSku = trimmedSku.toLowerCase();
     if (_items.any(
@@ -278,7 +391,29 @@ class MockInventoryRepository implements InventoryRepository {
     }
 
     final id = _generateNextDeterministicId();
-    final newItem = InventoryItem(id: id, name: trimmedName, sku: trimmedSku);
+    final newItem = InventoryItem(
+      id: id,
+      name: trimmedName,
+      sku: trimmedSku,
+      category: trimmedCategory,
+      brand: input.brand?.trim(),
+      unit: trimmedUnit,
+      barcode: validatedBarcode,
+      warehouse: trimmedWarehouse,
+      binLocation: input.binLocation?.trim(),
+      supplier: input.supplier?.trim(),
+      unitCostInr: validatedUnitCost,
+      sellingPriceInr: validatedSellingPrice,
+      reorderLevel: validatedReorderLevel,
+      maxStock: validatedMaxStock,
+      gstPercent: validatedGst,
+      batchNumber: input.batchNumber?.trim(),
+      expiryDate: input.expiryDate,
+      lastRestockedDate: input.lastRestockedDate,
+      isActive: input.isActive,
+      notes: validatedNotes,
+      customFields: validatedCustomFields,
+    );
 
     if (input.openingStock != null) {
       final trimmedActor = input.performedByUserId?.trim() ?? '';
@@ -334,15 +469,8 @@ class MockInventoryRepository implements InventoryRepository {
         'Cannot edit an item that is pending deletion.',
       );
     }
-    final trimmedName = input.name.trim();
-    final trimmedSku = input.sku.trim();
-
-    if (trimmedName.isEmpty) {
-      throw const InventoryValidationException('Item name cannot be blank.');
-    }
-    if (trimmedSku.isEmpty) {
-      throw const InventoryValidationException('Item SKU cannot be blank.');
-    }
+    final trimmedName = InventoryValidation.validateName(input.name);
+    final trimmedSku = InventoryValidation.validateSku(input.sku);
 
     final existingIndex = _items.indexWhere((item) => item.id == input.id);
     if (existingIndex == -1) {
@@ -350,6 +478,7 @@ class MockInventoryRepository implements InventoryRepository {
         'Inventory item with ID "${input.id}" not found.',
       );
     }
+    final existingItem = _items[existingIndex];
 
     final normalizedCandidateSku = trimmedSku.toLowerCase();
     final hasDuplicateOtherSku = _items.any(
@@ -364,10 +493,126 @@ class MockInventoryRepository implements InventoryRepository {
       );
     }
 
-    final updatedItem = InventoryItem(
-      id: input.id,
+    final updatedCategory = input.category != null
+        ? InventoryValidation.validateCategory(input.category!, _catalogs)
+        : existingItem.category;
+    final updatedUnit = input.unit != null
+        ? InventoryValidation.validateUnit(input.unit!, _catalogs)
+        : existingItem.unit;
+    final updatedWarehouse = input.warehouse != null
+        ? InventoryValidation.validateWarehouse(input.warehouse!, _catalogs)
+        : existingItem.warehouse;
+
+    final updatedBrand = input.clearBrand
+        ? null
+        : (input.brand != null ? input.brand!.trim() : existingItem.brand);
+
+    final updatedBarcode = input.clearBarcode
+        ? null
+        : (input.barcode != null
+            ? InventoryValidation.validateBarcode(input.barcode)
+            : existingItem.barcode);
+
+    final updatedBinLocation = input.clearBinLocation
+        ? null
+        : (input.binLocation != null
+            ? input.binLocation!.trim()
+            : existingItem.binLocation);
+
+    final updatedSupplier = input.clearSupplier
+        ? null
+        : (input.supplier != null
+            ? input.supplier!.trim()
+            : existingItem.supplier);
+
+    final updatedUnitCost = input.clearUnitCostInr
+        ? null
+        : (input.unitCostInr != null
+            ? InventoryValidation.validateUnitCost(input.unitCostInr)
+            : existingItem.unitCostInr);
+
+    final updatedSellingPrice = input.clearSellingPriceInr
+        ? null
+        : (input.sellingPriceInr != null
+            ? InventoryValidation.validateSellingPrice(input.sellingPriceInr)
+            : existingItem.sellingPriceInr);
+
+    final updatedReorderLevel = input.clearReorderLevel
+        ? null
+        : (input.reorderLevel != null
+            ? InventoryValidation.validateReorderLevel(input.reorderLevel)
+            : existingItem.reorderLevel);
+
+    final updatedMaxStock = input.clearMaxStock
+        ? null
+        : (input.maxStock != null
+            ? InventoryValidation.validateMaxStock(input.maxStock, updatedReorderLevel)
+            : InventoryValidation.validateMaxStock(existingItem.maxStock, updatedReorderLevel));
+
+    final updatedGst = input.clearGstPercent
+        ? null
+        : (input.gstPercent != null
+            ? InventoryValidation.validateGstPercent(input.gstPercent)
+            : existingItem.gstPercent);
+
+    final updatedBatchNumber = input.clearBatchNumber
+        ? null
+        : (input.batchNumber != null
+            ? input.batchNumber!.trim()
+            : existingItem.batchNumber);
+
+    final updatedExpiryDate = input.clearExpiryDate
+        ? null
+        : (input.expiryDate ?? existingItem.expiryDate);
+
+    final updatedLastRestockedDate = input.clearLastRestockedDate
+        ? null
+        : (input.lastRestockedDate ?? existingItem.lastRestockedDate);
+
+    final updatedIsActive = input.isActive ?? existingItem.isActive;
+
+    final updatedNotes = input.clearNotes
+        ? null
+        : (input.notes != null
+            ? InventoryValidation.validateNotes(input.notes)
+            : existingItem.notes);
+
+    Map<String, dynamic> updatedCustomFields;
+    if (input.customFields != null) {
+      final merged = Map<String, dynamic>.from(existingItem.customFields);
+      for (final entry in input.customFields!.entries) {
+        if (entry.value == null) {
+          merged.remove(entry.key);
+        } else {
+          merged[entry.key] = entry.value;
+        }
+      }
+      updatedCustomFields = _validateAndNormalizeCustomFields(merged);
+    } else {
+      updatedCustomFields = existingItem.customFields;
+    }
+
+    final updatedItem = existingItem.copyWith(
       name: trimmedName,
       sku: trimmedSku,
+      category: updatedCategory,
+      brand: updatedBrand,
+      unit: updatedUnit,
+      barcode: updatedBarcode,
+      warehouse: updatedWarehouse,
+      binLocation: updatedBinLocation,
+      supplier: updatedSupplier,
+      unitCostInr: updatedUnitCost,
+      sellingPriceInr: updatedSellingPrice,
+      reorderLevel: updatedReorderLevel,
+      maxStock: updatedMaxStock,
+      gstPercent: updatedGst,
+      batchNumber: updatedBatchNumber,
+      expiryDate: updatedExpiryDate,
+      lastRestockedDate: updatedLastRestockedDate,
+      isActive: updatedIsActive,
+      notes: updatedNotes,
+      customFields: updatedCustomFields,
     );
 
     _items[existingIndex] = updatedItem;
@@ -626,7 +871,18 @@ class MockInventoryRepository implements InventoryRepository {
 
   @override
   Future<Set<String>> getExistingSkus() async {
+    _purgeExpiredDeletionsInternal();
     return _items.map((item) => item.sku.trim().toLowerCase()).toSet();
+  }
+
+  /// Retrieves a map of existing inventory items keyed by lowercase trimmed SKU.
+  Future<Map<String, InventoryItem>> getExistingItemsBySku() async {
+    _purgeExpiredDeletionsInternal();
+    final map = <String, InventoryItem>{};
+    for (final item in _items) {
+      map[item.sku.trim().toLowerCase()] = item;
+    }
+    return Map.unmodifiable(map);
   }
 
   @override
@@ -648,6 +904,15 @@ class MockInventoryRepository implements InventoryRepository {
       );
     }
 
+    // Register any staged custom field definitions
+    for (final def in request.stagedCustomFieldDefinitions) {
+      if (!_customFieldDefinitions.any(
+        (d) => d.key.toLowerCase() == def.key.toLowerCase(),
+      )) {
+        _customFieldDefinitions.add(def);
+      }
+    }
+
     // Intra-request duplicate detection: all occurrences of duplicated SKUs within request fail.
     final seenRequestSkus = <String>{};
     final duplicateRequestSkus = <String>{};
@@ -662,6 +927,8 @@ class MockInventoryRepository implements InventoryRepository {
 
     final importedSummaries = <InventoryItemSummary>[];
     final failures = <InventoryImportRowFailure>[];
+    var createdCount = 0;
+    var updatedCount = 0;
 
     for (final row in request.rows) {
       final trimmedName = row.name.trim();
@@ -702,85 +969,290 @@ class MockInventoryRepository implements InventoryRepository {
         continue;
       }
 
-      // Revalidate freshness against existing repository state
-      final alreadyExists = _items.any(
-        (item) => item.sku.trim().toLowerCase() == normSku,
-      );
-      if (alreadyExists) {
-        failures.add(
-          InventoryImportRowFailure(
-            sourceRowNumber: row.sourceRowNumber,
-            sku: row.sku,
-            reason: 'An inventory item with this SKU already exists.',
-          ),
+      if (row.isUpdate) {
+        // Mode B / Update Existing Row
+        final existingIndex = _items.indexWhere(
+          (item) => item.sku.trim().toLowerCase() == normSku,
         );
-        continue;
-      }
-
-      // Opening stock validation
-      if (row.openingStock != null) {
-        if (!row.openingStock!.isFinite || row.openingStock! <= 0) {
+        if (existingIndex == -1) {
           failures.add(
             InventoryImportRowFailure(
               sourceRowNumber: row.sourceRowNumber,
               sku: row.sku,
-              reason: 'Opening stock must be greater than zero.',
+              reason: 'Item with SKU "${row.sku}" not found for update.',
             ),
           );
           continue;
         }
-      }
 
-      // 2. Atomic row staging & execution
-      try {
-        final itemId = _generateNextDeterministicId();
-        final newItem = InventoryItem(
-          id: itemId,
-          name: trimmedName,
-          sku: trimmedSku,
+        final existing = _items[existingIndex];
+        try {
+          final updatedName = row.name.trim().isNotEmpty
+              ? InventoryValidation.validateName(row.name)
+              : existing.name;
+          final updatedCategory =
+              row.category != null && row.category!.trim().isNotEmpty
+                  ? InventoryValidation.validateCategory(
+                      row.category!,
+                      _catalogs,
+                    )
+                  : existing.category;
+          final updatedBrand =
+              row.brand != null && row.brand!.trim().isNotEmpty
+                  ? row.brand!.trim()
+                  : existing.brand;
+          final updatedUnit =
+              row.unit != null && row.unit!.trim().isNotEmpty
+                  ? InventoryValidation.validateUnit(row.unit!, _catalogs)
+                  : existing.unit;
+          final updatedBarcode = row.clearBarcode
+              ? null
+              : (row.barcode != null && row.barcode!.trim().isNotEmpty
+                  ? InventoryValidation.validateBarcode(row.barcode)
+                  : existing.barcode);
+          final updatedWarehouse =
+              row.warehouse != null && row.warehouse!.trim().isNotEmpty
+                  ? InventoryValidation.validateWarehouse(
+                      row.warehouse!,
+                      _catalogs,
+                    )
+                  : existing.warehouse;
+          final updatedBin = row.clearBinLocation
+              ? null
+              : (row.binLocation != null &&
+                      row.binLocation!.trim().isNotEmpty
+                  ? row.binLocation!.trim()
+                  : existing.binLocation);
+          final updatedSupplier = row.clearSupplier
+              ? null
+              : (row.supplier != null && row.supplier!.trim().isNotEmpty
+                  ? row.supplier!.trim()
+                  : existing.supplier);
+          final updatedCost = row.clearUnitCost
+              ? null
+              : (row.unitCostInr != null
+                  ? InventoryValidation.validateUnitCost(row.unitCostInr)
+                  : existing.unitCostInr);
+          final updatedPrice = row.sellingPriceInr != null
+              ? InventoryValidation.validateSellingPrice(row.sellingPriceInr)
+              : existing.sellingPriceInr;
+          final updatedReorder = row.clearReorderLevel
+              ? null
+              : (row.reorderLevel != null
+                  ? InventoryValidation.validateReorderLevel(row.reorderLevel)
+                  : existing.reorderLevel);
+          final updatedMaxStock = row.clearMaxStock
+              ? null
+              : (row.maxStock != null
+                  ? InventoryValidation.validateMaxStock(
+                      row.maxStock,
+                      updatedReorder ?? existing.reorderLevel,
+                    )
+                  : existing.maxStock);
+          final updatedGst = row.clearGstPercent
+              ? null
+              : (row.gstPercent != null
+                  ? InventoryValidation.validateGstPercent(row.gstPercent)
+                  : existing.gstPercent);
+          final updatedBatch = row.clearBatchNumber
+              ? null
+              : (row.batchNumber != null &&
+                      row.batchNumber!.trim().isNotEmpty
+                  ? row.batchNumber!.trim()
+                  : existing.batchNumber);
+          final updatedExpiry = row.clearExpiryDate
+              ? null
+              : (row.expiryDate ?? existing.expiryDate);
+          final updatedLastRestocked = row.clearLastRestockedDate
+              ? null
+              : (row.lastRestockedDate ?? existing.lastRestockedDate);
+          final updatedNotes = row.clearNotes
+              ? null
+              : (row.notes != null
+                  ? InventoryValidation.validateNotes(row.notes)
+                  : existing.notes);
+
+          final mergedCustom = Map<String, dynamic>.from(existing.customFields);
+          if (row.customFields.isNotEmpty) {
+            final normalized =
+                _validateAndNormalizeCustomFields(row.customFields);
+            mergedCustom.addAll(normalized);
+          }
+
+          final updatedItem = existing.copyWith(
+            name: updatedName,
+            category: updatedCategory,
+            brand: updatedBrand,
+            unit: updatedUnit,
+            barcode: updatedBarcode,
+            warehouse: updatedWarehouse,
+            binLocation: updatedBin,
+            supplier: updatedSupplier,
+            unitCostInr: updatedCost,
+            sellingPriceInr: updatedPrice,
+            reorderLevel: updatedReorder,
+            maxStock: updatedMaxStock,
+            gstPercent: updatedGst,
+            batchNumber: updatedBatch,
+            expiryDate: updatedExpiry,
+            lastRestockedDate: updatedLastRestocked,
+            isActive: row.isActive,
+            notes: updatedNotes,
+            customFields: mergedCustom,
+          );
+
+          // Ledger stock quantity is strictly untouched!
+          _items[existingIndex] = updatedItem;
+          importedSummaries.add(
+            InventoryItemSummary(
+              item: updatedItem,
+              quantityOnHand: _deriveQuantityOnHand(updatedItem.id),
+            ),
+          );
+          updatedCount++;
+        } catch (e) {
+          failures.add(
+            InventoryImportRowFailure(
+              sourceRowNumber: row.sourceRowNumber,
+              sku: row.sku,
+              reason: 'Failed to update row: $e',
+            ),
+          );
+        }
+      } else {
+        // Mode A / Create New Row
+        final alreadyExists = _items.any(
+          (item) => item.sku.trim().toLowerCase() == normSku,
         );
+        if (alreadyExists) {
+          failures.add(
+            InventoryImportRowFailure(
+              sourceRowNumber: row.sourceRowNumber,
+              sku: row.sku,
+              reason: 'An inventory item with this SKU already exists.',
+            ),
+          );
+          continue;
+        }
 
-        StockMovement? candidateMovement;
+        // Opening stock validation
         if (row.openingStock != null) {
-          if (_simulateMovementFailure != null &&
-              _simulateMovementFailure(trimmedSku)) {
-            throw const InventoryValidationException(
-              'Simulated movement persistence failure.',
+          if (!row.openingStock!.isFinite || row.openingStock! < 0) {
+            failures.add(
+              InventoryImportRowFailure(
+                sourceRowNumber: row.sourceRowNumber,
+                sku: row.sku,
+                reason: 'Opening stock cannot be negative.',
+              ),
+            );
+            continue;
+          }
+        }
+
+        try {
+          final itemId = _generateNextDeterministicId();
+          final validatedName = InventoryValidation.validateName(row.name);
+          final validatedSku = InventoryValidation.validateSku(row.sku);
+          final category =
+              row.category != null && row.category!.trim().isNotEmpty
+                  ? InventoryValidation.validateCategory(
+                      row.category!,
+                      _catalogs,
+                    )
+                  : 'General';
+          final unit = row.unit != null && row.unit!.trim().isNotEmpty
+              ? InventoryValidation.validateUnit(row.unit!, _catalogs)
+              : 'piece';
+          final warehouse =
+              row.warehouse != null && row.warehouse!.trim().isNotEmpty
+                  ? InventoryValidation.validateWarehouse(
+                      row.warehouse!,
+                      _catalogs,
+                    )
+                  : 'Default';
+          final barcode = InventoryValidation.validateBarcode(row.barcode);
+          final unitCost =
+              InventoryValidation.validateUnitCost(row.unitCostInr);
+          final sellingPrice =
+              InventoryValidation.validateSellingPrice(row.sellingPriceInr);
+          final reorderLevel =
+              InventoryValidation.validateReorderLevel(row.reorderLevel);
+          final maxStock = InventoryValidation.validateMaxStock(
+            row.maxStock,
+            reorderLevel,
+          );
+          final gstPercent =
+              InventoryValidation.validateGstPercent(row.gstPercent);
+          final notes = InventoryValidation.validateNotes(row.notes);
+          final customFields =
+              _validateAndNormalizeCustomFields(row.customFields);
+
+          final newItem = InventoryItem(
+            id: itemId,
+            name: validatedName,
+            sku: validatedSku,
+            category: category,
+            brand: row.brand?.trim() ?? '',
+            unit: unit,
+            barcode: barcode,
+            warehouse: warehouse,
+            binLocation: row.binLocation?.trim() ?? '',
+            supplier: row.supplier?.trim(),
+            unitCostInr: unitCost,
+            sellingPriceInr: sellingPrice,
+            reorderLevel: reorderLevel,
+            maxStock: maxStock,
+            gstPercent: gstPercent,
+            batchNumber: row.batchNumber?.trim(),
+            expiryDate: row.expiryDate,
+            lastRestockedDate: row.lastRestockedDate,
+            isActive: row.isActive,
+            notes: notes,
+            customFields: customFields,
+          );
+
+          StockMovement? candidateMovement;
+          if (row.openingStock != null && row.openingStock! > 0) {
+            if (_simulateMovementFailure != null &&
+                _simulateMovementFailure(trimmedSku)) {
+              throw const InventoryValidationException(
+                'Simulated movement persistence failure.',
+              );
+            }
+
+            final movId = _generateNextDeterministicMovementId();
+            candidateMovement = StockMovement(
+              id: movId,
+              inventoryItemId: itemId,
+              type: StockMovementType.openingStock,
+              quantityDelta: row.openingStock!,
+              createdAt: _nowProvider(),
+              performedByUserId: trimmedActor,
+              reason: null,
             );
           }
 
-          final movId = _generateNextDeterministicMovementId();
-          candidateMovement = StockMovement(
-            id: movId,
-            inventoryItemId: itemId,
-            type: StockMovementType.openingStock,
-            quantityDelta: row.openingStock!,
-            createdAt: _nowProvider(),
-            performedByUserId: trimmedActor,
-            reason: null,
+          _items.add(newItem);
+          if (candidateMovement != null) {
+            _movements.add(candidateMovement);
+          }
+
+          importedSummaries.add(
+            InventoryItemSummary(
+              item: newItem,
+              quantityOnHand: _deriveQuantityOnHand(itemId),
+            ),
+          );
+          createdCount++;
+        } catch (e) {
+          failures.add(
+            InventoryImportRowFailure(
+              sourceRowNumber: row.sourceRowNumber,
+              sku: row.sku,
+              reason: 'Failed to import row: $e',
+            ),
           );
         }
-
-        // Commit atomically: both succeed or neither is added to state
-        _items.add(newItem);
-        if (candidateMovement != null) {
-          _movements.add(candidateMovement);
-        }
-
-        importedSummaries.add(
-          InventoryItemSummary(
-            item: newItem,
-            quantityOnHand: _deriveQuantityOnHand(itemId),
-          ),
-        );
-      } catch (e) {
-        failures.add(
-          InventoryImportRowFailure(
-            sourceRowNumber: row.sourceRowNumber,
-            sku: row.sku,
-            reason: 'Failed to import row: $e',
-          ),
-        );
       }
     }
 
@@ -790,6 +1262,8 @@ class MockInventoryRepository implements InventoryRepository {
       failureCount: failures.length,
       importedSummaries: List.unmodifiable(importedSummaries),
       failures: List.unmodifiable(failures),
+      createdCount: createdCount,
+      updatedCount: updatedCount,
     );
   }
 
@@ -859,5 +1333,56 @@ class MockInventoryRepository implements InventoryRepository {
     _purgeExpiredDeletionsInternal();
     final now = _nowProvider();
     return _pendingDeletions.values.where((p) => p.isPendingAt(now)).toList();
+  }
+
+  @override
+  Future<List<StockMovementRecord>> getStockMovements(String itemId) async {
+    _purgeExpiredDeletionsInternal();
+
+    final itemExists = _items.any((item) => item.id == itemId);
+    if (!itemExists) {
+      throw InventoryItemNotFoundException(
+        'Inventory item with ID "$itemId" not found.',
+      );
+    }
+
+    // 1. Extract item movements paired with their original ledger index for
+    // deterministic secondary sequencing if timestamps are identical.
+    final itemIndexedMovements = <({StockMovement movement, int index})>[];
+    for (var i = 0; i < _movements.length; i++) {
+      final m = _movements[i];
+      if (m.inventoryItemId == itemId) {
+        itemIndexedMovements.add((movement: m, index: i));
+      }
+    }
+
+    if (itemIndexedMovements.isEmpty) {
+      return const <StockMovementRecord>[];
+    }
+
+    // 2. Authoritative chronological ordering:
+    // Primary: createdAt ascending (earliest to latest)
+    // Secondary: original ledger insertion index ascending
+    itemIndexedMovements.sort((a, b) {
+      final timeCompare = a.movement.createdAt.compareTo(b.movement.createdAt);
+      if (timeCompare != 0) return timeCompare;
+      return a.index.compareTo(b.index);
+    });
+
+    // 3. Calculate running balance chronologically forward from genesis (0.0)
+    var runningBalance = 0.0;
+    final chronologicalRecords = <StockMovementRecord>[];
+    for (final entry in itemIndexedMovements) {
+      runningBalance += entry.movement.quantityDelta;
+      chronologicalRecords.add(
+        StockMovementRecord(
+          movement: entry.movement,
+          runningBalance: runningBalance,
+        ),
+      );
+    }
+
+    // 4. Return newest first (reversed) as an unmodifiable list
+    return List.unmodifiable(chronologicalRecords.reversed);
   }
 }

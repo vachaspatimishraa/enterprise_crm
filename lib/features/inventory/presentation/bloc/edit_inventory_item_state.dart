@@ -1,3 +1,5 @@
+import '../../domain/entities/custom_field_definition.dart';
+import '../../domain/entities/inventory_catalogs.dart';
 import '../../domain/entities/inventory_item_summary.dart';
 
 /// States for [EditInventoryItemCubit].
@@ -18,8 +20,16 @@ class EditInventoryItemLoading extends EditInventoryItemState {
 /// Fresh item loaded successfully, populating form fields.
 class EditInventoryItemLoaded extends EditInventoryItemState {
   final InventoryItemSummary item;
+  final List<CustomFieldDefinition> customFieldDefinitions;
+  final InventoryCatalogs? _catalogs;
 
-  const EditInventoryItemLoaded(this.item);
+  InventoryCatalogs get catalogs => _catalogs ?? InventoryCatalogs();
+
+  const EditInventoryItemLoaded(
+    this.item, {
+    this.customFieldDefinitions = const [],
+    InventoryCatalogs? catalogs,
+  }) : _catalogs = catalogs;
 }
 
 /// In-flight update submission state (disables form controls).

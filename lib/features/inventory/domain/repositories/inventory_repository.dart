@@ -4,6 +4,7 @@ import '../entities/inventory_page.dart';
 import '../entities/inventory_query.dart';
 import '../entities/inventory_stock_mutation_result.dart';
 import '../entities/pending_inventory_deletion.dart';
+import '../entities/stock_movement_record.dart';
 import '../inputs/adjust_inventory_stock_input.dart';
 import '../inputs/adjust_inventory_stock_to_target_input.dart';
 import '../inputs/create_inventory_item_input.dart';
@@ -89,4 +90,12 @@ abstract interface class InventoryRepository {
 
   /// Retrieves all currently active pending deletions that have not yet expired or been finalized.
   Future<List<PendingInventoryDeletion>> getPendingDeletions();
+
+  /// Retrieves the complete historical movement ledger and running balances
+  /// for an inventory item identified by [itemId], ordered newest first.
+  ///
+  /// Returns an empty list if the item exists but has no recorded movements.
+  /// Throws [InventoryItemNotFoundException] if the item does not exist or has
+  /// been permanently deleted.
+  Future<List<StockMovementRecord>> getStockMovements(String itemId);
 }

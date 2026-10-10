@@ -1,4 +1,5 @@
 import 'package:enterprise_crm/features/auth/domain/entities/account_type.dart';
+import 'package:enterprise_crm/features/inventory/domain/entities/stock_movement_record.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/crm_module.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
 import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dart';
@@ -145,6 +146,10 @@ class _SpyInventoryRepository implements InventoryRepository {
     getPendingDeletionsCallCount++;
     return [];
   }
+
+  @override
+  Future<List<StockMovementRecord>> getStockMovements(String itemId) =>
+      throw UnimplementedError();
 }
 
 void main() {

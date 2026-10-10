@@ -1,4 +1,5 @@
 import 'package:enterprise_crm/features/auth/domain/entities/account_type.dart';
+import 'package:enterprise_crm/features/inventory/domain/entities/stock_movement_record.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/crm_module.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
 import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dart';
@@ -89,6 +90,10 @@ class _StrictZeroCallRepository implements InventoryRepository {
   @override
   Future<List<PendingInventoryDeletion>> getPendingDeletions() =>
       throw AssertionError('Zero calls expected');
+
+  @override
+  Future<List<StockMovementRecord>> getStockMovements(String itemId) =>
+      throw UnimplementedError();
 }
 
 void main() {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:enterprise_crm/features/inventory/domain/entities/stock_movement_record.dart';
 
 import 'package:enterprise_crm/features/inventory/data/repositories/mock_inventory_repository.dart';
 import 'package:enterprise_crm/features/inventory/domain/entities/inventory_item_summary.dart';
@@ -95,6 +96,10 @@ class _CustomInventoryRepository implements InventoryRepository {
 
   @override
   Future<List<PendingInventoryDeletion>> getPendingDeletions() async => [];
+
+  @override
+  Future<List<StockMovementRecord>> getStockMovements(String itemId) =>
+      throw UnimplementedError();
 }
 
 void main() {
