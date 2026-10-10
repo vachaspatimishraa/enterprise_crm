@@ -1,0 +1,92 @@
+import '../entities/inventory_import_models.dart';
+import '../entities/inventory_item_summary.dart';
+import '../entities/inventory_page.dart';
+import '../entities/inventory_query.dart';
+import '../entities/inventory_stock_mutation_result.dart';
+import '../entities/pending_inventory_deletion.dart';
+import '../inputs/adjust_inventory_stock_input.dart';
+import '../inputs/adjust_inventory_stock_to_target_input.dart';
+import '../inputs/create_inventory_item_input.dart';
+import '../inputs/record_opening_stock_input.dart';
+import '../inputs/update_inventory_item_input.dart';
+
+/// Repository interface for the Inventory module.
+///
+/// Supports paginated item reads, item details, administrative item identity management,
+/// append-only stock movement ledger mutations (opening stock and manual adjustments),
+/// and bulk CSV/XLSX imports.
+/// Direct quantity editing remains strictly prohibited.
+abstract interface class InventoryRepository {
+  /// Retrieves a paginated list of inventory item summaries matching [query].
+  Future<InventoryPage> getItems(InventoryQuery query);
+
+  /// Retrieves a single inventory item summary by [id], or `null` if not found.
+  Future<InventoryItemSummary?> getItemById(String id);
+
+  /// Creates a new inventory item.
+  ///
+  /// Generated item has derived quantity = 0 without creating stock movements.
+  Future<InventoryItemSummary> createItem(CreateInventoryItemInput input);
+
+  /// Updates an existing inventory item's identity ([name], [sku]).
+  ///
+  /// Existing item id, stock movements, and derived quantity are strictly preserved.
+  Future<InventoryItemSummary> updateItem(UpdateInventoryItemInput input);
+
+  /// Checks whether any stock movements exist for [itemId].
+  ///
+  /// Throws an exception if the item does not exist.
+  Future<bool> hasStockMovements(String itemId);
+
+  /// Records opening stock for an uninitialized item (0 existing movements).
+  ///
+  /// Appends exactly one `StockMovementType.openingStock` movement and returns
+  /// the mutation result with updated derived quantity.
+  Future<InventoryStockMutationResult> recordOpeningStock(
+    RecordOpeningStockInput input,
+  );
+
+  /// Records a manual stock adjustment for an initialized item (1+ existing movements).
+  ///
+  /// Appends exactly one `StockMovementType.adjustment` movement and returns
+  /// the mutation result with updated derived quantity.
+  Future<InventoryStockMutationResult> adjustStock(
+    AdjustInventoryStockInput input,
+  );
+
+  /// Adjusts stock quantity towards a target balance for an initialized item.
+  ///
+  /// Atomically calculates write-time delta against the latest derived balance.
+  /// If target equals latest balance, throws [InventoryStockUnchangedException].
+  Future<InventoryStockMutationResult> adjustStockToTarget(
+    AdjustInventoryStockToTargetInput input,
+  );
+
+  /// Retrieves all existing item SKUs (trimmed, lowercase) currently stored in the repository.
+  Future<Set<String>> getExistingSkus();
+
+  /// Bulk imports inventory items according to [request].
+  ///
+  /// Atomically commits item creation and optional opening stock movements per row.
+  /// Revalidates SKU uniqueness at write-time and rejects duplicates within request.
+  Future<InventoryImportResult> importItems(InventoryImportRequest request);
+
+  /// Requests permanent deletion of an inventory item, placing it in a 60-second pending deletion window.
+  Future<PendingInventoryDeletion> requestItemDeletion({
+    required String itemId,
+    required String performedByUserId,
+  });
+
+  /// Cancels a pending deletion before the 60-second undo window expires, restoring active visibility.
+  Future<void> undoItemDeletion({
+    required String itemId,
+    required String performedByUserId,
+  });
+
+  /// Finalizes any pending deletions whose 60-second undo window has expired,
+  /// atomically deleting the item and all associated stock movements.
+  Future<void> finalizeExpiredDeletions();
+
+  /// Retrieves all currently active pending deletions that have not yet expired or been finalized.
+  Future<List<PendingInventoryDeletion>> getPendingDeletions();
+}

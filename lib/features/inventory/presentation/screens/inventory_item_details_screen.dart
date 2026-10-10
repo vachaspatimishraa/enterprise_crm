@@ -1,0 +1,608 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../../../auth/domain/entities/crm_module.dart';
+import '../../../auth/domain/entities/current_user.dart';
+import '../../../auth/domain/policies/access_policy.dart';
+import '../../../auth/domain/policies/crm_permissions.dart';
+import '../../../auth/presentation/screens/access_restricted_screen.dart';
+import '../../domain/entities/inventory_item.dart';
+import '../../domain/exceptions/inventory_exception.dart';
+import '../../domain/policies/inventory_deletion_policy.dart';
+import '../../domain/policies/inventory_item_administration_policy.dart';
+import '../../domain/policies/inventory_stock_management_policy.dart';
+import '../../domain/repositories/inventory_repository.dart';
+import '../bloc/inventory_item_details_cubit.dart';
+import '../bloc/inventory_item_details_state.dart';
+import '../utils/inventory_display_formatters.dart';
+import '../widgets/delete_inventory_item_dialog.dart';
+import 'adjust_inventory_stock_screen.dart';
+import 'edit_inventory_item_screen.dart';
+import 'set_opening_stock_screen.dart';
+
+/// Read-only item details screen for a specific inventory product.
+///
+/// Guarded by pre-Cubit authorization check. Displays strictly Name, SKU, and derived Quantity on hand.
+/// Administrators receive [Edit Item] and contextual stock mutation actions ([Set Opening Stock]
+/// or [Adjust Stock] depending on movement history).
+class InventoryItemDetailsScreen extends StatelessWidget {
+  final CurrentUser user;
+  final InventoryRepository repository;
+  final String itemId;
+
+  const InventoryItemDetailsScreen({
+    super.key,
+    required this.user,
+    required this.repository,
+    required this.itemId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Pre-Cubit guard: zero Cubit initialization if unauthorized.
+    final isAuthorized =
+        AccessPolicy.canAccessModule(user, CrmModule.inventory) &&
+        AccessPolicy.hasPermission(user, CrmPermissions.inventoryView);
+
+    if (!isAuthorized) {
+      return const AccessRestrictedScreen();
+    }
+
+    return BlocProvider<InventoryItemDetailsCubit>(
+      create: (_) => InventoryItemDetailsCubit(repository)..load(itemId),
+      child: _InventoryItemDetailsView(
+        user: user,
+        repository: repository,
+        itemId: itemId,
+      ),
+    );
+  }
+}
+
+class _InventoryItemDetailsView extends StatelessWidget {
+  final CurrentUser user;
+  final InventoryRepository repository;
+  final String itemId;
+
+  const _InventoryItemDetailsView({
+    required this.user,
+    required this.repository,
+    required this.itemId,
+  });
+
+  void _openEdit(BuildContext context, String itemId) async {
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => EditInventoryItemScreen(
+          user: user,
+          repository: repository,
+          itemId: itemId,
+        ),
+      ),
+    );
+    if (updated == true && context.mounted) {
+      context.read<InventoryItemDetailsCubit>().load(itemId);
+    }
+  }
+
+  void _openSetOpeningStock(BuildContext context, String itemId) async {
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => SetOpeningStockScreen(
+          user: user,
+          repository: repository,
+          itemId: itemId,
+        ),
+      ),
+    );
+    if (updated == true && context.mounted) {
+      context.read<InventoryItemDetailsCubit>().load(itemId);
+    }
+  }
+
+  void _openAdjustStock(BuildContext context, String itemId) async {
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => AdjustInventoryStockScreen(
+          user: user,
+          repository: repository,
+          itemId: itemId,
+        ),
+      ),
+    );
+    if (updated == true && context.mounted) {
+      context.read<InventoryItemDetailsCubit>().load(itemId);
+    }
+  }
+
+  void _confirmDelete(
+    BuildContext context,
+    InventoryItem item,
+    double currentQuantity,
+  ) async {
+    final confirmed = await DeleteInventoryItemDialog.show(
+      context,
+      item: item,
+      currentQuantity: currentQuantity,
+    );
+    if (confirmed == true && context.mounted) {
+      try {
+        await repository.requestItemDeletion(
+          itemId: item.id,
+          performedByUserId: user.id,
+        );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${item.name} scheduled for permanent deletion.'),
+              action: SnackBarAction(
+                label: 'Undo',
+                onPressed: () async {
+                  try {
+                    await repository.undoItemDeletion(
+                      itemId: item.id,
+                      performedByUserId: user.id,
+                    );
+                    if (context.mounted) {
+                      context.read<InventoryItemDetailsCubit>().load(item.id);
+                    }
+                  } catch (_) {}
+                },
+              ),
+              duration: const Duration(seconds: 10),
+            ),
+          );
+          context.read<InventoryItemDetailsCubit>().load(item.id);
+        }
+      } on InventoryDeletionBlockedException catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e.message),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to delete item: $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Inventory Item Details'),
+        leading: IconButton(
+          key: const Key('inventory_details_back_button'),
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        actions: [
+          BlocBuilder<InventoryItemDetailsCubit, InventoryItemDetailsState>(
+            builder: (context, state) {
+              if (state is InventoryItemDetailsLoaded) {
+                final isPending = state.pendingDeletion != null;
+                final canEdit =
+                    !isPending &&
+                    InventoryItemAdministrationPolicy.canEdit(user);
+                final canDelete =
+                    !isPending && InventoryDeletionPolicy.canDelete(user);
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (canEdit)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: FilledButton.icon(
+                          key: const Key('inventory_details_edit_button'),
+                          icon: const Icon(Icons.edit_outlined, size: 16),
+                          label: const Text('Edit Item'),
+                          onPressed: () =>
+                              _openEdit(context, state.summary.item.id),
+                        ),
+                      ),
+                    if (canDelete)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: IconButton(
+                          key: const Key('inventory_details_delete_button'),
+                          icon: const Icon(Icons.delete_outline),
+                          tooltip: 'Delete Item',
+                          onPressed: () => _confirmDelete(
+                            context,
+                            state.summary.item,
+                            state.summary.quantityOnHand,
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+        ],
+      ),
+
+      body: BlocBuilder<InventoryItemDetailsCubit, InventoryItemDetailsState>(
+        builder: (context, state) {
+          if (state is InventoryItemDetailsLoading ||
+              state is InventoryItemDetailsInitial) {
+            return const Center(
+              child: CircularProgressIndicator(
+                key: Key('inventory_details_loading_indicator'),
+              ),
+            );
+          }
+
+          if (state is InventoryItemDetailsNotFound) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  key: const Key('inventory_item_not_found'),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.search_off,
+                      size: 48,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Item not found',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'The item with ID "$itemId" does not exist in inventory.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      key: const Key('inventory_not_found_back_button'),
+                      icon: const Icon(Icons.arrow_back),
+                      label: const Text('Back to Inventory'),
+                      onPressed: () => Navigator.of(context).maybePop(),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          if (state is InventoryItemDetailsFailure) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  key: const Key('inventory_details_failure_view'),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 48,
+                      color: colorScheme.error,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      state.message,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      key: const Key('inventory_details_retry_button'),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                      onPressed: () =>
+                          context.read<InventoryItemDetailsCubit>().retry(),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          if (state is InventoryItemDetailsLoaded) {
+            final summary = state.summary;
+            final item = summary.item;
+            final qtyStr = InventoryDisplayFormatters.formatQuantity(
+              summary.quantityOnHand,
+            );
+
+            return Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16.0,
+                  vertical: 24.0,
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 600),
+                  child: Card(
+                    key: const Key('inventory_item_details_card'),
+                    elevation: 0,
+                    color: colorScheme.surfaceContainerLow,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(color: colorScheme.outlineVariant),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (state.pendingDeletion != null) ...[
+                            Container(
+                              key: const Key(
+                                'inventory_details_pending_deletion_banner',
+                              ),
+                              margin: const EdgeInsets.only(bottom: 16),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: colorScheme.errorContainer,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.warning_amber_rounded,
+                                    color: colorScheme.onErrorContainer,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'This item is pending permanent deletion (${state.pendingDeletion!.undoDeadline.difference(DateTime.now()).inSeconds.clamp(0, 60)}s remaining).',
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            color: colorScheme.onErrorContainer,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                  ),
+                                  if (InventoryDeletionPolicy.canUndo(
+                                    user,
+                                    initiatedByUserId: state
+                                        .pendingDeletion!
+                                        .initiatedByUserId,
+                                  ))
+                                    FilledButton.tonal(
+                                      key: const Key(
+                                        'inventory_details_undo_delete_button',
+                                      ),
+                                      onPressed: () async {
+                                        try {
+                                          await repository.undoItemDeletion(
+                                            itemId: item.id,
+                                            performedByUserId: user.id,
+                                          );
+                                          if (context.mounted) {
+                                            context
+                                                .read<
+                                                  InventoryItemDetailsCubit
+                                                >()
+                                                .load(item.id);
+                                          }
+                                        } catch (_) {}
+                                      },
+                                      child: const Text('Undo Delete'),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.primaryContainer,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.inventory_2_outlined,
+                                  color: colorScheme.onPrimaryContainer,
+                                  size: 24,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item.name,
+                                      key: const Key('inventory_details_name'),
+                                      style: theme.textTheme.titleLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'SKU: ${item.sku}',
+                                      key: const Key('inventory_details_sku'),
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            color: colorScheme.onSurfaceVariant,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          const Divider(),
+                          const SizedBox(height: 16),
+
+                          // Quantity Section
+                          Text(
+                            'STOCK ON HAND',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: colorScheme.primary,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: colorScheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                if (constraints.maxWidth < 240) {
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.layers_outlined,
+                                            size: 20,
+                                            color: colorScheme.onSurfaceVariant,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              'Quantity on hand',
+                                              style: theme.textTheme.bodyMedium
+                                                  ?.copyWith(
+                                                    color: colorScheme
+                                                        .onSurfaceVariant,
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        qtyStr,
+                                        key: const Key(
+                                          'inventory_details_quantity',
+                                        ),
+                                        style: theme.textTheme.headlineSmall
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.bold,
+                                              color: colorScheme.onSurface,
+                                            ),
+                                      ),
+                                    ],
+                                  );
+                                }
+                                return Row(
+                                  children: [
+                                    Icon(
+                                      Icons.layers_outlined,
+                                      size: 20,
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        'Quantity on hand',
+                                        style: theme.textTheme.bodyMedium
+                                            ?.copyWith(
+                                              color:
+                                                  colorScheme.onSurfaceVariant,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      qtyStr,
+                                      key: const Key(
+                                        'inventory_details_quantity',
+                                      ),
+                                      style: theme.textTheme.headlineSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            color: colorScheme.onSurface,
+                                          ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+
+                          // Admin Stock Management Action Button
+                          if (state.pendingDeletion == null &&
+                              InventoryStockManagementPolicy.canManageStock(
+                                user,
+                              )) ...[
+                            const SizedBox(height: 16),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: !state.hasStockMovements
+                                  ? FilledButton.tonalIcon(
+                                      key: const Key(
+                                        'inventory_details_set_opening_stock_button',
+                                      ),
+                                      icon: const Icon(
+                                        Icons.add_chart_outlined,
+                                        size: 18,
+                                      ),
+                                      label: const Text('Set Opening Stock'),
+                                      onPressed: () => _openSetOpeningStock(
+                                        context,
+                                        item.id,
+                                      ),
+                                    )
+                                  : FilledButton.tonalIcon(
+                                      key: const Key(
+                                        'inventory_details_adjust_stock_button',
+                                      ),
+                                      icon: const Icon(
+                                        Icons.tune_outlined,
+                                        size: 18,
+                                      ),
+                                      label: const Text('Adjust Stock'),
+                                      onPressed: () =>
+                                          _openAdjustStock(context, item.id),
+                                    ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+
+          return const SizedBox.shrink();
+        },
+      ),
+    );
+  }
+}

@@ -7,6 +7,7 @@ import 'package:enterprise_crm/features/calling/domain/repositories/lead_follow_
 import 'package:enterprise_crm/features/calling/presentation/screens/user_calling_workspace_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_dashboard_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_lead_placeholder_screen.dart';
+import 'package:enterprise_crm/features/inventory/data/repositories/mock_inventory_repository.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
 import 'package:enterprise_crm/features/leads/domain/repositories/lead_repository.dart';
 import 'package:flutter/material.dart';
@@ -35,6 +36,7 @@ Widget _buildUserDashboardTestApp({
           callActivityRepository ?? MockLeadCallActivityRepository(),
       leadFollowUpRepository:
           leadFollowUpRepository ?? MockLeadFollowUpRepository(),
+      inventoryRepository: MockInventoryRepository(),
     ),
   );
 }

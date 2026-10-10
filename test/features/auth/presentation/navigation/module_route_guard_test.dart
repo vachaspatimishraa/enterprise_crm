@@ -10,6 +10,7 @@ import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_foll
 import 'package:enterprise_crm/features/dashboard/presentation/screens/module_placeholder_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_dashboard_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_lead_workspace_screen.dart';
+import 'package:enterprise_crm/features/inventory/data/repositories/mock_inventory_repository.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
 import 'package:enterprise_crm/features/user_management/data/mock/mock_account_store.dart';
 import 'package:enterprise_crm/features/user_management/data/repositories/mock_user_management_repository.dart';
@@ -33,9 +34,9 @@ class _SpyUserManagementRepository extends MockUserManagementRepository {
 }
 
 void main() {
-  group('Module Route Guard & Authorization Invariants', () {
+  group('Module Route Guard and Dynamic Module Visibility Tests', () {
     testWidgets(
-      'Zero-module user sees empty state and no administration controls',
+      'Standard user with 0 modules sees empty assigned modules state without admin sections',
       (tester) async {
         const zeroModuleUser = CurrentUser(
           id: 'usr_zero',
@@ -54,6 +55,7 @@ void main() {
               leadRepository: MockLeadRepository(),
               callActivityRepository: MockLeadCallActivityRepository(),
               leadFollowUpRepository: MockLeadFollowUpRepository(),
+              inventoryRepository: MockInventoryRepository(),
             ),
           ),
         );
@@ -114,6 +116,7 @@ void main() {
               leadRepository: MockLeadRepository(),
               callActivityRepository: MockLeadCallActivityRepository(),
               leadFollowUpRepository: MockLeadFollowUpRepository(),
+              inventoryRepository: MockInventoryRepository(),
             ),
           ),
         );

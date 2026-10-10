@@ -7,6 +7,7 @@ import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_foll
 import 'package:enterprise_crm/features/dashboard/presentation/screens/admin_dashboard_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_dashboard_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_lead_placeholder_screen.dart';
+import 'package:enterprise_crm/features/inventory/data/repositories/mock_inventory_repository.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
 import 'package:enterprise_crm/features/leads/presentation/screens/lead_dashboard_screen.dart';
 import 'package:enterprise_crm/features/user_management/data/repositories/mock_user_management_repository.dart';
@@ -22,6 +23,7 @@ void main() {
     late MockUserLeadLinkRepository userLeadLinkRepository;
     late MockLeadCallActivityRepository leadCallActivityRepository;
     late MockLeadFollowUpRepository leadFollowUpRepository;
+    late MockInventoryRepository inventoryRepository;
     late MockAccountStore accountStore;
 
     setUp(() {
@@ -34,6 +36,7 @@ void main() {
       userLeadLinkRepository = MockUserLeadLinkRepository();
       leadCallActivityRepository = MockLeadCallActivityRepository();
       leadFollowUpRepository = MockLeadFollowUpRepository();
+      inventoryRepository = MockInventoryRepository();
     });
 
     testWidgets(
@@ -47,6 +50,7 @@ void main() {
             userLeadLinkRepository: userLeadLinkRepository,
             leadCallActivityRepository: leadCallActivityRepository,
             leadFollowUpRepository: leadFollowUpRepository,
+            inventoryRepository: inventoryRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -74,6 +78,7 @@ void main() {
             userLeadLinkRepository: userLeadLinkRepository,
             leadCallActivityRepository: leadCallActivityRepository,
             leadFollowUpRepository: leadFollowUpRepository,
+            inventoryRepository: inventoryRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -132,6 +137,7 @@ void main() {
             userLeadLinkRepository: userLeadLinkRepository,
             leadCallActivityRepository: leadCallActivityRepository,
             leadFollowUpRepository: leadFollowUpRepository,
+            inventoryRepository: inventoryRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -185,6 +191,7 @@ void main() {
             userLeadLinkRepository: userLeadLinkRepository,
             leadCallActivityRepository: leadCallActivityRepository,
             leadFollowUpRepository: leadFollowUpRepository,
+            inventoryRepository: inventoryRepository,
           ),
         );
         await tester.pumpAndSettle();
@@ -236,6 +243,7 @@ void main() {
             userLeadLinkRepository: userLeadLinkRepository,
             leadCallActivityRepository: leadCallActivityRepository,
             leadFollowUpRepository: leadFollowUpRepository,
+            inventoryRepository: inventoryRepository,
           ),
         );
         await tester.pumpAndSettle();

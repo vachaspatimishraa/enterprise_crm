@@ -1,5 +1,6 @@
 import 'package:enterprise_crm/features/dashboard/presentation/screens/admin_dashboard_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/module_placeholder_screen.dart';
+import 'package:enterprise_crm/features/inventory/data/repositories/mock_inventory_repository.dart';
 import 'package:enterprise_crm/features/user_management/data/mock/mock_account_store.dart';
 import 'package:enterprise_crm/features/user_management/data/repositories/mock_user_management_repository.dart';
 import 'package:enterprise_crm/features/user_management/presentation/screens/users_and_access_screen.dart';
@@ -21,6 +22,7 @@ Widget _buildAdminDashboardTestApp({
       user: MockAuthTestFixtures.admin,
       onLogout: onLogout ?? () {},
       onOpenLeadManagement: onOpenLeadManagement ?? () {},
+      inventoryRepository: MockInventoryRepository(),
       userManagementRepository: MockUserManagementRepository(
         accountStore: MockAccountStore.seeded(),
       ),

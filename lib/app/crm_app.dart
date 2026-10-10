@@ -32,6 +32,7 @@ import '../features/hr/domain/repositories/attendance_repository.dart';
 import '../features/hr/domain/repositories/employee_document_repository.dart';
 import '../features/hr/domain/repositories/employee_kpi_repository.dart';
 import '../features/hr/domain/repositories/employee_repository.dart';
+import '../features/inventory/domain/repositories/inventory_repository.dart';
 import '../features/leads/presentation/services/lead_import_file_picker.dart';
 import '../features/leads/presentation/widgets/lead_export_dialog.dart';
 
@@ -49,6 +50,7 @@ class CrmApp extends StatefulWidget {
   final EmployeeDocumentRepository? employeeDocumentRepository;
   final AttendanceRepository? attendanceRepository;
   final EmployeeKpiRepository? employeeKpiRepository;
+  final InventoryRepository? inventoryRepository;
 
   const CrmApp({
     super.key,
@@ -64,6 +66,7 @@ class CrmApp extends StatefulWidget {
     this.employeeDocumentRepository,
     this.attendanceRepository,
     this.employeeKpiRepository,
+    this.inventoryRepository,
   }) : assert(
          authRepository == null || userManagementRepository != null,
          'userManagementRepository must be provided when authRepository is enabled',
@@ -81,6 +84,10 @@ class CrmApp extends StatefulWidget {
              leadCallActivityRepository == null ||
              leadFollowUpRepository != null,
          'leadFollowUpRepository must be provided when Calling is enabled with auth',
+       ),
+       assert(
+         authRepository == null || inventoryRepository != null,
+         'inventoryRepository must be provided when authRepository is enabled',
        );
 
   @override
@@ -147,6 +154,7 @@ class _CrmAppState extends State<CrmApp> {
                   return AdminDashboardScreen(
                     user: user,
                     onLogout: () => _authCubit!.logout(),
+                    inventoryRepository: widget.inventoryRepository!,
                     userManagementRepository: widget.userManagementRepository,
                     employeeRepository: _employeeRepository,
                     employeeDocumentRepository: _employeeDocumentRepository,
@@ -177,6 +185,7 @@ class _CrmAppState extends State<CrmApp> {
                     employeeDocumentRepository: _employeeDocumentRepository,
                     attendanceRepository: _attendanceRepository,
                     employeeKpiRepository: _employeeKpiRepository,
+                    inventoryRepository: widget.inventoryRepository!,
                   );
                 }
               case AuthUnauthenticated():

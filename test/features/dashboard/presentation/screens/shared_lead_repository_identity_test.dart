@@ -5,6 +5,7 @@ import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_call
 import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_follow_up_repository.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_dashboard_screen.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_lead_workspace_screen.dart';
+import 'package:enterprise_crm/features/inventory/data/repositories/mock_inventory_repository.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_draft.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_source.dart';
@@ -28,6 +29,7 @@ void main() {
         final sharedLinkRepository = MockUserLeadLinkRepository();
         final sharedCallActivityRepository = MockLeadCallActivityRepository();
         final sharedFollowUpRepository = MockLeadFollowUpRepository();
+        final sharedInventoryRepository = MockInventoryRepository();
         final accountStore = MockAccountStore.seeded();
         final authRepository = MockAuthRepository(accountStore: accountStore);
         final userManagementRepository = MockUserManagementRepository(
@@ -57,6 +59,7 @@ void main() {
             userLeadLinkRepository: sharedLinkRepository,
             leadCallActivityRepository: sharedCallActivityRepository,
             leadFollowUpRepository: sharedFollowUpRepository,
+            inventoryRepository: sharedInventoryRepository,
           ),
         );
         await tester.pumpAndSettle();
