@@ -12,6 +12,7 @@ import '../../../hr/domain/repositories/employee_kpi_repository.dart';
 import '../../../hr/domain/repositories/employee_repository.dart';
 import '../../../hr/presentation/screens/employee_directory_screen.dart';
 import '../../../inventory/domain/repositories/inventory_repository.dart';
+import '../../../inventory/data/repositories/mock_inventory_repository.dart';
 import '../../../inventory/presentation/screens/inventory_workspace_screen.dart';
 import '../../../user_management/domain/repositories/user_management_repository.dart';
 import '../../../user_management/presentation/screens/users_and_access_screen.dart';
@@ -25,7 +26,7 @@ class AdminDashboardScreen extends StatelessWidget {
   final CurrentUser user;
   final VoidCallback onLogout;
   final VoidCallback onOpenLeadManagement;
-  final InventoryRepository inventoryRepository;
+  final InventoryRepository? inventoryRepository;
   final UserManagementRepository? userManagementRepository;
   final EmployeeRepository? employeeRepository;
   final EmployeeDocumentRepository? employeeDocumentRepository;
@@ -37,7 +38,7 @@ class AdminDashboardScreen extends StatelessWidget {
     required this.user,
     required this.onLogout,
     required this.onOpenLeadManagement,
-    required this.inventoryRepository,
+    this.inventoryRepository,
     this.userManagementRepository,
     this.employeeRepository,
     this.employeeDocumentRepository,
@@ -76,7 +77,7 @@ class AdminDashboardScreen extends StatelessWidget {
 
       Widget screen = InventoryWorkspaceScreen(
         user: user,
-        repository: inventoryRepository,
+        repository: inventoryRepository ?? MockInventoryRepository(),
         currentUserProvider: currentInventoryUser,
       );
 
