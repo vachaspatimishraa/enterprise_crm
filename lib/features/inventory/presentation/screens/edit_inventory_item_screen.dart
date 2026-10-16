@@ -938,7 +938,7 @@ class _EditInventoryItemViewState extends State<_EditInventoryItemView> {
                                   child: DropdownButtonFormField<String>(
                                     isExpanded: true,
                                     key: const Key('inventory_form_warehouse'),
-                                    value: _catalogs.isValidWarehouse(_warehouse)
+                                    initialValue: _catalogs.isValidWarehouse(_warehouse)
                                         ? _warehouse
                                         : (_catalogs.warehouses.isNotEmpty ? _catalogs.warehouses.first : null),
                                     decoration: InputDecoration(
@@ -997,7 +997,7 @@ class _EditInventoryItemViewState extends State<_EditInventoryItemView> {
                             DropdownButtonFormField<String>(
                               isExpanded: true,
                               key: const Key('inventory_form_warehouse'),
-                              value: _catalogs.isValidWarehouse(_warehouse)
+                              initialValue: _catalogs.isValidWarehouse(_warehouse)
                                   ? _warehouse
                                   : (_catalogs.warehouses.isNotEmpty ? _catalogs.warehouses.first : null),
                               decoration: InputDecoration(

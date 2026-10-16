@@ -732,7 +732,7 @@ class _CreateInventoryItemViewState extends State<_CreateInventoryItemView> {
                                   child: DropdownButtonFormField<String>(
                                     isExpanded: true,
                                     key: const Key('inventory_form_warehouse'),
-                                    value: _catalogs.isValidWarehouse(_warehouse) ? _warehouse : (_catalogs.warehouses.isNotEmpty ? _catalogs.warehouses.first : null),
+                                    initialValue: _catalogs.isValidWarehouse(_warehouse) ? _warehouse : (_catalogs.warehouses.isNotEmpty ? _catalogs.warehouses.first : null),
                                     decoration: InputDecoration(
                                       labelText: 'Warehouse (optional)',
                                       prefixIcon: const Icon(Icons.store_mall_directory_outlined),
@@ -789,7 +789,7 @@ class _CreateInventoryItemViewState extends State<_CreateInventoryItemView> {
                             DropdownButtonFormField<String>(
                               isExpanded: true,
                               key: const Key('inventory_form_warehouse'),
-                              value: _catalogs.isValidWarehouse(_warehouse) ? _warehouse : (_catalogs.warehouses.isNotEmpty ? _catalogs.warehouses.first : null),
+                              initialValue: _catalogs.isValidWarehouse(_warehouse) ? _warehouse : (_catalogs.warehouses.isNotEmpty ? _catalogs.warehouses.first : null),
                               decoration: InputDecoration(
                                 labelText: 'Warehouse (optional)',
                                 prefixIcon: const Icon(Icons.store_mall_directory_outlined),
