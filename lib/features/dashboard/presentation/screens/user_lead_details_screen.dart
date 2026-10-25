@@ -14,8 +14,10 @@ import '../../../calling/presentation/screens/record_call_outcome_screen.dart';
 import '../../../calling/presentation/widgets/lead_call_history_section.dart';
 import '../../../calling/presentation/widgets/lead_follow_up_history_section.dart';
 import '../../../leads/domain/entities/lead.dart';
+import '../../../leads/domain/repositories/lead_comment_repository.dart';
 import '../../../leads/domain/repositories/lead_repository.dart';
 import '../../../leads/presentation/utils/lead_display_formatters.dart';
+import '../../../leads/presentation/widgets/lead_comments_section.dart';
 import '../bloc/user_lead_details_cubit.dart';
 import '../bloc/user_lead_details_state.dart';
 import 'user_edit_lead_screen.dart';
@@ -31,6 +33,7 @@ class UserLeadDetailsScreen extends StatelessWidget {
   final LeadRepository leadRepository;
   final LeadCallActivityRepository callActivityRepository;
   final LeadFollowUpRepository? leadFollowUpRepository;
+  final LeadCommentRepository? commentRepository;
   final UserLeadDetailsCubit? cubit;
   final LeadCallHistoryCubit? historyCubit;
   final LeadFollowUpHistoryCubit? followUpHistoryCubit;
@@ -43,6 +46,7 @@ class UserLeadDetailsScreen extends StatelessWidget {
     required this.leadRepository,
     required this.callActivityRepository,
     this.leadFollowUpRepository,
+    this.commentRepository,
     this.cubit,
     this.historyCubit,
     this.followUpHistoryCubit,
@@ -60,6 +64,7 @@ class UserLeadDetailsScreen extends StatelessWidget {
       leadRepository: leadRepository,
       callActivityRepository: callActivityRepository,
       leadFollowUpRepository: followUpRepo,
+      commentRepository: commentRepository,
       hasCallingAccess: hasCallingAccess,
     );
 
@@ -124,6 +129,7 @@ class _UserLeadDetailsView extends StatelessWidget {
   final LeadRepository leadRepository;
   final LeadCallActivityRepository callActivityRepository;
   final LeadFollowUpRepository? leadFollowUpRepository;
+  final LeadCommentRepository? commentRepository;
   final bool hasCallingAccess;
 
   const _UserLeadDetailsView({
@@ -132,6 +138,7 @@ class _UserLeadDetailsView extends StatelessWidget {
     required this.leadRepository,
     required this.callActivityRepository,
     this.leadFollowUpRepository,
+    this.commentRepository,
     required this.hasCallingAccess,
   });
 
@@ -189,6 +196,7 @@ class _UserLeadDetailsView extends StatelessWidget {
               leadRepository: leadRepository,
               callActivityRepository: callActivityRepository,
               leadFollowUpRepository: leadFollowUpRepository,
+              commentRepository: commentRepository,
               hasCallingAccess: hasCallingAccess,
             ),
         };
@@ -206,6 +214,7 @@ class _UserLeadDetailsContent extends StatelessWidget {
   final LeadRepository leadRepository;
   final LeadCallActivityRepository callActivityRepository;
   final LeadFollowUpRepository? leadFollowUpRepository;
+  final LeadCommentRepository? commentRepository;
   final bool hasCallingAccess;
 
   const _UserLeadDetailsContent({
@@ -217,6 +226,7 @@ class _UserLeadDetailsContent extends StatelessWidget {
     required this.leadRepository,
     required this.callActivityRepository,
     this.leadFollowUpRepository,
+    this.commentRepository,
     required this.hasCallingAccess,
   });
 
@@ -557,6 +567,13 @@ class _UserLeadDetailsContent extends StatelessWidget {
                             const SizedBox(height: 24),
                             const LeadFollowUpHistorySection(),
                           ],
+                          const SizedBox(height: 24),
+                          LeadCommentsSection(
+                            leadId: lead.id,
+                            currentUserName: user.displayName,
+                            currentUserId: user.id,
+                            repository: commentRepository,
+                          ),
                         ],
                       ],
                     ),

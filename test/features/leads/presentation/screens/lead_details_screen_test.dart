@@ -459,7 +459,11 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(tester.takeException(), isNull);
+        final err = tester.takeException();
+        if (err is FlutterError) {
+          print(err.toStringDeep());
+        }
+        expect(err, isNull);
       },
     );
 

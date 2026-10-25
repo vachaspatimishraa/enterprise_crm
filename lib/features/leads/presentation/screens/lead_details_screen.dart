@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../auth/presentation/bloc/auth_cubit.dart';
+import '../../../auth/presentation/bloc/auth_state.dart';
 import '../../../notifications/domain/services/notification_dispatcher.dart';
 import '../../domain/entities/lead.dart';
 import '../../domain/entities/lead_source.dart';
+import '../../domain/repositories/lead_comment_repository.dart';
 import '../../domain/repositories/lead_repository.dart';
 import '../bloc/lead_assignment_cubit.dart';
 import '../bloc/lead_assignment_state.dart';
@@ -12,12 +15,14 @@ import '../bloc/lead_reassignment_cubit.dart';
 import '../bloc/lead_reassignment_state.dart';
 import '../utils/lead_display_formatters.dart';
 import '../widgets/lead_assignee_selector.dart';
+import '../widgets/lead_comments_section.dart';
 import '../widgets/lead_reassignment_assignee_selector.dart';
 
 class LeadDetailsScreen extends StatelessWidget {
   final String leadId;
   final LeadDetailsCubit? cubit;
   final LeadRepository? repository;
+  final LeadCommentRepository? commentRepository;
   final void Function(Lead lead)? onEditLead;
   final VoidCallback? onLeadAssigned;
 
@@ -26,6 +31,7 @@ class LeadDetailsScreen extends StatelessWidget {
     required this.leadId,
     this.cubit,
     this.repository,
+    this.commentRepository,
     this.onEditLead,
     this.onLeadAssigned,
   });
@@ -39,6 +45,7 @@ class LeadDetailsScreen extends StatelessWidget {
         child: _LeadDetailsView(
           leadId: leadId,
           repository: repository,
+          commentRepository: commentRepository,
           onEditLead: onEditLead,
           onLeadAssigned: onLeadAssigned,
         ),
@@ -52,6 +59,7 @@ class LeadDetailsScreen extends StatelessWidget {
         child: _LeadDetailsView(
           leadId: leadId,
           repository: repository,
+          commentRepository: commentRepository,
           onEditLead: onEditLead,
           onLeadAssigned: onLeadAssigned,
         ),
@@ -62,6 +70,7 @@ class LeadDetailsScreen extends StatelessWidget {
       key: ValueKey(leadId),
       leadId: leadId,
       repository: repository,
+      commentRepository: commentRepository,
       onEditLead: onEditLead,
       onLeadAssigned: onLeadAssigned,
     );
@@ -71,6 +80,7 @@ class LeadDetailsScreen extends StatelessWidget {
 class _LeadDetailsView extends StatefulWidget {
   final String leadId;
   final LeadRepository? repository;
+  final LeadCommentRepository? commentRepository;
   final void Function(Lead lead)? onEditLead;
   final VoidCallback? onLeadAssigned;
 
@@ -78,6 +88,7 @@ class _LeadDetailsView extends StatefulWidget {
     super.key,
     required this.leadId,
     this.repository,
+    this.commentRepository,
     this.onEditLead,
     this.onLeadAssigned,
   });
@@ -111,6 +122,26 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  String _resolveAuthorName(BuildContext context) {
+    try {
+      final authState = context.read<AuthCubit?>()?.state;
+      if (authState is AuthAuthenticated) {
+        return authState.user.displayName;
+      }
+    } catch (_) {}
+    return 'Admin';
+  }
+
+  String? _resolveAuthorId(BuildContext context) {
+    try {
+      final authState = context.read<AuthCubit?>()?.state;
+      if (authState is AuthAuthenticated) {
+        return authState.user.id;
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<void> _openAssignLeadDialog(Lead lead) async {
@@ -621,6 +652,13 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
           ],
         );
 
+        final commentsSection = LeadCommentsSection(
+          leadId: lead.id,
+          currentUserName: _resolveAuthorName(context),
+          currentUserId: _resolveAuthorId(context),
+          repository: widget.commentRepository,
+        );
+
         if (isMobile) {
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -642,6 +680,8 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
                 assignmentSection,
                 const SizedBox(height: 16),
                 recordSection,
+                const SizedBox(height: 16),
+                commentsSection,
                 const SizedBox(height: 20),
                 SizedBox(
                   width: double.infinity,
@@ -691,6 +731,8 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
                         assignmentSection,
                         const SizedBox(height: 16),
                         recordSection,
+                        const SizedBox(height: 16),
+                        commentsSection,
                       ],
                     ),
                   ),
