@@ -6,8 +6,17 @@ import '../entities/crm_module.dart';
 /// and will align with the backend contract in future phases.
 abstract final class CrmPermissions {
   // Lead Management
+  static const String leadView = 'lead.view';
   static const String leadViewAssigned = 'lead.view_assigned';
+  static const String leadCreate = 'lead.create';
+  static const String leadEdit = 'lead.edit';
   static const String leadUpdate = 'lead.update';
+  static const String leadDelete = 'lead.delete';
+  static const String leadAssign = 'lead.assign';
+  static const String leadImportCsv = 'lead.import.csv';
+  static const String leadImportXlsx = 'lead.import.xlsx';
+  static const String leadExportCsv = 'lead.export.csv';
+  static const String leadExportXlsx = 'lead.export.xlsx';
 
   // Calling
   static const String callingUse = 'calling.use';
@@ -83,8 +92,17 @@ abstract final class CrmPermissions {
 
   /// Canonical mapping of permission identifiers to their owning CRM modules.
   static const Map<String, CrmModule> _moduleByPermission = {
+    leadView: CrmModule.leadManagement,
     leadViewAssigned: CrmModule.leadManagement,
+    leadCreate: CrmModule.leadManagement,
+    leadEdit: CrmModule.leadManagement,
     leadUpdate: CrmModule.leadManagement,
+    leadDelete: CrmModule.leadManagement,
+    leadAssign: CrmModule.leadManagement,
+    leadImportCsv: CrmModule.leadManagement,
+    leadImportXlsx: CrmModule.leadManagement,
+    leadExportCsv: CrmModule.leadManagement,
+    leadExportXlsx: CrmModule.leadManagement,
     callingUse: CrmModule.calling,
     hrView: CrmModule.hrPayroll,
     hrEmployeeManage: CrmModule.hrPayroll,

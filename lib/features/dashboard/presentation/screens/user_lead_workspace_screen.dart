@@ -96,7 +96,9 @@ class _UserLeadWorkspaceView extends StatelessWidget {
       user,
       CrmPermissions.leadUpdate,
     );
-    final hasAnyLeadPermission = canView || canUpdate;
+    final hasAnyLeadPermission = CrmPermissions.permissionsFor(
+      CrmModule.leadManagement,
+    ).any((p) => AccessPolicy.hasPermission(user, p));
 
     return Scaffold(
       key: const Key('user_lead_workspace_screen'),
@@ -298,6 +300,18 @@ class _CapabilityCard extends StatelessWidget {
                   itemKey: const Key('lead_perm_update'),
                   color: colorScheme.primary,
                 ),
+              for (final p in user.permissions)
+                if (p != CrmPermissions.leadViewAssigned &&
+                    p != CrmPermissions.leadUpdate &&
+                    CrmPermissions.moduleFor(p) == CrmModule.leadManagement) ...[
+                  const SizedBox(height: 8),
+                  _CapabilityItem(
+                    icon: Icons.check_circle_outline,
+                    label: CrmPermissionPresentation.displayNameFor(p),
+                    itemKey: Key('lead_perm_${p.replaceAll('.', '_')}'),
+                    color: colorScheme.primary,
+                  ),
+                ],
               // Case D: update-without-view warning
               if (!canView && canUpdate) ...[
                 const SizedBox(height: 12),

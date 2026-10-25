@@ -10,11 +10,47 @@ void main() {
   group('CrmPermissions & CrmPermissionPresentation', () {
     test('canonical permissions map to expected modules', () {
       expect(
+        CrmPermissions.moduleFor(CrmPermissions.leadView),
+        CrmModule.leadManagement,
+      );
+      expect(
         CrmPermissions.moduleFor(CrmPermissions.leadViewAssigned),
         CrmModule.leadManagement,
       );
       expect(
+        CrmPermissions.moduleFor(CrmPermissions.leadCreate),
+        CrmModule.leadManagement,
+      );
+      expect(
+        CrmPermissions.moduleFor(CrmPermissions.leadEdit),
+        CrmModule.leadManagement,
+      );
+      expect(
         CrmPermissions.moduleFor(CrmPermissions.leadUpdate),
+        CrmModule.leadManagement,
+      );
+      expect(
+        CrmPermissions.moduleFor(CrmPermissions.leadDelete),
+        CrmModule.leadManagement,
+      );
+      expect(
+        CrmPermissions.moduleFor(CrmPermissions.leadAssign),
+        CrmModule.leadManagement,
+      );
+      expect(
+        CrmPermissions.moduleFor(CrmPermissions.leadImportCsv),
+        CrmModule.leadManagement,
+      );
+      expect(
+        CrmPermissions.moduleFor(CrmPermissions.leadImportXlsx),
+        CrmModule.leadManagement,
+      );
+      expect(
+        CrmPermissions.moduleFor(CrmPermissions.leadExportCsv),
+        CrmModule.leadManagement,
+      );
+      expect(
+        CrmPermissions.moduleFor(CrmPermissions.leadExportXlsx),
         CrmModule.leadManagement,
       );
       expect(
@@ -88,18 +124,30 @@ void main() {
     });
 
     test('isKnown validates known catalog and rejects arbitrary strings', () {
+      expect(CrmPermissions.isKnown(CrmPermissions.leadView), isTrue);
       expect(CrmPermissions.isKnown(CrmPermissions.leadViewAssigned), isTrue);
+      expect(CrmPermissions.isKnown(CrmPermissions.leadCreate), isTrue);
+      expect(CrmPermissions.isKnown(CrmPermissions.leadDelete), isTrue);
       expect(CrmPermissions.isKnown(CrmPermissions.inventoryCreate), isTrue);
       expect(CrmPermissions.isKnown(CrmPermissions.purchaseCreate), isTrue);
-      expect(CrmPermissions.isKnown('lead.delete'), isFalse);
+      expect(CrmPermissions.isKnown('lead.unknown'), isFalse);
       expect(CrmPermissions.isKnown('*'), isFalse);
       expect(CrmPermissions.isKnown(''), isFalse);
     });
 
     test('permissionsFor returns correct sets per module', () {
       expect(CrmPermissions.permissionsFor(CrmModule.leadManagement), {
+        CrmPermissions.leadView,
         CrmPermissions.leadViewAssigned,
+        CrmPermissions.leadCreate,
+        CrmPermissions.leadEdit,
         CrmPermissions.leadUpdate,
+        CrmPermissions.leadDelete,
+        CrmPermissions.leadAssign,
+        CrmPermissions.leadImportCsv,
+        CrmPermissions.leadImportXlsx,
+        CrmPermissions.leadExportCsv,
+        CrmPermissions.leadExportXlsx,
       });
       expect(CrmPermissions.permissionsFor(CrmModule.calling), {
         CrmPermissions.callingUse,
@@ -147,7 +195,7 @@ void main() {
     });
 
     test('allKnown contains every registered permission', () {
-      expect(CrmPermissions.allKnown.length, 60);
+      expect(CrmPermissions.allKnown.length, 69);
       expect(
         CrmPermissions.permissionsFor(CrmModule.hrPayroll),
         containsAll({
@@ -277,7 +325,7 @@ void main() {
     test('unknown permissions return false for all users including admin', () {
       expect(AccessPolicy.hasPermission(admin, 'unknown.perm'), isFalse);
       expect(AccessPolicy.hasPermission(admin, '*'), isFalse);
-      expect(AccessPolicy.hasPermission(admin, 'lead.delete'), isFalse);
+      expect(AccessPolicy.hasPermission(admin, 'lead.unknown'), isFalse);
     });
 
     test('Admin has access to all recognized catalog permissions', () {

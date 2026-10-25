@@ -188,6 +188,9 @@ void main() {
         find.byKey(const Key('edit_user_display_name_field')),
         '   ',
       );
+      await tester.ensureVisible(
+        find.byKey(const Key('edit_user_submit_button')),
+      );
       await tester.tap(find.byKey(const Key('edit_user_submit_button')));
       await tester.pumpAndSettle();
 

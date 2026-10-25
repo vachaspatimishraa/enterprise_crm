@@ -394,6 +394,9 @@ void main() {
         await tester.pumpAndSettle();
 
         // Save
+        await tester.ensureVisible(
+          find.byKey(const Key('create_user_submit_button')),
+        );
         await tester.tap(find.byKey(const Key('create_user_submit_button')));
         await tester.pumpAndSettle();
 

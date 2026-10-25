@@ -22,14 +22,59 @@ abstract final class MockPermissionCatalog {
   static const List<MockPermissionDefinition> definitions = [
     // Lead Management
     MockPermissionDefinition(
+      id: CrmPermissions.leadView,
+      module: CrmModule.leadManagement,
+      displayName: 'View All Leads',
+    ),
+    MockPermissionDefinition(
       id: CrmPermissions.leadViewAssigned,
       module: CrmModule.leadManagement,
       displayName: 'View Assigned Leads',
     ),
     MockPermissionDefinition(
+      id: CrmPermissions.leadCreate,
+      module: CrmModule.leadManagement,
+      displayName: 'Create Leads',
+    ),
+    MockPermissionDefinition(
+      id: CrmPermissions.leadEdit,
+      module: CrmModule.leadManagement,
+      displayName: 'Edit Leads',
+    ),
+    MockPermissionDefinition(
       id: CrmPermissions.leadUpdate,
       module: CrmModule.leadManagement,
       displayName: 'Update Leads',
+    ),
+    MockPermissionDefinition(
+      id: CrmPermissions.leadDelete,
+      module: CrmModule.leadManagement,
+      displayName: 'Delete Leads',
+    ),
+    MockPermissionDefinition(
+      id: CrmPermissions.leadAssign,
+      module: CrmModule.leadManagement,
+      displayName: 'Assign & Reassign Leads',
+    ),
+    MockPermissionDefinition(
+      id: CrmPermissions.leadImportCsv,
+      module: CrmModule.leadManagement,
+      displayName: 'Import Leads (CSV)',
+    ),
+    MockPermissionDefinition(
+      id: CrmPermissions.leadImportXlsx,
+      module: CrmModule.leadManagement,
+      displayName: 'Import Leads (Excel)',
+    ),
+    MockPermissionDefinition(
+      id: CrmPermissions.leadExportCsv,
+      module: CrmModule.leadManagement,
+      displayName: 'Export Leads (CSV)',
+    ),
+    MockPermissionDefinition(
+      id: CrmPermissions.leadExportXlsx,
+      module: CrmModule.leadManagement,
+      displayName: 'Export Leads (Excel)',
     ),
     // Calling
     MockPermissionDefinition(

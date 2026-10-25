@@ -218,11 +218,47 @@ void main() {
 
         // Lead Management permissions appear
         expect(
+          find.byKey(const Key('create_user_permission_lead.view')),
+          findsOneWidget,
+        );
+        expect(
           find.byKey(const Key('create_user_permission_lead.view_assigned')),
           findsOneWidget,
         );
         expect(
+          find.byKey(const Key('create_user_permission_lead.create')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('create_user_permission_lead.edit')),
+          findsOneWidget,
+        );
+        expect(
           find.byKey(const Key('create_user_permission_lead.update')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('create_user_permission_lead.delete')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('create_user_permission_lead.assign')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('create_user_permission_lead.import.csv')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('create_user_permission_lead.import.xlsx')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('create_user_permission_lead.export.csv')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('create_user_permission_lead.export.xlsx')),
           findsOneWidget,
         );
         expect(

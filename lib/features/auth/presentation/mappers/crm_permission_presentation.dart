@@ -3,8 +3,17 @@ import '../../domain/policies/crm_permissions.dart';
 /// Presentation mapper providing human-readable labels for CRM permissions.
 abstract final class CrmPermissionPresentation {
   static const Map<String, String> _displayNames = {
+    CrmPermissions.leadView: 'View all leads',
     CrmPermissions.leadViewAssigned: 'View assigned leads',
+    CrmPermissions.leadCreate: 'Create leads',
+    CrmPermissions.leadEdit: 'Edit leads',
     CrmPermissions.leadUpdate: 'Update leads',
+    CrmPermissions.leadDelete: 'Delete leads',
+    CrmPermissions.leadAssign: 'Assign and reassign leads',
+    CrmPermissions.leadImportCsv: 'Import leads (CSV)',
+    CrmPermissions.leadImportXlsx: 'Import leads (Excel)',
+    CrmPermissions.leadExportCsv: 'Export leads (CSV)',
+    CrmPermissions.leadExportXlsx: 'Export leads (Excel)',
     CrmPermissions.callingUse: 'Use calling',
     CrmPermissions.hrView: 'View HR',
     CrmPermissions.hrEmployeeManage: 'Create and edit employees',

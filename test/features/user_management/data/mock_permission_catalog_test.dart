@@ -209,5 +209,73 @@ void main() {
         expect(defined, contains(CrmPermissions.payrollPaymentRelease));
       },
     );
+
+    test('lead permissions map to leadManagement module and user forms', () {
+      expect(
+        MockPermissionCatalog.getModuleForPermission(CrmPermissions.leadView),
+        CrmModule.leadManagement,
+      );
+      expect(
+        MockPermissionCatalog.getModuleForPermission(CrmPermissions.leadCreate),
+        CrmModule.leadManagement,
+      );
+      expect(
+        MockPermissionCatalog.getModuleForPermission(CrmPermissions.leadEdit),
+        CrmModule.leadManagement,
+      );
+      expect(
+        MockPermissionCatalog.getModuleForPermission(CrmPermissions.leadDelete),
+        CrmModule.leadManagement,
+      );
+      expect(
+        MockPermissionCatalog.getModuleForPermission(CrmPermissions.leadAssign),
+        CrmModule.leadManagement,
+      );
+      expect(
+        MockPermissionCatalog.getModuleForPermission(
+          CrmPermissions.leadImportCsv,
+        ),
+        CrmModule.leadManagement,
+      );
+      expect(
+        MockPermissionCatalog.getModuleForPermission(
+          CrmPermissions.leadImportXlsx,
+        ),
+        CrmModule.leadManagement,
+      );
+      expect(
+        MockPermissionCatalog.getModuleForPermission(
+          CrmPermissions.leadExportCsv,
+        ),
+        CrmModule.leadManagement,
+      );
+      expect(
+        MockPermissionCatalog.getModuleForPermission(
+          CrmPermissions.leadExportXlsx,
+        ),
+        CrmModule.leadManagement,
+      );
+
+      final defined = MockPermissionCatalog.definitions
+          .where((d) => d.module == CrmModule.leadManagement)
+          .map((d) => d.id)
+          .toSet();
+
+      expect(
+        defined,
+        containsAll(CrmPermissions.permissionsFor(CrmModule.leadManagement)),
+      );
+      expect(defined.contains(CrmPermissions.leadView), isTrue);
+      expect(defined.contains(CrmPermissions.leadViewAssigned), isTrue);
+      expect(defined.contains(CrmPermissions.leadCreate), isTrue);
+      expect(defined.contains(CrmPermissions.leadEdit), isTrue);
+      expect(defined.contains(CrmPermissions.leadUpdate), isTrue);
+      expect(defined.contains(CrmPermissions.leadDelete), isTrue);
+      expect(defined.contains(CrmPermissions.leadAssign), isTrue);
+      expect(defined.contains(CrmPermissions.leadImportCsv), isTrue);
+      expect(defined.contains(CrmPermissions.leadImportXlsx), isTrue);
+      expect(defined.contains(CrmPermissions.leadExportCsv), isTrue);
+      expect(defined.contains(CrmPermissions.leadExportXlsx), isTrue);
+    });
   });
 }
