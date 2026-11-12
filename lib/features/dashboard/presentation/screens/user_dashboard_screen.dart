@@ -6,7 +6,9 @@ import '../../../auth/domain/entities/crm_module.dart';
 import '../../../auth/presentation/bloc/auth_cubit.dart';
 import '../../../auth/presentation/bloc/auth_state.dart';
 import '../../../auth/domain/entities/current_user.dart';
+import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../auth/domain/repositories/user_lead_link_repository.dart';
+import '../../../user_management/domain/repositories/user_management_repository.dart';
 import '../../../calling/domain/repositories/lead_call_activity_repository.dart';
 import '../../../calling/domain/repositories/lead_follow_up_repository.dart';
 import '../../../calling/presentation/screens/user_calling_workspace_screen.dart';
@@ -62,6 +64,8 @@ class UserDashboardScreen extends StatelessWidget {
   final VendorRepository? vendorRepository;
   final ApprovalRepository? approvalRepository;
   final NotificationCubit? notificationCubit;
+  final AuthRepository? authRepository;
+  final UserManagementRepository? userManagementRepository;
 
   const UserDashboardScreen({
     super.key,
@@ -82,6 +86,8 @@ class UserDashboardScreen extends StatelessWidget {
     this.vendorRepository,
     this.approvalRepository,
     this.notificationCubit,
+    this.authRepository,
+    this.userManagementRepository,
   });
 
   void _openModule(BuildContext context, CrmModule module) {
@@ -226,6 +232,8 @@ class UserDashboardScreen extends StatelessWidget {
             CrmAppHeader(
               user: user,
               onLogout: onLogout,
+              userManagementRepository: userManagementRepository,
+              authRepository: authRepository,
               notificationCubit: notificationCubit,
               approvalRepository: approvalRepository,
             ),

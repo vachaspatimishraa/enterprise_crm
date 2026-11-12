@@ -340,5 +340,34 @@ void main() {
       expect(cubit.state, isA<UserAssignedLeadsLoading>());
       cubit.close();
     });
+
+    test(
+      'lead.view_all loads all existing leads without requiring a personal assignee link or assignedUserId match',
+      () async {
+        const viewAllUser = CurrentUser(
+          id: 'usr_view_all',
+          displayName: 'Global Viewer',
+          accountType: AccountType.user,
+          modules: {CrmModule.leadManagement},
+          permissions: {CrmPermissions.leadViewAll},
+        );
+        final leads = [
+          _lead('a1', 'agent-1'),
+          _lead('b1', 'agent-2'),
+          const Lead(id: 'u1', name: 'Unassigned Lead', source: LeadSource.manual),
+        ];
+        final cubit = UserAssignedLeadsCubit(
+          user: viewAllUser,
+          linkRepository: _SpyLinkRepository(null),
+          leadRepository: _SpyLeadRepository(leads: leads),
+        );
+        await cubit.load();
+
+        expect(cubit.state, isA<UserAssignedLeadsLoaded>());
+        final loaded = cubit.state as UserAssignedLeadsLoaded;
+        expect(loaded.leads.map((l) => l.id), containsAll(['a1', 'b1', 'u1']));
+        cubit.close();
+      },
+    );
   });
 }

@@ -6,6 +6,7 @@ import '../../../auth/presentation/bloc/auth_state.dart';
 import '../../../notifications/domain/services/notification_dispatcher.dart';
 import '../../domain/entities/lead.dart';
 import '../../domain/entities/lead_source.dart';
+import '../../domain/policies/lead_access_policy.dart';
 import '../../domain/repositories/lead_comment_repository.dart';
 import '../../domain/repositories/lead_repository.dart';
 import '../bloc/lead_assignment_cubit.dart';
@@ -19,12 +20,14 @@ import '../widgets/lead_assignee_selector.dart';
 import '../widgets/lead_comments_section.dart';
 import '../widgets/lead_permissions_section.dart';
 import '../widgets/lead_reassignment_assignee_selector.dart';
+import 'edit_lead_screen.dart';
 
 class LeadDetailsScreen extends StatelessWidget {
   final String leadId;
   final LeadDetailsCubit? cubit;
   final LeadRepository? repository;
   final LeadCommentRepository? commentRepository;
+  final CurrentUser? currentUser;
   final void Function(Lead lead)? onEditLead;
   final VoidCallback? onLeadAssigned;
 
@@ -34,6 +37,7 @@ class LeadDetailsScreen extends StatelessWidget {
     this.cubit,
     this.repository,
     this.commentRepository,
+    this.currentUser,
     this.onEditLead,
     this.onLeadAssigned,
   });
@@ -48,6 +52,7 @@ class LeadDetailsScreen extends StatelessWidget {
           leadId: leadId,
           repository: repository,
           commentRepository: commentRepository,
+          currentUser: currentUser,
           onEditLead: onEditLead,
           onLeadAssigned: onLeadAssigned,
         ),
@@ -62,6 +67,7 @@ class LeadDetailsScreen extends StatelessWidget {
           leadId: leadId,
           repository: repository,
           commentRepository: commentRepository,
+          currentUser: currentUser,
           onEditLead: onEditLead,
           onLeadAssigned: onLeadAssigned,
         ),
@@ -73,6 +79,7 @@ class LeadDetailsScreen extends StatelessWidget {
       leadId: leadId,
       repository: repository,
       commentRepository: commentRepository,
+      currentUser: currentUser,
       onEditLead: onEditLead,
       onLeadAssigned: onLeadAssigned,
     );
@@ -83,6 +90,7 @@ class _LeadDetailsView extends StatefulWidget {
   final String leadId;
   final LeadRepository? repository;
   final LeadCommentRepository? commentRepository;
+  final CurrentUser? currentUser;
   final void Function(Lead lead)? onEditLead;
   final VoidCallback? onLeadAssigned;
 
@@ -91,6 +99,7 @@ class _LeadDetailsView extends StatefulWidget {
     required this.leadId,
     this.repository,
     this.commentRepository,
+    this.currentUser,
     this.onEditLead,
     this.onLeadAssigned,
   });
@@ -147,6 +156,7 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
   }
 
   CurrentUser? _resolveCurrentUser(BuildContext context) {
+    if (widget.currentUser != null) return widget.currentUser;
     try {
       final authState = context.read<AuthCubit?>()?.state;
       if (authState is AuthAuthenticated) {
@@ -154,6 +164,43 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
       }
     } catch (_) {}
     return null;
+  }
+
+  Future<void> _handleEditLead(BuildContext context, Lead lead) async {
+    if (widget.onEditLead != null) {
+      widget.onEditLead!(lead);
+      return;
+    }
+
+    LeadRepository? repo = widget.repository;
+    if (repo == null) {
+      try {
+        repo = context.read<LeadRepository>();
+      } catch (_) {}
+    }
+
+    if (repo == null) {
+      _showComingSoon(context, 'Edit Lead');
+      return;
+    }
+
+    final detailsCubit = context.read<LeadDetailsCubit>();
+    bool updated = false;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (editContext) => EditLeadScreen(
+          lead: lead,
+          repository: repo!,
+          onLeadUpdated: (_) {
+            updated = true;
+          },
+          onCancel: () => Navigator.of(editContext).pop(false),
+        ),
+      ),
+    );
+    if (updated && mounted) {
+      detailsCubit.loadLead(lead.id);
+    }
   }
 
   Future<void> _openAssignLeadDialog(Lead lead) async {
@@ -376,6 +423,13 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
     ColorScheme colorScheme,
     Lead lead,
   ) {
+    final currentUser = _resolveCurrentUser(context);
+    final canAssign =
+        currentUser == null || LeadAccessPolicy.canAssign(currentUser);
+    final canEdit =
+        currentUser == null ||
+        LeadAccessPolicy.canEdit(user: currentUser, lead: lead);
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final isMobile = constraints.maxWidth < 600;
@@ -448,14 +502,14 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      FilledButton.icon(
-                        onPressed: widget.onEditLead != null
-                            ? () => widget.onEditLead!(lead)
-                            : () => _showComingSoon(context, 'Edit Lead'),
-                        icon: const Icon(Icons.edit_outlined, size: 16),
-                        label: const Text('Edit Lead'),
-                      ),
+                      if (canEdit) ...[
+                        const SizedBox(width: 12),
+                        FilledButton.icon(
+                          onPressed: () => _handleEditLead(context, lead),
+                          icon: const Icon(Icons.edit_outlined, size: 16),
+                          label: const Text('Edit Lead'),
+                        ),
+                      ],
                     ],
                   ),
                 ] else ...[
@@ -622,7 +676,7 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
               label: 'Assignment State',
               value: lead.isAssigned ? 'Assigned' : 'Unassigned',
             ),
-            if (!lead.isAssigned) ...[
+            if (!lead.isAssigned && canAssign) ...[
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
@@ -634,7 +688,7 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
                 ),
               ),
             ],
-            if (lead.isAssigned) ...[
+            if (lead.isAssigned && canAssign) ...[
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
@@ -666,7 +720,7 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
 
         final permissionSection = LeadPermissionsSection(
           lead: lead,
-          currentUser: _resolveCurrentUser(context),
+          currentUser: currentUser,
         );
 
         final commentsSection = LeadCommentsSection(
@@ -701,17 +755,17 @@ class _LeadDetailsViewState extends State<_LeadDetailsView> {
                 permissionSection,
                 const SizedBox(height: 16),
                 commentsSection,
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: widget.onEditLead != null
-                        ? () => widget.onEditLead!(lead)
-                        : () => _showComingSoon(context, 'Edit Lead'),
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    label: const Text('Edit Lead'),
+                if (canEdit) ...[
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () => _handleEditLead(context, lead),
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      label: const Text('Edit Lead'),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           );

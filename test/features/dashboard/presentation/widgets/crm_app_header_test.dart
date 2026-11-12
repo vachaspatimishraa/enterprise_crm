@@ -1,4 +1,6 @@
+import 'package:enterprise_crm/features/auth/data/repositories/mock_auth_repository.dart';
 import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
+import 'package:enterprise_crm/features/auth/domain/repositories/auth_repository.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/widgets/crm_app_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +15,7 @@ Widget _buildHeaderTestApp({
   required CurrentUser user,
   VoidCallback? onLogout,
   UserManagementRepository? userManagementRepository,
+  AuthRepository? authRepository,
   ThemeMode themeMode = ThemeMode.light,
   double? width,
 }) {
@@ -27,6 +30,7 @@ Widget _buildHeaderTestApp({
           user: user,
           onLogout: onLogout ?? () {},
           userManagementRepository: userManagementRepository,
+          authRepository: authRepository,
         ),
       ),
     ),
@@ -191,15 +195,115 @@ void main() {
     });
 
     testWidgets(
-      'password can be updated successfully from AccountProfileDialog without User not found error',
+      'tapping Reset Password opens OTP verification instead of direct password fields',
+      (tester) async {
+        final store = MockAccountStore.seeded();
+        final authRepo = MockAuthRepository(accountStore: store);
+
+        await tester.pumpWidget(
+          _buildHeaderTestApp(
+            user: MockAuthTestFixtures.admin,
+            authRepository: authRepo,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('home_account_avatar')));
+        await tester.pumpAndSettle();
+
+        await tester.ensureVisible(
+          find.byKey(const Key('account_reset_password_button')),
+        );
+        await tester.tap(find.byKey(const Key('account_reset_password_button')));
+        await tester.pumpAndSettle();
+
+        // OTP Step 1 is displayed; password fields are locked behind OTP verification
+        expect(
+          find.byKey(const Key('account_otp_flow_container')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('account_otp_step_1')), findsOneWidget);
+        expect(find.byKey(const Key('account_send_otp_button')), findsOneWidget);
+        expect(find.byKey(const Key('account_new_password_field')), findsNothing);
+        expect(find.byKey(const Key('account_save_password_button')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'invalid OTP displays error banner and keeps password change fields hidden',
+      (tester) async {
+        final store = MockAccountStore.seeded();
+        final authRepo = MockAuthRepository(accountStore: store);
+
+        await tester.pumpWidget(
+          _buildHeaderTestApp(
+            user: MockAuthTestFixtures.admin,
+            authRepository: authRepo,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('home_account_avatar')));
+        await tester.pumpAndSettle();
+
+        await tester.ensureVisible(
+          find.byKey(const Key('account_reset_password_button')),
+        );
+        await tester.tap(find.byKey(const Key('account_reset_password_button')));
+        await tester.pumpAndSettle();
+
+        // Step 1 -> Send OTP
+        await tester.ensureVisible(
+          find.byKey(const Key('account_send_otp_button')),
+        );
+        await tester.tap(find.byKey(const Key('account_send_otp_button')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(find.byKey(const Key('account_otp_step_2')), findsOneWidget);
+        expect(find.byKey(const Key('account_otp_demo_badge')), findsOneWidget);
+        expect(find.textContaining('123456'), findsOneWidget);
+
+        // Enter wrong OTP
+        await tester.enterText(
+          find.byKey(const Key('account_otp_field')),
+          '000000',
+        );
+        await tester.ensureVisible(
+          find.byKey(const Key('account_verify_otp_button')),
+        );
+        await tester.tap(find.byKey(const Key('account_verify_otp_button')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(find.byKey(const Key('account_otp_error_banner')), findsOneWidget);
+        expect(find.textContaining('2 attempts remaining'), findsOneWidget);
+        expect(find.byKey(const Key('account_new_password_field')), findsNothing);
+
+        // Hide flow cleanly cancels cooldown timer
+        await tester.ensureVisible(
+          find.byKey(const Key('account_reset_password_button')),
+        );
+        await tester.tap(find.byKey(const Key('account_reset_password_button')));
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      'user receives OTP, verifies OTP, and updates password successfully from AccountProfileDialog',
       (tester) async {
         final store = MockAccountStore.seeded();
         final userRepo = MockUserManagementRepository(accountStore: store);
+        final authRepo = MockAuthRepository(
+          accountStore: store,
+          otpCodeGenerator: () => '654321',
+        );
 
         await tester.pumpWidget(
           _buildHeaderTestApp(
             user: MockAuthTestFixtures.admin,
             userManagementRepository: userRepo,
+            authRepository: authRepo,
           ),
         );
         await tester.pumpAndSettle();
@@ -208,12 +312,45 @@ void main() {
         await tester.tap(find.byKey(const Key('home_account_avatar')));
         await tester.pumpAndSettle();
 
-        // Tap Reset Password to show fields
+        // Tap Reset Password to start OTP flow
         await tester.ensureVisible(
           find.byKey(const Key('account_reset_password_button')),
         );
         await tester.tap(find.byKey(const Key('account_reset_password_button')));
         await tester.pumpAndSettle();
+
+        // Step 1: Send OTP
+        await tester.ensureVisible(
+          find.byKey(const Key('account_send_otp_button')),
+        );
+        await tester.tap(find.byKey(const Key('account_send_otp_button')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // Step 2: User sees masked email & received OTP
+        expect(
+          find.textContaining('ad***@enterprise-crm.internal'),
+          findsOneWidget,
+        );
+        expect(find.text('Received OTP: 654321'), findsOneWidget);
+
+        // Enter received OTP and verify
+        await tester.enterText(
+          find.byKey(const Key('account_otp_field')),
+          '654321',
+        );
+        await tester.ensureVisible(
+          find.byKey(const Key('account_verify_otp_button')),
+        );
+        await tester.tap(find.byKey(const Key('account_verify_otp_button')));
+        await tester.pumpAndSettle();
+
+        // Step 3: OTP verified badge and new password fields unlocked
+        expect(find.byKey(const Key('account_otp_step_3')), findsOneWidget);
+        expect(
+          find.byKey(const Key('account_otp_verified_badge')),
+          findsOneWidget,
+        );
 
         // Enter new password and confirmation
         await tester.enterText(
@@ -233,15 +370,98 @@ void main() {
         await tester.tap(find.byKey(const Key('account_save_password_button')));
         await tester.pumpAndSettle();
 
-        // Verify success notification and no error
+        // Verify success notification and collapsed security section
         expect(find.text('Password changed successfully.'), findsOneWidget);
-        expect(find.text('User not found.'), findsNothing);
+        expect(
+          find.byKey(const Key('account_otp_flow_container')),
+          findsNothing,
+        );
 
-        // Verify new credential works in store
+        // Verify old credential fails and new credential works in store
+        expect(
+          store.authenticate(userId: 'admin', password: 'admin123'),
+          isNull,
+        );
         expect(
           store.authenticate(userId: 'admin', password: 'newSecret123'),
           isNotNull,
         );
+      },
+    );
+
+    testWidgets(
+      'missing AuthRepository shows OTP service error and blocks password reset',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildHeaderTestApp(user: MockAuthTestFixtures.admin),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('home_account_avatar')));
+        await tester.pumpAndSettle();
+
+        await tester.ensureVisible(
+          find.byKey(const Key('account_reset_password_button')),
+        );
+        await tester.tap(find.byKey(const Key('account_reset_password_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('account_otp_error_banner')), findsOneWidget);
+        expect(
+          find.textContaining('OTP verification service is unavailable'),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('account_new_password_field')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'OTP password reset flow renders without overflow on narrow 320px viewport',
+      (tester) async {
+        tester.view.physicalSize = const Size(320, 568);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final store = MockAccountStore.seeded();
+        final authRepo = MockAuthRepository(accountStore: store);
+
+        await tester.pumpWidget(
+          _buildHeaderTestApp(
+            user: MockAuthTestFixtures.admin,
+            authRepository: authRepo,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('home_account_avatar')));
+        await tester.pumpAndSettle();
+
+        await tester.ensureVisible(
+          find.byKey(const Key('account_reset_password_button')),
+        );
+        await tester.tap(find.byKey(const Key('account_reset_password_button')));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+
+        await tester.ensureVisible(
+          find.byKey(const Key('account_send_otp_button')),
+        );
+        await tester.tap(find.byKey(const Key('account_send_otp_button')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(tester.takeException(), isNull);
+
+        await tester.enterText(
+          find.byKey(const Key('account_otp_field')),
+          '123456',
+        );
+        await tester.ensureVisible(
+          find.byKey(const Key('account_verify_otp_button')),
+        );
+        await tester.tap(find.byKey(const Key('account_verify_otp_button')));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
       },
     );
   });

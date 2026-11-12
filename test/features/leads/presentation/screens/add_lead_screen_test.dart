@@ -1,4 +1,9 @@
 import 'dart:async';
+import 'package:enterprise_crm/features/auth/domain/entities/account_type.dart';
+import 'package:enterprise_crm/features/auth/domain/entities/crm_module.dart';
+import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
+import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dart';
+import 'package:enterprise_crm/features/auth/presentation/screens/access_restricted_screen.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_assignee.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_assignment_request.dart';
@@ -20,6 +25,9 @@ class _FakeLeadRepository implements LeadRepository {
   int createLeadCallCount = 0;
   Completer<Lead>? createCompleter;
   bool shouldThrowOnCreate = false;
+  List<LeadAssignee> assignableUsers = const [];
+  String? lastAssignedLeadId;
+  String? lastAssignedUserId;
 
   @override
   Future<Lead> createLead(CreateLeadInput input) async {
@@ -58,7 +66,10 @@ class _FakeLeadRepository implements LeadRepository {
   Future<void> assignLead({
     required String leadId,
     required String assigneeId,
-  }) async {}
+  }) async {
+    lastAssignedLeadId = leadId;
+    lastAssignedUserId = assigneeId;
+  }
 
   @override
   Future<void> assignLeads(LeadAssignmentRequest request) async {}
@@ -67,7 +78,7 @@ class _FakeLeadRepository implements LeadRepository {
   Future<void> reassignLead(LeadReassignmentRequest request) async {}
 
   @override
-  Future<List<LeadAssignee>> getAssignableUsers() async => const [];
+  Future<List<LeadAssignee>> getAssignableUsers() async => assignableUsers;
 
   @override
   Future<LeadImportResult> importLeads(LeadImportRequest request) async =>
@@ -566,6 +577,106 @@ void main() {
       expect(repository.createLeadCallCount, 1);
       expect(repository.lastCreateInput!.draft.source, LeadSource.portal);
     });
+  });
+
+  group('AddLeadScreen - Permission Gating & Inline Assignment', () {
+    testWidgets(
+      'blocks access when currentUser lacks lead.create permission',
+      (tester) async {
+        const userWithoutCreate = CurrentUser(
+          id: 'usr_view_only',
+          displayName: 'Viewer',
+          accountType: AccountType.user,
+          modules: {CrmModule.leadManagement},
+          permissions: {CrmPermissions.leadViewAssigned},
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AddLeadScreen(
+              repository: repository,
+              currentUser: userWithoutCreate,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AccessRestrictedScreen), findsOneWidget);
+        expect(find.text('Create Lead'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'hides inline assignee selector when currentUser has lead.create without lead.assign',
+      (tester) async {
+        repository.assignableUsers = const [
+          LeadAssignee(id: 'u1', displayName: 'Agent U1'),
+        ];
+        const createOnlyUser = CurrentUser(
+          id: 'usr_creator',
+          displayName: 'Creator',
+          accountType: AccountType.user,
+          modules: {CrmModule.leadManagement},
+          permissions: {CrmPermissions.leadCreate},
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AddLeadScreen(
+              repository: repository,
+              currentUser: createOnlyUser,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Create Lead'), findsOneWidget);
+        expect(
+          find.byKey(const Key('add_lead_assignee_dropdown')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'shows inline assignee selector and assigns lead on submit when currentUser has lead.create & lead.assign',
+      (tester) async {
+        repository.assignableUsers = const [
+          LeadAssignee(id: 'u1', displayName: 'Agent U1'),
+        ];
+        const createAndAssignUser = CurrentUser(
+          id: 'usr_lead_mgr',
+          displayName: 'Manager',
+          accountType: AccountType.user,
+          modules: {CrmModule.leadManagement},
+          permissions: {
+            CrmPermissions.leadCreate,
+            CrmPermissions.leadAssign,
+          },
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AddLeadScreen(
+              repository: repository,
+              currentUser: createAndAssignUser,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final dropdown = find.byKey(const Key('add_lead_assignee_dropdown'));
+        await tapVisible(tester, dropdown);
+        await tester.tap(find.text('Agent U1').last);
+        await tester.pumpAndSettle();
+
+        await tapVisible(tester, find.text('Create Lead'));
+
+        expect(repository.createLeadCallCount, 1);
+        expect(repository.lastAssignedLeadId, equals('created-lead-123'));
+        expect(repository.lastAssignedUserId, equals('u1'));
+      },
+    );
   });
 }
 

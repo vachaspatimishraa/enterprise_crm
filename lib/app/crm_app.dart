@@ -286,6 +286,7 @@ class _CrmAppState extends State<CrmApp> {
                     dispatchRepository: _dispatchRepository,
                     purchaseRepository: _purchaseRepository,
                     vendorRepository: _vendorRepository,
+                    authRepository: widget.authRepository,
                     userManagementRepository: widget.userManagementRepository,
                     employeeRepository: _employeeRepository,
                     employeeDocumentRepository: _employeeDocumentRepository,
@@ -329,6 +330,8 @@ class _CrmAppState extends State<CrmApp> {
                     vendorRepository: _vendorRepository,
                     approvalRepository: _approvalRepository,
                     notificationCubit: _notificationCubit,
+                    authRepository: widget.authRepository,
+                    userManagementRepository: widget.userManagementRepository,
                   );
                 }
               case AuthUnauthenticated():

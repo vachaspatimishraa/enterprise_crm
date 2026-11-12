@@ -289,5 +289,115 @@ void main() {
         expect(find.byType(LeadDashboardScreen), findsNothing);
       },
     );
+
+    testWidgets(
+      'AUTHENTICATED OTP PASSWORD RESET E2E: standard user logs in -> opens right-side profile icon -> verifies OTP -> changes password -> re-logins with new password',
+      (tester) async {
+        await tester.pumpWidget(
+          CrmApp(
+            leadRepository: leadRepository,
+            authRepository: authRepository,
+            userManagementRepository: userManagementRepository,
+            userLeadLinkRepository: userLeadLinkRepository,
+            leadCallActivityRepository: leadCallActivityRepository,
+            leadFollowUpRepository: leadFollowUpRepository,
+            inventoryRepository: inventoryRepository,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Login as standard user
+        await tester.enterText(
+          find.byKey(const Key('login_user_id_field')),
+          'user',
+        );
+        await tester.enterText(
+          find.byKey(const Key('login_password_field')),
+          'user123',
+        );
+        await tester.tap(find.byKey(const Key('login_submit_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(UserDashboardScreen), findsOneWidget);
+
+        // 2. Tap right-side account avatar icon
+        await tester.tap(find.byKey(const Key('home_account_avatar')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('home_account_dialog')), findsOneWidget);
+
+        // 3. Tap Reset Password -> Request OTP
+        await tester.ensureVisible(
+          find.byKey(const Key('account_reset_password_button')),
+        );
+        await tester.tap(find.byKey(const Key('account_reset_password_button')));
+        await tester.pumpAndSettle();
+
+        await tester.ensureVisible(
+          find.byKey(const Key('account_send_otp_button')),
+        );
+        await tester.tap(find.byKey(const Key('account_send_otp_button')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // 4. Receive OTP and verify it
+        expect(find.text('Received OTP: 123456'), findsOneWidget);
+        await tester.enterText(
+          find.byKey(const Key('account_otp_field')),
+          '123456',
+        );
+        await tester.ensureVisible(
+          find.byKey(const Key('account_verify_otp_button')),
+        );
+        await tester.tap(find.byKey(const Key('account_verify_otp_button')));
+        await tester.pumpAndSettle();
+
+        // 5. Enter new password and save
+        await tester.enterText(
+          find.byKey(const Key('account_new_password_field')),
+          'UserUpdatedPass99!',
+        );
+        await tester.enterText(
+          find.byKey(const Key('account_confirm_password_field')),
+          'UserUpdatedPass99!',
+        );
+        await tester.ensureVisible(
+          find.byKey(const Key('account_save_password_button')),
+        );
+        await tester.tap(find.byKey(const Key('account_save_password_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Password changed successfully.'), findsOneWidget);
+
+        // 6. Logout via dialog logout button
+        await tester.ensureVisible(
+          find.byKey(const Key('account_logout_button')),
+        );
+        await tester.tap(find.byKey(const Key('account_logout_button')));
+        await tester.pumpAndSettle();
+        expect(find.byType(LoginScreen), findsOneWidget);
+
+        // 7. Old password fails
+        await tester.enterText(
+          find.byKey(const Key('login_user_id_field')),
+          'user',
+        );
+        await tester.enterText(
+          find.byKey(const Key('login_password_field')),
+          'user123',
+        );
+        await tester.tap(find.byKey(const Key('login_submit_button')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('login_error_banner')), findsOneWidget);
+
+        // 8. New password logs in cleanly
+        await tester.enterText(
+          find.byKey(const Key('login_password_field')),
+          'UserUpdatedPass99!',
+        );
+        await tester.tap(find.byKey(const Key('login_submit_button')));
+        await tester.pumpAndSettle();
+        expect(find.byType(UserDashboardScreen), findsOneWidget);
+      },
+    );
   });
 }

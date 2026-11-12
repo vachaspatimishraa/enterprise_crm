@@ -9,10 +9,19 @@ import '../../../auth/domain/repositories/user_lead_link_repository.dart';
 import '../../../auth/presentation/mappers/crm_permission_presentation.dart';
 import '../../../auth/presentation/screens/access_restricted_screen.dart';
 import '../../../calling/data/repositories/mock_lead_follow_up_repository.dart';
+import '../../../calling/domain/policies/user_calling_policy.dart';
 import '../../../calling/domain/repositories/lead_call_activity_repository.dart';
 import '../../../calling/domain/repositories/lead_follow_up_repository.dart';
+import '../../../leads/data/services/lead_export_file_saver.dart';
 import '../../../leads/domain/entities/lead.dart';
+import '../../../leads/domain/entities/lead_query.dart';
+import '../../../leads/domain/policies/lead_access_policy.dart';
 import '../../../leads/domain/repositories/lead_repository.dart';
+import '../../../leads/presentation/screens/add_lead_screen.dart';
+import '../../../leads/presentation/screens/lead_details_screen.dart';
+import '../../../leads/presentation/screens/lead_import_workflow_screen.dart';
+import '../../../leads/presentation/screens/lead_list_screen.dart';
+import '../../../leads/presentation/widgets/lead_export_dialog.dart';
 import '../bloc/user_assigned_leads_cubit.dart';
 import '../bloc/user_assigned_leads_state.dart';
 import 'user_lead_details_screen.dart';
@@ -21,10 +30,7 @@ import 'user_lead_details_screen.dart';
 ///
 /// This widget is render-only. All authorization checks, identity resolution,
 /// assignee validation, and lead loading are delegated to
-/// [UserAssignedLeadsCubit].
-///
-/// The screen is strictly read-only. No editing, creation, assignment,
-/// reassignment, import, or export controls are present in AUTH-3B.1.
+/// [UserAssignedLeadsCubit] and [LeadAccessPolicy].
 class UserLeadWorkspaceScreen extends StatelessWidget {
   final CurrentUser user;
   final UserLeadLinkRepository linkRepository;
@@ -88,15 +94,33 @@ class _UserLeadWorkspaceView extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    final canView = AccessPolicy.hasPermission(
+    final canViewAssigned = LeadAccessPolicy.canViewAssigned(user);
+    final canViewExplicitAssigned = AccessPolicy.hasPermission(
       user,
       CrmPermissions.leadViewAssigned,
     );
+    final canViewAll = LeadAccessPolicy.canViewAll(user);
+    final canCreate = LeadAccessPolicy.canCreate(user);
     final canUpdate = AccessPolicy.hasPermission(
       user,
       CrmPermissions.leadUpdate,
     );
-    final hasAnyLeadPermission = canView || canUpdate;
+    final canAssign = LeadAccessPolicy.canAssign(user);
+    final canDelete = LeadAccessPolicy.canDelete(user: user);
+    final canImport = LeadAccessPolicy.canImport(user);
+    final canExport = LeadAccessPolicy.canExport(user);
+
+    final hasAnyLeadPermission =
+        canViewAssigned ||
+        canViewAll ||
+        canCreate ||
+        canUpdate ||
+        canAssign ||
+        canDelete ||
+        canImport ||
+        canExport;
+    final hasWorkspaceActions =
+        canCreate || canAssign || canViewAll || canImport || canExport;
 
     return Scaffold(
       key: const Key('user_lead_workspace_screen'),
@@ -115,21 +139,51 @@ class _UserLeadWorkspaceView extends StatelessWidget {
                   colorScheme: colorScheme,
                   theme: theme,
                   hasAnyLeadPermission: hasAnyLeadPermission,
-                  canView: canView,
+                  canViewAssigned: canViewAssigned,
+                  canViewExplicitAssigned: canViewExplicitAssigned,
+                  canViewAll: canViewAll,
+                  canCreate: canCreate,
                   canUpdate: canUpdate,
+                  canAssign: canAssign,
+                  canDelete: canDelete,
+                  canImport: canImport,
+                  canExport: canExport,
                 ),
+                if (hasWorkspaceActions) ...[
+                  const SizedBox(height: 20),
+                  _SectionHeader(
+                    label: 'LEAD ACTIONS',
+                    colorScheme: colorScheme,
+                    theme: theme,
+                  ),
+                  const SizedBox(height: 12),
+                  _LeadActionsCard(
+                    key: const Key('user_lead_actions_section'),
+                    user: user,
+                    leadRepository: leadRepository,
+                    canCreate: canCreate,
+                    canAssign: canAssign,
+                    canViewAll: canViewAll,
+                    canImport: canImport,
+                    canExport: canExport,
+                    onLeadsChanged: () =>
+                        _reloadAssignedLeads(context, canViewAssigned),
+                  ),
+                ],
                 const SizedBox(height: 20),
 
-                // ── AUTH-3B.1: Assigned leads list ───────────────────────
-                if (canView) ...[
+                // ── AUTH-3B.1: Leads list (all or assigned) ──────────────
+                if (canViewAssigned) ...[
                   _SectionHeader(
-                    label: 'MY ASSIGNED LEADS',
+                    label: canViewAll ? 'ALL LEADS' : 'MY ASSIGNED LEADS',
                     colorScheme: colorScheme,
                     theme: theme,
                   ),
                   const SizedBox(height: 12),
                   _AssignedLeadsBody(
                     user: user,
+                    canViewAll: canViewAll,
+                    canAssign: canAssign,
                     linkRepository: linkRepository,
                     leadRepository: leadRepository,
                     callActivityRepository: callActivityRepository,
@@ -150,6 +204,11 @@ class _UserLeadWorkspaceView extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  void _reloadAssignedLeads(BuildContext context, bool canViewAssigned) {
+    if (!canViewAssigned || !context.mounted) return;
+    context.read<UserAssignedLeadsCubit>().load();
   }
 }
 
@@ -196,17 +255,96 @@ class _CapabilityCard extends StatelessWidget {
   final ColorScheme colorScheme;
   final ThemeData theme;
   final bool hasAnyLeadPermission;
-  final bool canView;
+  final bool canViewAssigned;
+  final bool canViewExplicitAssigned;
+  final bool canViewAll;
+  final bool canCreate;
   final bool canUpdate;
+  final bool canAssign;
+  final bool canDelete;
+  final bool canImport;
+  final bool canExport;
 
   const _CapabilityCard({
     required this.user,
     required this.colorScheme,
     required this.theme,
     required this.hasAnyLeadPermission,
-    required this.canView,
+    required this.canViewAssigned,
+    required this.canViewExplicitAssigned,
+    required this.canViewAll,
+    required this.canCreate,
     required this.canUpdate,
+    required this.canAssign,
+    required this.canDelete,
+    required this.canImport,
+    required this.canExport,
   });
+
+  List<({Key key, String label})> _buildCapabilities() {
+    final items = <({Key key, String label})>[];
+    if (canViewExplicitAssigned) {
+      items.add((
+        key: const Key('lead_perm_view_assigned'),
+        label: CrmPermissionPresentation.displayNameFor(
+          CrmPermissions.leadViewAssigned,
+        ),
+      ));
+    }
+    if (canViewAll) {
+      items.add((
+        key: const Key('lead_perm_view_all'),
+        label: CrmPermissionPresentation.displayNameFor(
+          CrmPermissions.leadViewAll,
+        ),
+      ));
+    }
+    if (canCreate) {
+      items.add((
+        key: const Key('lead_perm_create'),
+        label: CrmPermissionPresentation.displayNameFor(
+          CrmPermissions.leadCreate,
+        ),
+      ));
+    }
+    if (canUpdate) {
+      items.add((
+        key: const Key('lead_perm_update'),
+        label: CrmPermissionPresentation.displayNameFor(
+          CrmPermissions.leadUpdate,
+        ),
+      ));
+    }
+    if (canAssign) {
+      items.add((
+        key: const Key('lead_perm_assign'),
+        label: CrmPermissionPresentation.displayNameFor(
+          CrmPermissions.leadAssign,
+        ),
+      ));
+    }
+    if (canDelete) {
+      items.add((
+        key: const Key('lead_perm_delete'),
+        label: CrmPermissionPresentation.displayNameFor(
+          CrmPermissions.leadDelete,
+        ),
+      ));
+    }
+    if (canImport) {
+      items.add((
+        key: const Key('lead_perm_import'),
+        label: 'Import Leads (CSV / Excel)',
+      ));
+    }
+    if (canExport) {
+      items.add((
+        key: const Key('lead_perm_export'),
+        label: 'Export Leads',
+      ));
+    }
+    return items;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -279,27 +417,17 @@ class _CapabilityCard extends StatelessWidget {
                 ),
               ),
             ] else ...[
-              if (canView)
+              for (var i = 0; i < _buildCapabilities().length; i++) ...[
+                if (i > 0) const SizedBox(height: 8),
                 _CapabilityItem(
                   icon: Icons.check_circle_outline,
-                  label: CrmPermissionPresentation.displayNameFor(
-                    CrmPermissions.leadViewAssigned,
-                  ),
-                  itemKey: const Key('lead_perm_view_assigned'),
+                  label: _buildCapabilities()[i].label,
+                  itemKey: _buildCapabilities()[i].key,
                   color: colorScheme.primary,
                 ),
-              if (canView && canUpdate) const SizedBox(height: 8),
-              if (canUpdate)
-                _CapabilityItem(
-                  icon: Icons.check_circle_outline,
-                  label: CrmPermissionPresentation.displayNameFor(
-                    CrmPermissions.leadUpdate,
-                  ),
-                  itemKey: const Key('lead_perm_update'),
-                  color: colorScheme.primary,
-                ),
+              ],
               // Case D: update-without-view warning
-              if (!canView && canUpdate) ...[
+              if (!canViewAssigned && canUpdate) ...[
                 const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -343,10 +471,150 @@ class _CapabilityCard extends StatelessWidget {
   }
 }
 
+class _LeadActionsCard extends StatelessWidget {
+  final CurrentUser user;
+  final LeadRepository leadRepository;
+  final bool canCreate;
+  final bool canAssign;
+  final bool canViewAll;
+  final bool canImport;
+  final bool canExport;
+  final VoidCallback onLeadsChanged;
+
+  const _LeadActionsCard({
+    super.key,
+    required this.user,
+    required this.leadRepository,
+    required this.canCreate,
+    required this.canAssign,
+    required this.canViewAll,
+    required this.canImport,
+    required this.canExport,
+    required this.onLeadsChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Card(
+      elevation: 0,
+      color: colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            if (canCreate)
+              FilledButton.icon(
+                key: const Key('user_lead_add_lead_button'),
+                onPressed: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => AddLeadScreen(
+                        repository: leadRepository,
+                        currentUser: user,
+                      ),
+                    ),
+                  );
+                  onLeadsChanged();
+                },
+                icon: const Icon(Icons.person_add_outlined, size: 18),
+                label: const Text('Add Lead'),
+              ),
+            if (canAssign)
+              FilledButton.tonalIcon(
+                key: const Key('user_lead_assign_leads_button'),
+                onPressed: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => LeadListScreen(
+                        repository: leadRepository,
+                        currentUser: user,
+                        isDistributionMode: true,
+                      ),
+                    ),
+                  );
+                  onLeadsChanged();
+                },
+                icon: const Icon(Icons.assignment_ind_outlined, size: 18),
+                label: const Text('Assign / Distribute Leads'),
+              ),
+            if (canViewAll)
+              OutlinedButton.icon(
+                key: const Key('user_lead_view_all_button'),
+                onPressed: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => LeadListScreen(
+                        repository: leadRepository,
+                        currentUser: user,
+                      ),
+                    ),
+                  );
+                  onLeadsChanged();
+                },
+                icon: const Icon(Icons.people_outline, size: 18),
+                label: const Text('View All Leads'),
+              ),
+            if (canImport)
+              OutlinedButton.icon(
+                key: const Key('user_lead_import_button'),
+                onPressed: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => LeadImportWorkflowScreen(
+                        repository: leadRepository,
+                      ),
+                    ),
+                  );
+                  onLeadsChanged();
+                },
+                icon: const Icon(Icons.upload_file_outlined, size: 18),
+                label: const Text('Import Leads'),
+              ),
+            if (canExport)
+              OutlinedButton.icon(
+                key: const Key('user_lead_export_button'),
+                onPressed: () {
+                  final leadsState = context.read<UserAssignedLeadsCubit>().state;
+                  final exportQuery =
+                      (!canViewAll && leadsState is UserAssignedLeadsLoaded)
+                      ? LeadQuery(assignedUserId: leadsState.leadAssigneeId)
+                      : const LeadQuery();
+                  showLeadExportDialog(
+                    context: context,
+                    repository: leadRepository,
+                    fileSaver: const DefaultLeadExportFileSaver(),
+                    query: exportQuery,
+                    contextExplanation: canViewAll
+                        ? 'Export all CRM leads'
+                        : 'Export your assigned leads',
+                    user: user,
+                  );
+                },
+                icon: const Icon(Icons.download_outlined, size: 18),
+                label: const Text('Export Leads'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ── Assigned leads Cubit consumer ─────────────────────────────────────────
 
 class _AssignedLeadsBody extends StatelessWidget {
   final CurrentUser user;
+  final bool canViewAll;
+  final bool canAssign;
   final UserLeadLinkRepository linkRepository;
   final LeadRepository leadRepository;
   final LeadCallActivityRepository callActivityRepository;
@@ -354,6 +622,8 @@ class _AssignedLeadsBody extends StatelessWidget {
 
   const _AssignedLeadsBody({
     required this.user,
+    this.canViewAll = false,
+    this.canAssign = false,
     required this.linkRepository,
     required this.leadRepository,
     required this.callActivityRepository,
@@ -389,12 +659,18 @@ class _AssignedLeadsBody extends StatelessWidget {
         UserAssignedLeadsEmpty() => _InfoPanel(
           key: const Key('user_assigned_leads_empty'),
           icon: Icons.inbox_outlined,
-          message: 'No leads are currently assigned to you.',
-          hint: 'Check back later or contact your administrator.',
+          message: canViewAll
+              ? 'No leads are available yet.'
+              : 'No leads are currently assigned to you.',
+          hint: canViewAll
+              ? 'Create or import leads to view them here.'
+              : 'Check back later or contact your administrator.',
         ),
         UserAssignedLeadsLoaded(:final leads) => _LeadList(
           leads: leads,
           user: user,
+          canViewAll: canViewAll,
+          canAssign: canAssign,
           linkRepository: linkRepository,
           leadRepository: leadRepository,
           callActivityRepository: callActivityRepository,
@@ -514,6 +790,8 @@ class _FailurePanel extends StatelessWidget {
 class _LeadList extends StatelessWidget {
   final List<Lead> leads;
   final CurrentUser user;
+  final bool canViewAll;
+  final bool canAssign;
   final UserLeadLinkRepository linkRepository;
   final LeadRepository leadRepository;
   final LeadCallActivityRepository callActivityRepository;
@@ -522,6 +800,8 @@ class _LeadList extends StatelessWidget {
   const _LeadList({
     required this.leads,
     required this.user,
+    this.canViewAll = false,
+    this.canAssign = false,
     required this.linkRepository,
     required this.leadRepository,
     required this.callActivityRepository,
@@ -530,23 +810,33 @@ class _LeadList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final openFullDetails =
+        canViewAll && (canAssign || !UserCallingPolicy.canUseCalling(user));
+
     return Column(
       key: const Key('user_assigned_leads_list'),
       children: [
         for (final lead in leads) ...[
           _LeadCard(
             lead: lead,
+            showAssignee: canViewAll,
             onTap: () async {
               await Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => UserLeadDetailsScreen(
-                    user: user,
-                    leadId: lead.id,
-                    linkRepository: linkRepository,
-                    leadRepository: leadRepository,
-                    callActivityRepository: callActivityRepository,
-                    leadFollowUpRepository: leadFollowUpRepository,
-                  ),
+                  builder: (_) => openFullDetails
+                      ? LeadDetailsScreen(
+                          leadId: lead.id,
+                          repository: leadRepository,
+                          currentUser: user,
+                        )
+                      : UserLeadDetailsScreen(
+                          user: user,
+                          leadId: lead.id,
+                          linkRepository: linkRepository,
+                          leadRepository: leadRepository,
+                          callActivityRepository: callActivityRepository,
+                          leadFollowUpRepository: leadFollowUpRepository,
+                        ),
                 ),
               );
               if (context.mounted) {
@@ -563,9 +853,14 @@ class _LeadList extends StatelessWidget {
 
 class _LeadCard extends StatelessWidget {
   final Lead lead;
+  final bool showAssignee;
   final VoidCallback? onTap;
 
-  const _LeadCard({required this.lead, this.onTap});
+  const _LeadCard({
+    required this.lead,
+    this.showAssignee = false,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -605,6 +900,17 @@ class _LeadCard extends StatelessWidget {
                       Text(
                         lead.phone ?? lead.email ?? '',
                         style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                    if (showAssignee) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        lead.isAssigned
+                            ? 'Assigned: ${lead.assignedUserName ?? lead.assignedUserId}'
+                            : 'Unassigned',
+                        style: theme.textTheme.labelSmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
                       ),

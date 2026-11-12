@@ -1,6 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:enterprise_crm/features/auth/domain/entities/account_type.dart';
+import 'package:enterprise_crm/features/auth/domain/entities/crm_module.dart';
+import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
+import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dart';
 import 'package:enterprise_crm/features/leads/data/datasources/mock_lead_data_source.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead.dart';
@@ -3308,6 +3312,72 @@ void main() {
           expect(tester.takeException(), isNull);
           expect(find.text('0 selected'), findsOneWidget);
         }
+      },
+    );
+  });
+
+  group('LeadListScreen - Permission Gating', () {
+    testWidgets(
+      'shows Add Lead, Select Leads, Import Leads, Export Leads only when granted to currentUser',
+      (tester) async {
+        repository.leads = [
+          const Lead(
+            id: 'lead-1',
+            name: 'Unassigned Prospect',
+            status: LeadStatus('New'),
+            source: LeadSource.manual,
+          ),
+        ];
+
+        const viewOnlyUser = CurrentUser(
+          id: 'u_view',
+          displayName: 'Viewer',
+          accountType: AccountType.user,
+          modules: {CrmModule.leadManagement},
+          permissions: {CrmPermissions.leadViewAll},
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: LeadListScreen(
+              repository: repository,
+              currentUser: viewOnlyUser,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Add Lead'), findsNothing);
+        expect(find.byTooltip('Select Leads'), findsNothing);
+        expect(find.byTooltip('Import Leads'), findsNothing);
+        expect(find.byTooltip('Export Leads'), findsNothing);
+
+        const createAndAssignUser = CurrentUser(
+          id: 'u_ops',
+          displayName: 'Lead Operator',
+          accountType: AccountType.user,
+          modules: {CrmModule.leadManagement},
+          permissions: {
+            CrmPermissions.leadViewAll,
+            CrmPermissions.leadCreate,
+            CrmPermissions.leadAssign,
+          },
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: LeadListScreen(
+              repository: repository,
+              currentUser: createAndAssignUser,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Add Lead'), findsOneWidget);
+        expect(find.byTooltip('Select Leads'), findsOneWidget);
+        expect(find.byTooltip('Import Leads'), findsNothing);
+        expect(find.byTooltip('Export Leads'), findsNothing);
       },
     );
   });

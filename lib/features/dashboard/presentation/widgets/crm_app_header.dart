@@ -3,6 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../approvals/domain/repositories/approval_repository.dart';
 import '../../../auth/domain/entities/current_user.dart';
+import '../../../auth/domain/repositories/auth_repository.dart';
+import '../../../auth/presentation/bloc/auth_cubit.dart';
 import '../../../../core/theme/theme_mode_controller.dart';
 import '../../../user_management/domain/repositories/user_management_repository.dart';
 import 'account_profile_dialog.dart';
@@ -12,11 +14,13 @@ import '../../../notifications/presentation/widgets/notification_bell_button.dar
 /// Application header displayed across authenticated CRM dashboards.
 ///
 /// Places the account avatar in the top right corner, providing profile
-/// management, non-editable User ID display, password reset, and logout options.
+/// management, non-editable User ID display, OTP-verified password reset,
+/// and logout options.
 class CrmAppHeader extends StatelessWidget {
   final CurrentUser user;
   final VoidCallback onLogout;
   final UserManagementRepository? userManagementRepository;
+  final AuthRepository? authRepository;
   final NotificationCubit? notificationCubit;
   final ApprovalRepository? approvalRepository;
 
@@ -25,27 +29,37 @@ class CrmAppHeader extends StatelessWidget {
     required this.user,
     required this.onLogout,
     this.userManagementRepository,
+    this.authRepository,
     this.notificationCubit,
     this.approvalRepository,
   });
 
-  void _openAccountDialog(BuildContext context) {
-    UserManagementRepository? repo = userManagementRepository;
-    if (repo == null) {
+  T? _tryRead<T>(BuildContext context) {
+    try {
+      return context.read<T?>();
+    } catch (_) {
       try {
-        repo = context.read<UserManagementRepository?>();
+        return context.read<T>();
       } catch (_) {
-        try {
-          repo = context.read<UserManagementRepository>();
-        } catch (_) {}
+        return null;
       }
     }
+  }
+
+  void _openAccountDialog(BuildContext context) {
+    final userRepo =
+        userManagementRepository ?? _tryRead<UserManagementRepository>(context);
+    final resolvedAuthRepo =
+        authRepository ??
+        _tryRead<AuthRepository>(context) ??
+        _tryRead<AuthCubit>(context)?.repository;
 
     AccountProfileDialog.show(
       context,
       user: user,
       onLogout: onLogout,
-      userManagementRepository: repo,
+      userManagementRepository: userRepo,
+      authRepository: resolvedAuthRepo,
     );
   }
 

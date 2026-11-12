@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../auth/domain/entities/current_user.dart';
+import '../../../auth/presentation/bloc/auth_cubit.dart';
+import '../../../auth/presentation/bloc/auth_state.dart';
+import '../../../auth/presentation/screens/access_restricted_screen.dart';
+import '../../../notifications/domain/services/notification_dispatcher.dart';
 import '../../domain/entities/lead.dart';
+import '../../domain/entities/lead_assignee.dart';
 import '../../domain/entities/lead_draft.dart';
 import '../../domain/entities/lead_source.dart';
+import '../../domain/policies/lead_access_policy.dart';
 import '../../domain/repositories/lead_repository.dart';
 import '../bloc/lead_form_cubit.dart';
 import '../bloc/lead_form_state.dart';
@@ -14,6 +21,7 @@ import '../widgets/hybrid_dropdown_field.dart';
 class AddLeadScreen extends StatelessWidget {
   final LeadFormCubit? cubit;
   final LeadRepository? repository;
+  final CurrentUser? currentUser;
   final void Function(Lead lead)? onLeadCreated;
   final VoidCallback? onCancel;
 
@@ -21,35 +29,90 @@ class AddLeadScreen extends StatelessWidget {
     super.key,
     this.cubit,
     this.repository,
+    this.currentUser,
     this.onLeadCreated,
     this.onCancel,
   });
 
+  CurrentUser? _resolveCurrentUser(BuildContext context) {
+    if (currentUser != null) return currentUser;
+    try {
+      final authState = context.read<AuthCubit?>()?.state;
+      if (authState is AuthAuthenticated) {
+        return authState.user;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final user = _resolveCurrentUser(context);
+    if (user != null && !LeadAccessPolicy.canCreate(user)) {
+      return const AccessRestrictedScreen();
+    }
+    final canAssign = user == null || LeadAccessPolicy.canAssign(user);
+
+    LeadRepository? repo = repository;
+    if (repo == null) {
+      try {
+        repo = context.read<LeadRepository>();
+      } catch (_) {}
+    }
+
     if (cubit != null) {
       return BlocProvider.value(
         value: cubit!,
-        child: _AddLeadView(onLeadCreated: onLeadCreated, onCancel: onCancel),
+        child: _AddLeadView(
+          repository: repo,
+          canAssign: canAssign,
+          onLeadCreated: onLeadCreated,
+          onCancel: onCancel,
+        ),
       );
     }
 
     if (repository != null) {
+      NotificationDispatcher? dispatcher;
+      try {
+        dispatcher = context.read<NotificationDispatcher>();
+      } catch (_) {}
+
       return BlocProvider(
-        create: (_) => LeadFormCubit(repository!),
-        child: _AddLeadView(onLeadCreated: onLeadCreated, onCancel: onCancel),
+        create: (_) => LeadFormCubit(
+          repository!,
+          notificationDispatcher: dispatcher,
+        ),
+        child: _AddLeadView(
+          repository: repo,
+          canAssign: canAssign,
+          onLeadCreated: onLeadCreated,
+          onCancel: onCancel,
+        ),
       );
     }
 
-    return _AddLeadView(onLeadCreated: onLeadCreated, onCancel: onCancel);
+    return _AddLeadView(
+      repository: repo,
+      canAssign: canAssign,
+      onLeadCreated: onLeadCreated,
+      onCancel: onCancel,
+    );
   }
 }
 
 class _AddLeadView extends StatefulWidget {
+  final LeadRepository? repository;
+  final bool canAssign;
   final void Function(Lead lead)? onLeadCreated;
   final VoidCallback? onCancel;
 
-  const _AddLeadView({this.onLeadCreated, this.onCancel});
+  const _AddLeadView({
+    this.repository,
+    this.canAssign = false,
+    this.onLeadCreated,
+    this.onCancel,
+  });
 
   @override
   State<_AddLeadView> createState() => _AddLeadViewState();
@@ -69,6 +132,32 @@ class _AddLeadViewState extends State<_AddLeadView> {
   final _estimatedValueController = TextEditingController();
   final _notesController = TextEditingController();
   LeadSource _selectedSource = LeadSource.manual;
+  List<LeadAssignee> _assignees = const [];
+  String? _selectedAssigneeId;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.canAssign && widget.repository != null) {
+      _loadAssignees();
+    }
+  }
+
+  Future<void> _loadAssignees() async {
+    try {
+      final assignees = await widget.repository!.getAssignableUsers();
+      if (!mounted) return;
+      setState(() {
+        _assignees = List<LeadAssignee>.unmodifiable(assignees);
+        if (_selectedAssigneeId != null &&
+            !_assignees.any((a) => a.id == _selectedAssigneeId)) {
+          _selectedAssigneeId = null;
+        }
+      });
+    } catch (_) {
+      // Optional inline assignment degrades cleanly if assignee loading fails.
+    }
+  }
 
   @override
   void dispose() {
@@ -150,7 +239,7 @@ class _AddLeadViewState extends State<_AddLeadView> {
       metadata: metadata.isEmpty ? null : metadata,
     );
 
-    cubit.createLead(draft);
+    cubit.createLead(draft, assigneeId: _selectedAssigneeId);
   }
 
   IconData _sourceIcon(LeadSource source) {
@@ -485,6 +574,18 @@ class _AddLeadViewState extends State<_AddLeadView> {
                               _buildRequirementField(isSubmitting),
                               const SizedBox(height: 16),
                               _buildNotesField(isSubmitting),
+                              if (widget.canAssign && _assignees.isNotEmpty) ...[
+                                const SizedBox(height: 20),
+                                Text(
+                                  'Lead Assignment',
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: colorScheme.primary,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                _buildAssigneeDropdown(isSubmitting),
+                              ],
                               const SizedBox(height: 28),
 
                               // Form Actions
@@ -724,6 +825,42 @@ class _AddLeadViewState extends State<_AddLeadView> {
       prefixIcon: const Icon(Icons.shopping_bag_outlined),
       enabled: !isSubmitting,
       textInputAction: TextInputAction.next,
+    );
+  }
+
+  Widget _buildAssigneeDropdown(bool isSubmitting) {
+    return DropdownButtonFormField<String?>(
+      key: const Key('add_lead_assignee_dropdown'),
+      isExpanded: true,
+      initialValue: _selectedAssigneeId,
+      decoration: const InputDecoration(
+        labelText: 'Assign To (Optional)',
+        hintText: 'Unassigned (Assign later)',
+        prefixIcon: Icon(Icons.assignment_ind_outlined),
+        border: OutlineInputBorder(),
+      ),
+      items: [
+        const DropdownMenuItem<String?>(
+          value: null,
+          child: Text('Unassigned (Assign later)'),
+        ),
+        ..._assignees.map(
+          (assignee) => DropdownMenuItem<String?>(
+            value: assignee.id,
+            child: Text(
+              assignee.displayName,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ],
+      onChanged: isSubmitting
+          ? null
+          : (value) {
+              setState(() {
+                _selectedAssigneeId = value;
+              });
+            },
     );
   }
 

@@ -1,10 +1,14 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../auth/domain/entities/current_user.dart';
+import '../../../auth/presentation/bloc/auth_cubit.dart';
+import '../../../auth/presentation/bloc/auth_state.dart';
 import '../../data/services/lead_export_file_saver.dart';
 import '../../domain/entities/lead.dart';
 import '../../domain/entities/lead_assignee.dart';
 import '../../domain/entities/lead_query.dart';
+import '../../domain/policies/lead_access_policy.dart';
 import '../../domain/repositories/lead_repository.dart';
 import '../utils/lead_sort_display.dart';
 import '../bloc/lead_filter_cubit.dart';
@@ -19,12 +23,15 @@ import '../widgets/lead_filter_sheet.dart';
 import '../widgets/lead_list_card.dart';
 import '../widgets/lead_pagination_controls.dart';
 import '../services/lead_import_file_picker.dart';
+import 'add_lead_screen.dart';
+import 'lead_details_screen.dart';
 import 'lead_import_workflow_screen.dart';
 
 class LeadListScreen extends StatelessWidget {
   final LeadListCubit? cubit;
   final LeadRepository? repository;
   final LeadFilterCubit? filterCubit;
+  final CurrentUser? currentUser;
   final void Function(Lead lead)? onViewLead;
   final VoidCallback? onAddLead;
   final VoidCallback? onImportLeads;
@@ -38,6 +45,7 @@ class LeadListScreen extends StatelessWidget {
     this.cubit,
     this.repository,
     this.filterCubit,
+    this.currentUser,
     this.onViewLead,
     this.onAddLead,
     this.onImportLeads,
@@ -61,6 +69,7 @@ class LeadListScreen extends StatelessWidget {
             BlocProvider.value(value: filterC),
           ],
           child: _LeadListView(
+            currentUser: currentUser,
             onViewLead: onViewLead,
             onAddLead: onAddLead,
             onImportLeads: onImportLeads,
@@ -81,6 +90,7 @@ class LeadListScreen extends StatelessWidget {
             ),
           ],
           child: _LeadListView(
+            currentUser: currentUser,
             onViewLead: onViewLead,
             onAddLead: onAddLead,
             onImportLeads: onImportLeads,
@@ -95,6 +105,7 @@ class LeadListScreen extends StatelessWidget {
       return BlocProvider.value(
         value: listCubit,
         child: _LeadListView(
+          currentUser: currentUser,
           onViewLead: onViewLead,
           onAddLead: onAddLead,
           onImportLeads: onImportLeads,
@@ -126,6 +137,7 @@ class LeadListScreen extends StatelessWidget {
           ),
         ],
         child: _LeadListView(
+          currentUser: currentUser,
           onViewLead: onViewLead,
           onAddLead: onAddLead,
           onImportLeads: onImportLeads,
@@ -139,6 +151,7 @@ class LeadListScreen extends StatelessWidget {
     }
 
     return _LeadListView(
+      currentUser: currentUser,
       onViewLead: onViewLead,
       onAddLead: onAddLead,
       onImportLeads: onImportLeads,
@@ -152,6 +165,7 @@ class LeadListScreen extends StatelessWidget {
 }
 
 class _LeadListView extends StatefulWidget {
+  final CurrentUser? currentUser;
   final void Function(Lead lead)? onViewLead;
   final VoidCallback? onAddLead;
   final VoidCallback? onImportLeads;
@@ -162,6 +176,7 @@ class _LeadListView extends StatefulWidget {
   final LeadQuery? initialQuery;
 
   const _LeadListView({
+    this.currentUser,
     this.onViewLead,
     this.onAddLead,
     this.onImportLeads,
@@ -480,13 +495,91 @@ class _LeadListViewState extends State<_LeadListView> {
     }
   }
 
-  Future<void> _openExportDialog() async {
+  CurrentUser? _resolveCurrentUser(BuildContext context) {
+    if (widget.currentUser != null) return widget.currentUser;
+    try {
+      final authState = context.read<AuthCubit?>()?.state;
+      if (authState is AuthAuthenticated) {
+        return authState.user;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  LeadRepository? _resolveRepository(BuildContext context) {
     LeadRepository? repo = widget.repository;
     if (repo == null) {
       try {
         repo = context.read<LeadRepository>();
       } catch (_) {}
     }
+    return repo;
+  }
+
+  Future<void> _openAddLead(BuildContext context) async {
+    if (widget.onAddLead != null) {
+      widget.onAddLead!();
+      return;
+    }
+
+    final repo = _resolveRepository(context);
+    if (repo == null) {
+      _showComingSoon(context, 'Add Lead');
+      return;
+    }
+
+    final listCubit = context.read<LeadListCubit>();
+    final user = _resolveCurrentUser(context);
+    bool leadCreated = false;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (addContext) => AddLeadScreen(
+          repository: repo,
+          currentUser: user,
+          onLeadCreated: (_) {
+            leadCreated = true;
+          },
+          onCancel: () {
+            Navigator.of(addContext).pop(false);
+          },
+        ),
+      ),
+    );
+    if (leadCreated && mounted) {
+      listCubit.refreshLeads();
+    }
+  }
+
+  Future<void> _openViewLead(BuildContext context, Lead lead) async {
+    if (widget.onViewLead != null) {
+      widget.onViewLead!(lead);
+      return;
+    }
+
+    final repo = _resolveRepository(context);
+    if (repo == null) return;
+
+    final listCubit = context.read<LeadListCubit>();
+    final user = _resolveCurrentUser(context);
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => LeadDetailsScreen(
+          leadId: lead.id,
+          repository: repo,
+          currentUser: user,
+          onLeadAssigned: () {
+            _didAssignAnyLeads = true;
+          },
+        ),
+      ),
+    );
+    if (mounted) {
+      listCubit.refreshLeads();
+    }
+  }
+
+  Future<void> _openExportDialog() async {
+    final repo = _resolveRepository(context);
     if (repo == null) {
       _showComingSoon(context, 'Export Leads');
       return;
@@ -511,6 +604,7 @@ class _LeadListViewState extends State<_LeadListView> {
       query: currentQuerySnapshot,
       contextExplanation:
           'All Leads matching the current search and filters will be exported across all pages.',
+      user: _resolveCurrentUser(context),
     );
     if (result == true && mounted) {
       ScaffoldMessenger.of(
@@ -533,6 +627,12 @@ class _LeadListViewState extends State<_LeadListView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final user = _resolveCurrentUser(context);
+    final canCreate = user == null || LeadAccessPolicy.canCreate(user);
+    final canAssign = user == null || LeadAccessPolicy.canAssign(user);
+    final canImport = user == null || LeadAccessPolicy.canImport(user);
+    final canExport = user == null || LeadAccessPolicy.canExport(user);
+    final isSelectionActive = _isSelectionMode && canAssign;
 
     return PopScope(
       canPop: !widget.isDistributionMode,
@@ -543,7 +643,7 @@ class _LeadListViewState extends State<_LeadListView> {
         }
       },
       child: Scaffold(
-        appBar: _isSelectionMode
+        appBar: isSelectionActive
             ? AppBar(
                 leadingWidth: 36,
                 leading: IconButton(
@@ -632,59 +732,61 @@ class _LeadListViewState extends State<_LeadListView> {
                       context.read<LeadListCubit>().refreshLeads();
                     },
                   ),
-                  IconButton(
-                    key: const Key('lead_list_select_mode_button'),
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
+                  if (canAssign)
+                    IconButton(
+                      key: const Key('lead_list_select_mode_button'),
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      icon: const Icon(Icons.checklist),
+                      tooltip: 'Select Leads',
+                      onPressed: _enterSelectionMode,
                     ),
-                    icon: const Icon(Icons.checklist),
-                    tooltip: 'Select Leads',
-                    onPressed: _enterSelectionMode,
-                  ),
                   if (!widget.isDistributionMode) ...[
-                    IconButton(
-                      key: const Key('lead_list_import_button'),
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 32,
-                        minHeight: 32,
-                      ),
-                      icon: const Icon(Icons.upload_file),
-                      tooltip: 'Import Leads',
-                      onPressed:
-                          widget.onImportLeads ??
-                          () => _openImportWorkflow(context),
-                    ),
-                    IconButton(
-                      key: const Key('lead_list_export_button'),
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 32,
-                        minHeight: 32,
-                      ),
-                      icon: const Icon(Icons.download_outlined),
-                      tooltip: 'Export Leads',
-                      onPressed: _openExportDialog,
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(left: 2, right: 4),
-                      child: FilledButton.icon(
+                    if (canImport)
+                      IconButton(
+                        key: const Key('lead_list_import_button'),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        icon: const Icon(Icons.upload_file),
+                        tooltip: 'Import Leads',
                         onPressed:
-                            widget.onAddLead ??
-                            () => _showComingSoon(context, 'Add Lead'),
-                        icon: const Icon(Icons.add, size: 16),
-                        label: const Text('Add Lead'),
-                        style: FilledButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                            widget.onImportLeads ??
+                            () => _openImportWorkflow(context),
+                      ),
+                    if (canExport)
+                      IconButton(
+                        key: const Key('lead_list_export_button'),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        icon: const Icon(Icons.download_outlined),
+                        tooltip: 'Export Leads',
+                        onPressed: _openExportDialog,
+                      ),
+                    if (canCreate)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 2, right: 4),
+                        child: FilledButton.icon(
+                          onPressed: () => _openAddLead(context),
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('Add Lead'),
+                          style: FilledButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ],
               ),
@@ -1182,6 +1284,10 @@ class _LeadListViewState extends State<_LeadListView> {
       );
     }
 
+    final user = _resolveCurrentUser(context);
+    final canCreate = user == null || LeadAccessPolicy.canCreate(user);
+    final canImport = user == null || LeadAccessPolicy.canImport(user);
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -1202,34 +1308,38 @@ class _LeadListViewState extends State<_LeadListView> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Add a lead manually or import leads from Excel/CSV.',
+              canCreate || canImport
+                  ? 'Add a lead manually or import leads from Excel/CSV.'
+                  : 'No leads match the current view.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 24),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              alignment: WrapAlignment.center,
-              children: [
-                FilledButton.icon(
-                  onPressed:
-                      widget.onAddLead ??
-                      () => _showComingSoon(context, 'Add Lead'),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add Lead'),
-                ),
-                OutlinedButton.icon(
-                  onPressed:
-                      widget.onImportLeads ??
-                      () => _openImportWorkflow(context),
-                  icon: const Icon(Icons.upload_file),
-                  label: const Text('Import Leads'),
-                ),
-              ],
-            ),
+            if (canCreate || canImport) ...[
+              const SizedBox(height: 24),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                alignment: WrapAlignment.center,
+                children: [
+                  if (canCreate)
+                    FilledButton.icon(
+                      onPressed: () => _openAddLead(context),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add Lead'),
+                    ),
+                  if (canImport)
+                    OutlinedButton.icon(
+                      onPressed:
+                          widget.onImportLeads ??
+                          () => _openImportWorkflow(context),
+                      icon: const Icon(Icons.upload_file),
+                      label: const Text('Import Leads'),
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -1289,6 +1399,14 @@ class _LeadListViewState extends State<_LeadListView> {
       builder: (context, constraints) {
         final isMobile = constraints.maxWidth < 600;
         final isAndroidApk = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+        final user = _resolveCurrentUser(context);
+        final canAssign = user == null || LeadAccessPolicy.canAssign(user);
+        final isSelectionActive = _isSelectionMode && canAssign;
+        final canOpenLead =
+            widget.onViewLead != null || _resolveRepository(context) != null;
+        final void Function(Lead lead)? viewLeadCallback = canOpenLead
+            ? (lead) => _openViewLead(context, lead)
+            : null;
 
         final contentWidget = isMobile
             ? ListView.separated(
@@ -1303,8 +1421,8 @@ class _LeadListViewState extends State<_LeadListView> {
                   final lead = state.leads[index];
                   return LeadListCard(
                     lead: lead,
-                    onViewLead: widget.onViewLead,
-                    isSelectionMode: _isSelectionMode,
+                    onViewLead: viewLeadCallback,
+                    isSelectionMode: isSelectionActive,
                     isSelected: _selectedLeadIds.contains(lead.id),
                     onSelectChanged: (_) => _toggleLeadSelection(lead),
                   );
@@ -1327,8 +1445,8 @@ class _LeadListViewState extends State<_LeadListView> {
                           width: double.infinity,
                           child: LeadDataTable(
                             leads: state.leads,
-                            onViewLead: widget.onViewLead,
-                            isSelectionMode: _isSelectionMode,
+                            onViewLead: viewLeadCallback,
+                            isSelectionMode: isSelectionActive,
                             selectedLeadIds: _selectedLeadIds,
                             onToggleSelect: _toggleLeadSelection,
                             onSelectAll: (_) => _toggleSelectAll(state.leads),
@@ -1343,8 +1461,8 @@ class _LeadListViewState extends State<_LeadListView> {
                             width: double.infinity,
                             child: LeadDataTable(
                               leads: state.leads,
-                              onViewLead: widget.onViewLead,
-                              isSelectionMode: _isSelectionMode,
+                              onViewLead: viewLeadCallback,
+                              isSelectionMode: isSelectionActive,
                               selectedLeadIds: _selectedLeadIds,
                               onToggleSelect: _toggleLeadSelection,
                               onSelectAll: (_) => _toggleSelectAll(state.leads),

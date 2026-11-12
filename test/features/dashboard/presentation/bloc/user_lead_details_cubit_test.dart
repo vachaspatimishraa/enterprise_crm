@@ -350,5 +350,37 @@ void main() {
       expect(state.lead.name, 'Updated Name');
       expect(state.canEdit, isTrue);
     });
+
+    test(
+      'lead.view_all loads any existing lead without personal link',
+      () async {
+        const userViewAll = CurrentUser(
+          id: 'usr_view_all',
+          displayName: 'View All User',
+          accountType: AccountType.user,
+          modules: {CrmModule.leadManagement},
+          permissions: {CrmPermissions.leadViewAll},
+        );
+        final linkRepo = _SpyLinkRepo(null);
+        final leadRepo = _SpyLeadRepo(leads: {'lead-1': leadAgent1});
+        final cubit = UserLeadDetailsCubit(
+          user: userViewAll,
+          linkRepository: linkRepo,
+          leadRepository: leadRepo,
+          leadId: 'lead-1',
+        );
+
+        await cubit.loadLead();
+
+        expect(
+          cubit.state,
+          UserLeadDetailsLoaded(
+            lead: leadAgent1,
+            linkedAssigneeId: 'usr_view_all',
+            canEdit: false,
+          ),
+        );
+      },
+    );
   });
 }

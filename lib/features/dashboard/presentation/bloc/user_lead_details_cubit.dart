@@ -44,9 +44,12 @@ class UserLeadDetailsCubit extends Cubit<UserLeadDetailsState> {
     }
 
     // 2. View permission guard
-    final hasLeadView =
-        AccessPolicy.hasPermission(_user, CrmPermissions.leadViewAssigned) ||
+    final hasViewAll =
+        _user.isAdmin ||
         AccessPolicy.hasPermission(_user, CrmPermissions.leadViewAll);
+    final hasLeadView =
+        hasViewAll ||
+        AccessPolicy.hasPermission(_user, CrmPermissions.leadViewAssigned);
     if (!hasLeadView) {
       emit(
         const UserLeadDetailsAccessDenied(
@@ -59,7 +62,7 @@ class UserLeadDetailsCubit extends Cubit<UserLeadDetailsState> {
     try {
       // 3. Resolve identity link
       final link = await _linkRepository.getLinkForUser(_user.id);
-      if (link == null) {
+      if (!hasViewAll && link == null) {
         emit(
           const UserLeadDetailsAccessDenied(
             'User is not linked to an assignee identity.',
@@ -68,15 +71,21 @@ class UserLeadDetailsCubit extends Cubit<UserLeadDetailsState> {
         return;
       }
 
-      // 4. Validate assignee identity exists
-      final assignees = await _leadRepository.getAssignableUsers();
-      final assigneeExists = assignees.any((a) => a.id == link.leadAssigneeId);
-      if (!assigneeExists) {
-        emit(
-          const UserLeadDetailsAccessDenied('Assigned identity is invalid.'),
+      // 4. Validate assignee identity exists when scoped to assigned leads
+      if (!hasViewAll && link != null) {
+        final assignees = await _leadRepository.getAssignableUsers();
+        final assigneeExists = assignees.any(
+          (a) => a.id == link.leadAssigneeId,
         );
-        return;
+        if (!assigneeExists) {
+          emit(
+            const UserLeadDetailsAccessDenied('Assigned identity is invalid.'),
+          );
+          return;
+        }
       }
+
+      final resolvedAssigneeId = link?.leadAssigneeId ?? _user.id;
 
       // 5. Retrieve lead
       final lead = await _leadRepository.getLeadById(_leadId);
@@ -89,7 +98,7 @@ class UserLeadDetailsCubit extends Cubit<UserLeadDetailsState> {
       if (!UserLeadUpdatePolicy.canViewLead(
         user: _user,
         lead: lead,
-        linkedAssigneeId: link.leadAssigneeId,
+        linkedAssigneeId: resolvedAssigneeId,
       )) {
         emit(
           const UserLeadDetailsAccessDenied(
@@ -103,13 +112,13 @@ class UserLeadDetailsCubit extends Cubit<UserLeadDetailsState> {
       final canEdit = UserLeadUpdatePolicy.canEditLead(
         user: _user,
         lead: lead,
-        linkedAssigneeId: link.leadAssigneeId,
+        linkedAssigneeId: resolvedAssigneeId,
       );
 
       emit(
         UserLeadDetailsLoaded(
           lead: lead,
-          linkedAssigneeId: link.leadAssigneeId,
+          linkedAssigneeId: resolvedAssigneeId,
           canEdit: canEdit,
         ),
       );

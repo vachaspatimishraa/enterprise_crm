@@ -19,8 +19,10 @@ class MockLeadDataSource {
   MockLeadDataSource({
     List<Lead>? initialLeads,
     List<LeadAssignee>? initialAssignees,
+    List<LeadAssignee> Function()? assignableUsersProvider,
     LeadExportSerializer? exportSerializer,
-  }) : _exportSerializer =
+  }) : _assignableUsersProvider = assignableUsersProvider,
+       _exportSerializer =
            exportSerializer ?? const DefaultLeadExportSerializer() {
     _leads = initialLeads != null
         ? List<Lead>.from(initialLeads)
@@ -30,6 +32,7 @@ class MockLeadDataSource {
         : _defaultAssignees();
   }
 
+  final List<LeadAssignee> Function()? _assignableUsersProvider;
   final LeadExportSerializer _exportSerializer;
   late final List<Lead> _leads;
   late final List<LeadAssignee> _assignees;
@@ -447,15 +450,26 @@ class MockLeadDataSource {
     return updated;
   }
 
-  Future<List<LeadAssignee>> getAssignableUsers() async {
+  List<LeadAssignee> _resolveAssignees() {
+    final provider = _assignableUsersProvider;
+    if (provider != null) {
+      final provided = provider();
+      if (provided.isNotEmpty) {
+        return List<LeadAssignee>.unmodifiable(provided);
+      }
+    }
     return List<LeadAssignee>.unmodifiable(_assignees);
+  }
+
+  Future<List<LeadAssignee>> getAssignableUsers() async {
+    return _resolveAssignees();
   }
 
   Future<void> assignLead({
     required String leadId,
     required String assigneeId,
   }) async {
-    final assignee = _assignees.firstWhere(
+    final assignee = _resolveAssignees().firstWhere(
       (a) => a.id == assigneeId,
       orElse: () =>
           LeadAssignee(id: assigneeId, displayName: 'Agent $assigneeId'),
@@ -472,7 +486,7 @@ class MockLeadDataSource {
   }
 
   Future<void> assignLeads(LeadAssignmentRequest request) async {
-    final assignee = _assignees.firstWhere(
+    final assignee = _resolveAssignees().firstWhere(
       (a) => a.id == request.assigneeId,
       orElse: () => LeadAssignee(
         id: request.assigneeId,

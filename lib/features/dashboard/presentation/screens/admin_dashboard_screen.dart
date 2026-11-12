@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../auth/domain/entities/crm_module.dart';
+import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../auth/presentation/bloc/auth_cubit.dart';
 import '../../../auth/presentation/bloc/auth_state.dart';
 import '../../../auth/domain/entities/current_user.dart';
@@ -55,6 +56,7 @@ class AdminDashboardScreen extends StatelessWidget {
   final VoidCallback onOpenLeadManagement;
   final InventoryRepository? inventoryRepository;
   final DispatchRepository? dispatchRepository;
+  final AuthRepository? authRepository;
   final UserManagementRepository? userManagementRepository;
   final EmployeeRepository? employeeRepository;
   final EmployeeDocumentRepository? employeeDocumentRepository;
@@ -77,6 +79,7 @@ class AdminDashboardScreen extends StatelessWidget {
     required this.onOpenLeadManagement,
     this.inventoryRepository,
     this.dispatchRepository,
+    this.authRepository,
     this.userManagementRepository,
     this.employeeRepository,
     this.employeeDocumentRepository,
@@ -236,6 +239,7 @@ class AdminDashboardScreen extends StatelessWidget {
               user: user,
               onLogout: onLogout,
               userManagementRepository: userManagementRepository,
+              authRepository: authRepository,
               notificationCubit: notificationCubit,
               approvalRepository: approvalRepository,
             ),

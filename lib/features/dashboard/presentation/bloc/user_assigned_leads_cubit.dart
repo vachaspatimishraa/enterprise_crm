@@ -5,6 +5,7 @@ import '../../../auth/domain/entities/crm_module.dart';
 import '../../../auth/domain/policies/access_policy.dart';
 import '../../../auth/domain/policies/crm_permissions.dart';
 import '../../../auth/domain/repositories/user_lead_link_repository.dart';
+import '../../../leads/domain/entities/lead.dart';
 import '../../../leads/domain/entities/lead_query.dart';
 import '../../../leads/domain/repositories/lead_repository.dart';
 import 'user_assigned_leads_state.dart';
@@ -52,9 +53,12 @@ class UserAssignedLeadsCubit extends Cubit<UserAssignedLeadsState> {
     }
 
     // 2. Permission guard — link + lead repos must not be touched without view.
-    final hasLeadView =
-        AccessPolicy.hasPermission(_user, CrmPermissions.leadViewAssigned) ||
+    final hasViewAll =
+        _user.isAdmin ||
         AccessPolicy.hasPermission(_user, CrmPermissions.leadViewAll);
+    final hasLeadView =
+        hasViewAll ||
+        AccessPolicy.hasPermission(_user, CrmPermissions.leadViewAssigned);
     if (!hasLeadView) {
       emit(
         const UserAssignedLeadsFailure(
@@ -65,6 +69,40 @@ class UserAssignedLeadsCubit extends Cubit<UserAssignedLeadsState> {
     }
 
     try {
+      // Users with lead.view_all (or Admin) can view all existing CRM leads
+      // without being restricted by a personal assignee link or ownership scope.
+      if (hasViewAll) {
+        final link = await _linkRepository.getLinkForUser(_user.id);
+        final leadsById = <String, Lead>{};
+        var currentPage = 1;
+        var hasNext = true;
+
+        while (hasNext) {
+          final page = await _leadRepository.getLeads(
+            LeadQuery(page: currentPage, pageSize: 50),
+          );
+          for (final lead in page.items) {
+            leadsById[lead.id] = lead;
+          }
+          hasNext = page.hasNext && page.items.isNotEmpty;
+          currentPage++;
+        }
+
+        final resolvedId = link?.leadAssigneeId ?? _user.id;
+        final allLeads = leadsById.values.toList(growable: false);
+        if (allLeads.isEmpty) {
+          emit(UserAssignedLeadsEmpty(resolvedId));
+        } else {
+          emit(
+            UserAssignedLeadsLoaded(
+              leads: allLeads,
+              leadAssigneeId: resolvedId,
+            ),
+          );
+        }
+        return;
+      }
+
       // 3. Resolve CRM user → assignee link.
       final link = await _linkRepository.getLinkForUser(_user.id);
       if (link == null) {

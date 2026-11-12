@@ -68,12 +68,15 @@ class CallingDashboardCubit extends Cubit<CallingDashboardState> {
       return;
     }
 
-    // 2. Lead Management module + lead.view_assigned guard
+    // 2. Lead Management module + lead.view_assigned / lead.view_all guard
     // Unauthorized users see an informational state without reading Lead or Activity repositories.
+    final hasLeadViewAll =
+        _user.isAdmin ||
+        AccessPolicy.hasPermission(_user, CrmPermissions.leadViewAll);
     final hasLeadViewAccess =
         AccessPolicy.canAccessModule(_user, CrmModule.leadManagement) &&
-        (AccessPolicy.hasPermission(_user, CrmPermissions.leadViewAssigned) ||
-            AccessPolicy.hasPermission(_user, CrmPermissions.leadViewAll));
+        (hasLeadViewAll ||
+            AccessPolicy.hasPermission(_user, CrmPermissions.leadViewAssigned));
 
     if (!hasLeadViewAccess) {
       emit(const CallingDashboardNoLeadAccess());
@@ -83,23 +86,23 @@ class CallingDashboardCubit extends Cubit<CallingDashboardState> {
     try {
       // 3. Resolve CRM user -> LeadAssignee link
       final link = await _linkRepository.getLinkForUser(_user.id);
-      if (!_user.isAdmin && link == null) {
+      if (!hasLeadViewAll && link == null) {
         emit(const CallingDashboardNoLink());
         return;
       }
 
       // 4. Validate that the mapped assignee exists in the Lead domain
-      if (link != null) {
+      if (!hasLeadViewAll && link != null) {
         final assignees = await _leadRepository.getAssignableUsers();
         final assigneeExists = assignees.any((a) => a.id == link.leadAssigneeId);
-        if (!_user.isAdmin && !assigneeExists) {
+        if (!assigneeExists) {
           emit(const CallingDashboardInvalidLink());
           return;
         }
       }
 
-      // 5. Safely retrieve ALL currently assigned Leads across pages
-      // Every page retains assignedUserId = linkedAssigneeId (or all leads if admin has no link)
+      // 5. Safely retrieve ALL authorized Leads across pages
+      // Every page retains assignedUserId = linkedAssigneeId (or all leads if admin/view_all)
       // Deduplicate by Lead.id into a Map to prevent accidental page overlap duplicates
       final leadsById = <String, Lead>{};
       var page = 1;
@@ -107,7 +110,10 @@ class CallingDashboardCubit extends Cubit<CallingDashboardState> {
 
       while (hasNext) {
         final leadPage = await _leadRepository.getLeads(
-          LeadQuery(assignedUserId: link?.leadAssigneeId, page: page),
+          LeadQuery(
+            assignedUserId: hasLeadViewAll ? null : link?.leadAssigneeId,
+            page: page,
+          ),
         );
 
         for (final lead in leadPage.items) {

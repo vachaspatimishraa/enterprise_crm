@@ -9,7 +9,12 @@ import 'package:enterprise_crm/features/calling/data/repositories/mock_lead_call
 import 'package:enterprise_crm/features/calling/domain/repositories/lead_call_activity_repository.dart';
 import 'package:enterprise_crm/features/dashboard/presentation/screens/user_lead_workspace_screen.dart';
 import 'package:enterprise_crm/features/leads/data/repositories/mock_lead_repository.dart';
+import 'package:enterprise_crm/features/leads/domain/entities/lead_assignee.dart';
+import 'package:enterprise_crm/features/leads/domain/entities/lead_query.dart';
 import 'package:enterprise_crm/features/leads/domain/repositories/lead_repository.dart';
+import 'package:enterprise_crm/features/leads/presentation/screens/add_lead_screen.dart';
+import 'package:enterprise_crm/features/leads/presentation/screens/lead_details_screen.dart';
+import 'package:enterprise_crm/features/leads/presentation/screens/lead_list_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -375,5 +380,168 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.byType(UserLeadWorkspaceScreen), findsOneWidget);
     });
+  });
+
+  group('UserLeadWorkspaceScreen - Create & Assign Lead Permissions', () {
+    const userWithCreateAndAssign = CurrentUser(
+      id: 'usr_creator',
+      displayName: 'Lead Coordinator',
+      accountType: AccountType.user,
+      modules: {CrmModule.leadManagement},
+      permissions: {CrmPermissions.leadCreate, CrmPermissions.leadAssign},
+    );
+
+    testWidgets(
+      'Read-only user with lead.view_assigned does not see action buttons',
+      (tester) async {
+        await tester.pumpWidget(_buildTestApp(_userWithViewOnly));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('user_lead_actions_section')),
+          findsNothing,
+        );
+        expect(find.byKey(const Key('user_lead_add_lead_button')), findsNothing);
+        expect(
+          find.byKey(const Key('user_lead_assign_leads_button')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'Non-admin user with lead.create & lead.assign can add a lead and assign it to a permissioned user',
+      (tester) async {
+        final repo = MockLeadRepository(
+          assignableUsersProvider: () => const [
+            LeadAssignee(id: 'lead_owner', displayName: 'Lead Owner'),
+          ],
+        );
+
+        await tester.pumpWidget(
+          _buildTestApp(userWithCreateAndAssign, leadRepo: repo),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('user_lead_actions_section')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('lead_perm_create')), findsOneWidget);
+        expect(find.byKey(const Key('lead_perm_assign')), findsOneWidget);
+        expect(
+          find.byKey(const Key('user_lead_add_lead_button')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('user_lead_assign_leads_button')),
+          findsOneWidget,
+        );
+
+        // Open AddLeadScreen
+        await tester.tap(find.byKey(const Key('user_lead_add_lead_button')));
+        await tester.pumpAndSettle();
+        expect(find.byType(AddLeadScreen), findsOneWidget);
+
+        // Enter contact name
+        await tester.enterText(
+          find.widgetWithText(TextFormField, 'Contact Person Name'),
+          'Kiran Desai',
+        );
+
+        // Select permissioned assignee from inline assignment dropdown
+        final assigneeDropdown = find.byKey(
+          const Key('add_lead_assignee_dropdown'),
+        );
+        await tester.ensureVisible(assigneeDropdown);
+        await tester.pumpAndSettle();
+        expect(assigneeDropdown, findsOneWidget);
+
+        await tester.tap(assigneeDropdown);
+        await tester.pumpAndSettle();
+        expect(find.text('Mock Agent One'), findsNothing);
+        await tester.tap(find.text('Lead Owner').last);
+        await tester.pumpAndSettle();
+
+        // Create lead
+        final createButton = find.text('Create Lead');
+        await tester.ensureVisible(createButton);
+        await tester.pumpAndSettle();
+        await tester.tap(createButton);
+        await tester.pumpAndSettle();
+
+        // Returned to workspace and lead was persisted & assigned
+        expect(find.byType(UserLeadWorkspaceScreen), findsOneWidget);
+        final leadsPage = await repo.getLeads(
+          const LeadQuery(assignedUserId: 'lead_owner'),
+        );
+        expect(
+          leadsPage.items.any(
+            (l) =>
+                l.name == 'Kiran Desai' &&
+                l.assignedUserId == 'lead_owner' &&
+                l.assignedUserName == 'Lead Owner',
+          ),
+          isTrue,
+        );
+      },
+    );
+
+    testWidgets(
+      'Non-admin user with lead.assign can open LeadListScreen in distribution mode',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildTestApp(userWithCreateAndAssign, leadRepo: MockLeadRepository()),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('user_lead_assign_leads_button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LeadListScreen), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'Non-admin user with lead.view_all immediately sees all existing leads (assigned to others & unassigned) and can open lead details',
+      (tester) async {
+        const viewAllUser = CurrentUser(
+          id: 'usr_global_viewer',
+          displayName: 'Global Viewer',
+          accountType: AccountType.user,
+          modules: {CrmModule.leadManagement},
+          permissions: {CrmPermissions.leadViewAll},
+        );
+
+        await tester.pumpWidget(
+          _buildTestApp(
+            viewAllUser,
+            linkRepo: _noLinkRepo,
+            leadRepo: MockLeadRepository(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('ALL LEADS'), findsOneWidget);
+        expect(find.byKey(const Key('lead_perm_view_all')), findsOneWidget);
+        expect(
+          find.byKey(const Key('user_lead_view_all_button')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('user_assigned_leads_list')), findsOneWidget);
+
+        // Existing leads across different assignees & unassigned must be visible.
+        expect(find.text('Aarav Sharma'), findsOneWidget);
+        expect(find.text('Pooja Verma'), findsOneWidget);
+        expect(find.text('Rohan Mehta'), findsOneWidget);
+
+        // Tapping an existing lead opens LeadDetailsScreen cleanly.
+        await tester.tap(find.text('Pooja Verma'));
+        await tester.pumpAndSettle();
+        expect(find.byType(LeadDetailsScreen), findsOneWidget);
+      },
+    );
   });
 }

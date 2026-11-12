@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'package:enterprise_crm/features/auth/domain/entities/account_type.dart';
+import 'package:enterprise_crm/features/auth/domain/entities/crm_module.dart';
+import 'package:enterprise_crm/features/auth/domain/entities/current_user.dart';
+import 'package:enterprise_crm/features/auth/domain/policies/crm_permissions.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_assignee.dart';
 import 'package:enterprise_crm/features/leads/domain/entities/lead_assignment_request.dart';
@@ -1679,5 +1683,67 @@ void main() {
         },
       );
     });
+  });
+
+  group('LeadDetailsScreen - Permission Gating', () {
+    testWidgets(
+      'shows Assign / Reassign for lead.assign user and Edit only when lead.update is granted',
+      (tester) async {
+        repository.leads = [
+          Lead(
+            id: 'LEAD-PERM-1',
+            name: 'Unassigned Prospect',
+            source: LeadSource.manual,
+            status: const LeadStatus('New'),
+            createdAt: DateTime.parse('2026-10-03T12:00:00Z'),
+            updatedAt: DateTime.parse('2026-10-03T12:00:00Z'),
+          ),
+        ];
+
+        const assignOnlyUser = CurrentUser(
+          id: 'u_assign',
+          displayName: 'Assigner',
+          accountType: AccountType.user,
+          modules: {CrmModule.leadManagement},
+          permissions: {CrmPermissions.leadAssign},
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: LeadDetailsScreen(
+              leadId: 'LEAD-PERM-1',
+              repository: repository,
+              currentUser: assignOnlyUser,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('assign_lead_button')), findsOneWidget);
+        expect(find.byTooltip('Edit Lead'), findsNothing);
+
+        const viewOnlyUser = CurrentUser(
+          id: 'u_viewer',
+          displayName: 'Viewer',
+          accountType: AccountType.user,
+          modules: {CrmModule.leadManagement},
+          permissions: {CrmPermissions.leadViewAll},
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: LeadDetailsScreen(
+              leadId: 'LEAD-PERM-1',
+              repository: repository,
+              currentUser: viewOnlyUser,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('assign_lead_button')), findsNothing);
+        expect(find.byTooltip('Edit Lead'), findsNothing);
+      },
+    );
   });
 }

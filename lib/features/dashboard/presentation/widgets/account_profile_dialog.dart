@@ -2,25 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../auth/domain/entities/current_user.dart';
+import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../../auth/presentation/bloc/auth_cubit.dart';
 import '../../../../core/theme/theme_mode_controller.dart';
 import '../../../user_management/domain/inputs/update_managed_user_input.dart';
 import '../../../user_management/domain/repositories/user_management_repository.dart';
+import 'account_otp_password_reset_section.dart';
 
-/// Modal dialog for managing authenticated account profile, password reset,
-/// and session termination.
+/// Modal dialog for managing authenticated account profile, OTP-verified
+/// password reset, and session termination.
 ///
 /// NOTE: The User ID is permanent and strictly cannot be changed.
 class AccountProfileDialog extends StatefulWidget {
   final CurrentUser user;
   final VoidCallback onLogout;
   final UserManagementRepository? userManagementRepository;
+  final AuthRepository? authRepository;
 
   const AccountProfileDialog({
     super.key,
     required this.user,
     required this.onLogout,
     this.userManagementRepository,
+    this.authRepository,
   });
 
   static Future<void> show(
@@ -28,6 +32,7 @@ class AccountProfileDialog extends StatefulWidget {
     required CurrentUser user,
     required VoidCallback onLogout,
     UserManagementRepository? userManagementRepository,
+    AuthRepository? authRepository,
   }) {
     return showDialog<void>(
       context: context,
@@ -35,6 +40,7 @@ class AccountProfileDialog extends StatefulWidget {
         user: user,
         onLogout: onLogout,
         userManagementRepository: userManagementRepository,
+        authRepository: authRepository,
       ),
     );
   }
@@ -44,32 +50,46 @@ class AccountProfileDialog extends StatefulWidget {
 }
 
 class _AccountProfileDialogState extends State<AccountProfileDialog> {
+  late final TextEditingController _userIdController;
   late final TextEditingController _nameController;
   late final TextEditingController _emailController;
-  final TextEditingController _newPasswordController = TextEditingController();
-  final TextEditingController _confirmPasswordController = TextEditingController();
 
-  bool _showPasswordFields = false;
-  bool _obscurePassword = true;
+  bool _showPasswordResetFlow = false;
   String? _profileError;
-  String? _passwordError;
   bool _isSavingProfile = false;
-  bool _isResettingPassword = false;
 
   @override
   void initState() {
     super.initState();
+    _userIdController = TextEditingController(text: widget.user.id);
     _nameController = TextEditingController(text: widget.user.displayName);
     _emailController = TextEditingController(text: '${widget.user.id}@enterprise-crm.internal');
   }
 
   @override
   void dispose() {
+    _userIdController.dispose();
     _nameController.dispose();
     _emailController.dispose();
-    _newPasswordController.dispose();
-    _confirmPasswordController.dispose();
     super.dispose();
+  }
+
+  T? _tryRead<T>(BuildContext context) {
+    try {
+      return context.read<T?>();
+    } catch (_) {
+      try {
+        return context.read<T>();
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
+  AuthRepository? _resolveAuthRepository(BuildContext context) {
+    return widget.authRepository ??
+        _tryRead<AuthRepository>(context) ??
+        _tryRead<AuthCubit>(context)?.repository;
   }
 
   Future<void> _handleSaveProfile() async {
@@ -87,7 +107,9 @@ class _AccountProfileDialogState extends State<AccountProfileDialog> {
     });
 
     try {
-      final repo = widget.userManagementRepository;
+      final repo =
+          widget.userManagementRepository ??
+          _tryRead<UserManagementRepository>(context);
       if (repo != null) {
         final managedUser = await repo.getUserById(widget.user.id) ??
             await repo.findUserByUserId(widget.user.id);
@@ -122,69 +144,6 @@ class _AccountProfileDialogState extends State<AccountProfileDialog> {
         setState(() {
           _profileError = e.toString();
           _isSavingProfile = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _handleResetPassword() async {
-    final newPass = _newPasswordController.text.trim();
-    final confirmPass = _confirmPasswordController.text.trim();
-
-    if (newPass.isEmpty) {
-      setState(() {
-        _passwordError = 'New password cannot be empty.';
-      });
-      return;
-    }
-
-    if (newPass.length < 4) {
-      setState(() {
-        _passwordError = 'Password must be at least 4 characters.';
-      });
-      return;
-    }
-
-    if (newPass != confirmPass) {
-      setState(() {
-        _passwordError = 'Passwords do not match.';
-      });
-      return;
-    }
-
-    setState(() {
-      _isResettingPassword = true;
-      _passwordError = null;
-    });
-
-    try {
-      final repo = widget.userManagementRepository;
-      if (repo != null) {
-        final managedUser = await repo.getUserById(widget.user.id) ??
-            await repo.findUserByUserId(widget.user.id);
-        final targetId = managedUser?.id ?? widget.user.id;
-        await repo.resetPassword(id: targetId, newPassword: newPass);
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Password changed successfully.'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        setState(() {
-          _showPasswordFields = false;
-          _isResettingPassword = false;
-          _newPasswordController.clear();
-          _confirmPasswordController.clear();
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _passwordError = e.toString();
-          _isResettingPassword = false;
         });
       }
     }
@@ -302,7 +261,7 @@ class _AccountProfileDialogState extends State<AccountProfileDialog> {
               // Read-only User ID (Cannot be changed)
               TextField(
                 key: const Key('account_user_id_field'),
-                controller: TextEditingController(text: widget.user.id),
+                controller: _userIdController,
                 readOnly: true,
                 enabled: false,
                 decoration: InputDecoration(
@@ -372,78 +331,58 @@ class _AccountProfileDialogState extends State<AccountProfileDialog> {
               const Divider(),
               const SizedBox(height: 12),
 
-              // Section: Password Reset
+              // Section: OTP-Verified Password Reset
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Expanded(
-                    child: Text(
-                      'Security & Password',
-                      style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Security & Password',
+                          style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'OTP verification required to reset password',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   TextButton.icon(
                     key: const Key('account_reset_password_button'),
-                    icon: Icon(_showPasswordFields ? Icons.keyboard_arrow_up : Icons.lock_reset, size: 18),
-                    label: Text(_showPasswordFields ? 'Hide' : 'Reset Password'),
+                    icon: Icon(_showPasswordResetFlow ? Icons.keyboard_arrow_up : Icons.lock_reset, size: 18),
+                    label: Text(_showPasswordResetFlow ? 'Hide' : 'Reset Password'),
                     onPressed: () {
                       setState(() {
-                        _showPasswordFields = !_showPasswordFields;
-                        _passwordError = null;
+                        _showPasswordResetFlow = !_showPasswordResetFlow;
                       });
                     },
                   ),
                 ],
               ),
 
-              if (_showPasswordFields) ...[
-                const SizedBox(height: 8),
-                TextField(
-                  key: const Key('account_new_password_field'),
-                  controller: _newPasswordController,
-                  obscureText: _obscurePassword,
-                  decoration: InputDecoration(
-                    labelText: 'New Password',
-                    prefixIcon: const Icon(Icons.password, size: 20),
-                    suffixIcon: IconButton(
-                      icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, size: 20),
-                      onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                    ),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  key: const Key('account_confirm_password_field'),
-                  controller: _confirmPasswordController,
-                  obscureText: _obscurePassword,
-                  decoration: InputDecoration(
-                    labelText: 'Confirm Password',
-                    prefixIcon: const Icon(Icons.password, size: 20),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-                if (_passwordError != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    _passwordError!,
-                    style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.error),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton.tonal(
-                    key: const Key('account_save_password_button'),
-                    onPressed: _isResettingPassword ? null : _handleResetPassword,
-                    child: _isResettingPassword
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Update Password'),
-                  ),
+              if (_showPasswordResetFlow) ...[
+                const SizedBox(height: 10),
+                AccountOtpPasswordResetSection(
+                  userId: widget.user.id,
+                  authRepository: _resolveAuthRepository(context),
+                  onPasswordChanged: () {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Password changed successfully.'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    setState(() {
+                      _showPasswordResetFlow = false;
+                    });
+                  },
                 ),
               ],
 

@@ -17,9 +17,14 @@ import '../services/lead_export_serializer.dart';
 class MockLeadRepository implements LeadRepository {
   MockLeadRepository({
     MockLeadDataSource? dataSource,
+    List<LeadAssignee> Function()? assignableUsersProvider,
     LeadExportSerializer? exportSerializer,
   }) : _dataSource =
-           dataSource ?? MockLeadDataSource(exportSerializer: exportSerializer);
+           dataSource ??
+           MockLeadDataSource(
+             assignableUsersProvider: assignableUsersProvider,
+             exportSerializer: exportSerializer,
+           );
 
   final MockLeadDataSource _dataSource;
 
