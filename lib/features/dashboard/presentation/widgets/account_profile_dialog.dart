@@ -226,8 +226,10 @@ class _AccountProfileDialogState extends State<AccountProfileDialog> {
               const SizedBox(height: 16),
 
               // Section: Appearance / Theme Mode
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                runSpacing: 8,
                 children: [
                   Text(
                     'Appearance',
@@ -332,12 +334,12 @@ class _AccountProfileDialogState extends State<AccountProfileDialog> {
               const SizedBox(height: 12),
 
               // Section: OTP-Verified Password Reset
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isNarrow = constraints.maxWidth < 360;
+                  if (isNarrow) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
                           'Security & Password',
@@ -350,20 +352,57 @@ class _AccountProfileDialogState extends State<AccountProfileDialog> {
                             color: colorScheme.onSurfaceVariant,
                           ),
                         ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            key: const Key('account_reset_password_button'),
+                            icon: Icon(_showPasswordResetFlow ? Icons.keyboard_arrow_up : Icons.lock_reset, size: 18),
+                            label: Text(_showPasswordResetFlow ? 'Hide' : 'Reset Password'),
+                            onPressed: () {
+                              setState(() {
+                                _showPasswordResetFlow = !_showPasswordResetFlow;
+                              });
+                            },
+                          ),
+                        ),
                       ],
-                    ),
-                  ),
-                  TextButton.icon(
-                    key: const Key('account_reset_password_button'),
-                    icon: Icon(_showPasswordResetFlow ? Icons.keyboard_arrow_up : Icons.lock_reset, size: 18),
-                    label: Text(_showPasswordResetFlow ? 'Hide' : 'Reset Password'),
-                    onPressed: () {
-                      setState(() {
-                        _showPasswordResetFlow = !_showPasswordResetFlow;
-                      });
-                    },
-                  ),
-                ],
+                    );
+                  }
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Security & Password',
+                              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'OTP verification required to reset password',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton.icon(
+                        key: const Key('account_reset_password_button'),
+                        icon: Icon(_showPasswordResetFlow ? Icons.keyboard_arrow_up : Icons.lock_reset, size: 18),
+                        label: Text(_showPasswordResetFlow ? 'Hide' : 'Reset Password'),
+                        onPressed: () {
+                          setState(() {
+                            _showPasswordResetFlow = !_showPasswordResetFlow;
+                          });
+                        },
+                      ),
+                    ],
+                  );
+                },
               ),
 
               if (_showPasswordResetFlow) ...[
@@ -401,6 +440,7 @@ class _AccountProfileDialogState extends State<AccountProfileDialog> {
                 icon: const Icon(Icons.logout),
                 label: const Text('Logout', style: TextStyle(fontWeight: FontWeight.bold)),
                 onPressed: () {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
                   Navigator.of(context).pop();
                   widget.onLogout();
                 },

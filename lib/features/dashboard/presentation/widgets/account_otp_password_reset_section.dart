@@ -409,44 +409,38 @@ class _AccountOtpPasswordResetContentState
           spacing: 8,
           runSpacing: 8,
           children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextButton(
-                  key: const Key('account_otp_back_button'),
-                  onPressed: state.isSubmitting ? null : cubit.goToIdentifyStep,
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                  ),
-                  child: const Text('Back'),
-                ),
-                const SizedBox(width: 4),
-                if (state.canResend)
-                  TextButton.icon(
-                    key: const Key('account_resend_otp_button'),
-                    onPressed: () {
-                      _otpController.clear();
-                      cubit.updateOtpCode('');
-                      cubit.resendOtp();
-                    },
-                    icon: const Icon(Icons.refresh, size: 16),
-                    label: const Text('Resend OTP'),
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                    ),
-                  )
-                else
-                  Text(
-                    'Resend in ${state.cooldownSecondsRemaining}s',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-              ],
+            TextButton(
+              key: const Key('account_otp_back_button'),
+              onPressed: state.isSubmitting ? null : cubit.goToIdentifyStep,
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+              ),
+              child: const Text('Back'),
             ),
+            if (state.canResend)
+              TextButton.icon(
+                key: const Key('account_resend_otp_button'),
+                onPressed: () {
+                  _otpController.clear();
+                  cubit.updateOtpCode('');
+                  cubit.resendOtp();
+                },
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Resend OTP'),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                ),
+              )
+            else
+              Text(
+                'Resend in ${state.cooldownSecondsRemaining}s',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             FilledButton.icon(
               key: const Key('account_verify_otp_button'),
               onPressed: state.isSubmitting
