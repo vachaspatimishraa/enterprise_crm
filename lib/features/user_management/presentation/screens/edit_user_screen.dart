@@ -80,6 +80,68 @@ class _EditUserScreenState extends State<EditUserScreen> {
     });
   }
 
+  bool? get _isAllPermissionsChecked {
+    final relevantDefs = _selectedModules.isEmpty
+        ? MockPermissionCatalog.definitions.map((d) => d.id).toSet()
+        : MockPermissionCatalog.definitions
+            .where((d) => _selectedModules.contains(d.module))
+            .map((d) => d.id)
+            .toSet();
+
+    if (relevantDefs.isEmpty) return false;
+    final selectedCount =
+        relevantDefs.where((p) => _selectedPermissions.contains(p)).length;
+    if (selectedCount == relevantDefs.length && _selectedModules.isNotEmpty) {
+      return true;
+    }
+    if (selectedCount == 0) return false;
+    return null;
+  }
+
+  void _toggleAllPermissions() {
+    setState(() {
+      if (_selectedModules.isEmpty) {
+        _selectedModules.addAll(CrmModule.values);
+        _selectedPermissions.addAll(
+          MockPermissionCatalog.definitions.map((d) => d.id),
+        );
+        return;
+      }
+
+      final relevantDefs = MockPermissionCatalog.definitions
+          .where((d) => _selectedModules.contains(d.module))
+          .map((d) => d.id)
+          .toSet();
+
+      final isAllChecked = relevantDefs.isNotEmpty &&
+          relevantDefs.every((p) => _selectedPermissions.contains(p));
+
+      if (isAllChecked) {
+        _selectedPermissions.removeAll(relevantDefs);
+      } else {
+        _selectedPermissions.addAll(relevantDefs);
+      }
+    });
+  }
+
+  void _toggleAllForModule(CrmModule module) {
+    setState(() {
+      final moduleDefs = MockPermissionCatalog.definitions
+          .where((d) => d.module == module)
+          .map((d) => d.id)
+          .toSet();
+
+      final isAllChecked = moduleDefs.isNotEmpty &&
+          moduleDefs.every((p) => _selectedPermissions.contains(p));
+
+      if (isAllChecked) {
+        _selectedPermissions.removeAll(moduleDefs);
+      } else {
+        _selectedPermissions.addAll(moduleDefs);
+      }
+    });
+  }
+
   Future<void> _handleSave() async {
     if (_isSubmitting) return;
 
@@ -444,8 +506,35 @@ class _EditUserScreenState extends State<EditUserScreen> {
                       color: colorScheme.surfaceContainerLowest,
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
-                        child: _selectedModules.isEmpty
-                            ? Padding(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            CheckboxListTile(
+                              key: const Key(
+                                'edit_user_all_permissions_checkbox',
+                              ),
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text(
+                                'All Permissions',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              subtitle: Text(
+                                _selectedModules.isEmpty
+                                    ? 'Select all modules and allow all permissions'
+                                    : 'Allow all permissions for selected modules',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              value: _isAllPermissionsChecked,
+                              tristate: true,
+                              onChanged: (_) => _toggleAllPermissions(),
+                              controlAffinity: ListTileControlAffinity.leading,
+                            ),
+                            const Divider(height: 16),
+                            if (_selectedModules.isEmpty)
+                              Padding(
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 12.0,
                                 ),
@@ -457,13 +546,13 @@ class _EditUserScreenState extends State<EditUserScreen> {
                                   ),
                                 ),
                               )
-                            : Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: _buildPermissionSections(
-                                  theme,
-                                  colorScheme,
-                                ),
+                            else
+                              ..._buildPermissionSections(
+                                theme,
+                                colorScheme,
                               ),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 32),
@@ -524,15 +613,39 @@ class _EditUserScreenState extends State<EditUserScreen> {
         widgets.add(const Divider(height: 24));
       }
 
+      final modulePermissionIds = moduleDefs.map((d) => d.id).toSet();
+      final isModuleAllChecked = modulePermissionIds.isNotEmpty &&
+          modulePermissionIds.every((p) => _selectedPermissions.contains(p));
+
       widgets.add(
         Row(
           children: [
             Icon(module.icon, size: 16, color: colorScheme.primary),
             const SizedBox(width: 8),
-            Text(
-              module.displayName,
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.bold,
+            Expanded(
+              child: Text(
+                module.displayName,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            TextButton.icon(
+              key: Key('edit_user_select_all_${module.name}'),
+              onPressed: () => _toggleAllForModule(module),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              ),
+              icon: Icon(
+                isModuleAllChecked
+                    ? Icons.check_box_outlined
+                    : Icons.check_box_outline_blank,
+                size: 16,
+              ),
+              label: Text(
+                isModuleAllChecked ? 'Deselect All' : 'Select All',
+                style: const TextStyle(fontSize: 12),
               ),
             ),
           ],

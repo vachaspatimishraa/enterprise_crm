@@ -167,12 +167,14 @@ class LeadListCard extends StatelessWidget {
               ),
               const SizedBox(height: 10),
 
-              // 4. Footer: Created Date
+              // 4. Footer: Created Date & Timestamp
               Text(
-                'Created: ${formatLeadDate(lead.createdAt)}',
+                'Created: ${formatLeadDateTime(lead.createdAt)}',
+                key: Key('lead_created_at_${lead.id}'),
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: colorScheme.onSurfaceVariant.withAlpha(180),
                 ),
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),

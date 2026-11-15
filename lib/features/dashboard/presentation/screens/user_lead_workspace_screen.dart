@@ -21,6 +21,7 @@ import '../../../leads/presentation/screens/add_lead_screen.dart';
 import '../../../leads/presentation/screens/lead_details_screen.dart';
 import '../../../leads/presentation/screens/lead_import_workflow_screen.dart';
 import '../../../leads/presentation/screens/lead_list_screen.dart';
+import '../../../leads/presentation/utils/lead_display_formatters.dart';
 import '../../../leads/presentation/widgets/lead_export_dialog.dart';
 import '../bloc/user_assigned_leads_cubit.dart';
 import '../bloc/user_assigned_leads_state.dart';
@@ -913,6 +914,17 @@ class _LeadCard extends StatelessWidget {
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
+                      ),
+                    ],
+                    if (lead.createdAt != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Added: ${formatLeadDateTime(lead.createdAt)}',
+                        key: Key('lead_created_at_${lead.id}'),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ],

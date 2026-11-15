@@ -161,7 +161,7 @@ class LeadDataTable extends StatelessWidget {
                     ],
                   ),
                 ),
-                DataCell(Text(formatLeadDate(lead.createdAt))),
+                DataCell(Text(formatLeadDateTime(lead.createdAt))),
                 DataCell(
                   isSelectionMode
                       ? const SizedBox.shrink()

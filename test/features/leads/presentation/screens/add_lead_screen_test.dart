@@ -42,6 +42,8 @@ class _FakeLeadRepository implements LeadRepository {
       email: input.draft.email,
       status: input.draft.status,
       source: input.draft.source ?? LeadSource.manual,
+      createdAt: input.draft.createdAt ?? DateTime.now(),
+      updatedAt: input.draft.createdAt ?? DateTime.now(),
     );
   }
 
@@ -281,10 +283,12 @@ void main() {
       expect(draft.state, 'Maharashtra');
       expect(draft.source, LeadSource.manual);
       expect(draft.status, isNull);
+      expect(draft.createdAt, isNotNull);
 
       expect(capturedLead, isNotNull);
       expect(capturedLead!.name, 'Rajesh Sharma');
       expect(capturedLead!.source, LeadSource.manual);
+      expect(capturedLead!.createdAt, isNotNull);
     });
 
     testWidgets('allows selecting non-manual source from dropdown', (

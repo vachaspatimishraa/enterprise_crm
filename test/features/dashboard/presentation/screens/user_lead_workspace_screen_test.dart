@@ -325,6 +325,8 @@ void main() {
       expect(find.byKey(const Key('user_assigned_leads_list')), findsOneWidget);
       expect(find.text('Aarav Sharma'), findsOneWidget);
       expect(find.text('Vikram Joshi'), findsOneWidget);
+      expect(find.byKey(const Key('lead_created_at_mock-lead-1')), findsOneWidget);
+      expect(find.textContaining('Added: 2026-09-01'), findsWidgets);
       // Verify the capability section is still shown above the list
       expect(find.text('YOUR ACCESS'), findsOneWidget);
       expect(find.text('MY ASSIGNED LEADS'), findsOneWidget);

@@ -12,6 +12,7 @@ class LeadDraft {
     this.state,
     this.status,
     this.source,
+    this.createdAt,
     this.metadata,
   }) : name = contactPersonName ?? name;
 
@@ -24,6 +25,7 @@ class LeadDraft {
   final String? state;
   final LeadStatus? status;
   final LeadSource? source;
+  final DateTime? createdAt;
   final Map<String, String>? metadata;
 }
 
