@@ -354,8 +354,8 @@ class MockLeadDataSource {
       state: input.draft.state,
       status: input.draft.status,
       source: input.draft.source ?? LeadSource.manual,
-      createdAt: now,
-      updatedAt: now,
+      createdAt: input.draft.createdAt ?? now,
+      updatedAt: input.draft.createdAt ?? now,
       metadata: input.draft.metadata,
     );
 

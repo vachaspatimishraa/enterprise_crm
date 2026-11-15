@@ -236,6 +236,7 @@ class _AddLeadViewState extends State<_AddLeadView> {
       city: city.isEmpty ? null : city,
       state: stateVal.isEmpty ? null : stateVal,
       source: resolvedSource,
+      createdAt: DateTime.now(),
       metadata: metadata.isEmpty ? null : metadata,
     );
 
