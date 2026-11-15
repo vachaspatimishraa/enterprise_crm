@@ -16,6 +16,12 @@ cmake_policy(SET CMP0063 NEW)
 # Load bundled libraries from the lib/ directory relative to the binary.
 set(CMAKE_INSTALL_RPATH "$ORIGIN/lib")
 
+# User-space pkg-config and library search paths fallback for local desktop environments
+if(EXISTS "$ENV{HOME}/.local/usr/lib/x86_64-linux-gnu/pkgconfig")
+  set(ENV{PKG_CONFIG_PATH} "$ENV{HOME}/.local/usr/lib/x86_64-linux-gnu/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+  link_directories("$ENV{HOME}/.local/usr/lib/x86_64-linux-gnu")
+endif()
+
 # Root filesystem for cross-building.
 if(FLUTTER_TARGET_PLATFORM_SYSROOT)
   set(CMAKE_SYSROOT ${FLUTTER_TARGET_PLATFORM_SYSROOT})

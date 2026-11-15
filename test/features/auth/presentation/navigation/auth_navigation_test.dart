@@ -293,6 +293,11 @@ void main() {
     testWidgets(
       'AUTHENTICATED OTP PASSWORD RESET E2E: standard user logs in -> opens right-side profile icon -> verifies OTP -> changes password -> re-logins with new password',
       (tester) async {
+        tester.view.physicalSize = const Size(1200, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
         await tester.pumpWidget(
           CrmApp(
             leadRepository: leadRepository,
@@ -385,6 +390,7 @@ void main() {
           find.byKey(const Key('login_password_field')),
           'user123',
         );
+        await tester.ensureVisible(find.byKey(const Key('login_submit_button')));
         await tester.tap(find.byKey(const Key('login_submit_button')));
         await tester.pumpAndSettle();
         expect(find.byKey(const Key('login_error_banner')), findsOneWidget);
@@ -394,6 +400,7 @@ void main() {
           find.byKey(const Key('login_password_field')),
           'UserUpdatedPass99!',
         );
+        await tester.ensureVisible(find.byKey(const Key('login_submit_button')));
         await tester.tap(find.byKey(const Key('login_submit_button')));
         await tester.pumpAndSettle();
         expect(find.byType(UserDashboardScreen), findsOneWidget);
