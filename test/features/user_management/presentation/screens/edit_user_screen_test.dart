@@ -254,5 +254,92 @@ void main() {
         });
       },
     );
+
+    testWidgets(
+      'All Permissions checkbox allows all permissions in once and toggles cleanly',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _buildEditUserApp(user: standardUser, repository: repository),
+        );
+        await tester.pumpAndSettle();
+
+        final allPermsCheckbox = find.byKey(
+          const Key('edit_user_all_permissions_checkbox'),
+        );
+        expect(allPermsCheckbox, findsOneWidget);
+
+        // Tap All Permissions -> checks all lead permissions
+        await tester.tap(allPermsCheckbox);
+        await tester.pumpAndSettle();
+
+        expect(
+          tester
+              .widget<CheckboxListTile>(
+                find.byKey(const Key('edit_user_permission_lead.view_assigned')),
+              )
+              .value,
+          isTrue,
+        );
+        expect(
+          tester
+              .widget<CheckboxListTile>(
+                find.byKey(const Key('edit_user_permission_lead.update')),
+              )
+              .value,
+          isTrue,
+        );
+
+        // Tap All Permissions again -> deselects all
+        await tester.tap(allPermsCheckbox);
+        await tester.pumpAndSettle();
+
+        expect(
+          tester
+              .widget<CheckboxListTile>(
+                find.byKey(const Key('edit_user_permission_lead.view_assigned')),
+              )
+              .value,
+          isFalse,
+        );
+      },
+    );
+
+    testWidgets(
+      'Module Select All button in EditUserScreen toggles permissions for that module',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          _buildEditUserApp(user: standardUser, repository: repository),
+        );
+        await tester.pumpAndSettle();
+
+        final selectAllLead = find.byKey(
+          Key('edit_user_select_all_${CrmModule.leadManagement.name}'),
+        );
+        expect(selectAllLead, findsOneWidget);
+
+        // Tap Select All
+        await tester.tap(selectAllLead);
+        await tester.pumpAndSettle();
+
+        expect(
+          tester
+              .widget<CheckboxListTile>(
+                find.byKey(const Key('edit_user_permission_lead.update')),
+              )
+              .value,
+          isTrue,
+        );
+      },
+    );
   });
 }

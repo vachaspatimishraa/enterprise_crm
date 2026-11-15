@@ -245,12 +245,22 @@ void main() {
         await tester.tap(
           find.byKey(const Key('create_user_permission_lead.view_assigned')),
         );
+        await tester.ensureVisible(
+          find.byKey(const Key('create_user_permission_calling.use')),
+        );
+        await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const Key('create_user_permission_calling.use')),
         );
         await tester.pumpAndSettle();
 
         // Deselect Lead Management -> its permissions must disappear from UI
+        await tester.ensureVisible(
+          find.byKey(
+            Key('create_user_module_${CrmModule.leadManagement.name}'),
+          ),
+        );
+        await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(
             Key('create_user_module_${CrmModule.leadManagement.name}'),
@@ -348,5 +358,176 @@ void main() {
       expect(find.byKey(const Key('create_user_error_banner')), findsOneWidget);
       expect(find.text('User ID "admin" is already taken.'), findsOneWidget);
     });
+
+    testWidgets(
+      'All Permissions checkbox allows all permissions in once and supports deselect',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(_buildCreateUserApp(repository: repository));
+        await tester.pumpAndSettle();
+
+        // Enter required fields first
+        await tester.enterText(
+          find.byKey(const Key('create_user_id_field')),
+          'super_user',
+        );
+        await tester.enterText(
+          find.byKey(const Key('create_user_display_name_field')),
+          'Super User',
+        );
+        await tester.enterText(
+          find.byKey(const Key('create_user_password_field')),
+          'secret123',
+        );
+
+        final allPermsCheckbox = find.byKey(
+          const Key('create_user_all_permissions_checkbox'),
+        );
+        expect(allPermsCheckbox, findsOneWidget);
+
+        // Tap All Permissions when no modules are selected -> selects all modules and all permissions
+        await tester.tap(allPermsCheckbox);
+        await tester.pumpAndSettle();
+
+        // Verify all 8 modules are selected
+        for (final module in CrmModule.values) {
+          final chip = tester.widget<FilterChip>(
+            find.byKey(Key('create_user_module_${module.name}')),
+          );
+          expect(chip.selected, isTrue);
+        }
+
+        await tester.ensureVisible(
+          find.byKey(const Key('create_user_submit_button')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('create_user_submit_button')));
+        await tester.pumpAndSettle();
+
+        expect(repository.createCallCount, 1);
+        expect(
+          repository.lastCreateInput?.modules.length,
+          CrmModule.values.length,
+        );
+        expect(
+          repository.lastCreateInput?.permissions.contains('lead.view_assigned'),
+          isTrue,
+        );
+        expect(
+          repository.lastCreateInput?.permissions.contains('calling.use'),
+          isTrue,
+        );
+        expect(
+          repository.lastCreateInput?.permissions.contains('hr.view'),
+          isTrue,
+        );
+        expect(
+          repository.lastCreateInput?.permissions.contains('inventory.view'),
+          isTrue,
+        );
+      },
+    );
+
+    testWidgets(
+      'All Permissions checkbox allows all permissions for selected modules and toggles cleanly',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(_buildCreateUserApp(repository: repository));
+        await tester.pumpAndSettle();
+
+        // Select only Calling module
+        await tester.tap(
+          find.byKey(Key('create_user_module_${CrmModule.calling.name}')),
+        );
+        await tester.pumpAndSettle();
+
+        final allPermsCheckbox = find.byKey(
+          const Key('create_user_all_permissions_checkbox'),
+        );
+
+        // Tap All Permissions -> checks calling.use
+        await tester.tap(allPermsCheckbox);
+        await tester.pumpAndSettle();
+
+        final callingTile = tester.widget<CheckboxListTile>(
+          find.byKey(const Key('create_user_permission_calling.use')),
+        );
+        expect(callingTile.value, isTrue);
+
+        // Tap All Permissions again -> deselects
+        await tester.tap(allPermsCheckbox);
+        await tester.pumpAndSettle();
+
+        final callingTileDeselected = tester.widget<CheckboxListTile>(
+          find.byKey(const Key('create_user_permission_calling.use')),
+        );
+        expect(callingTileDeselected.value, isFalse);
+      },
+    );
+
+    testWidgets(
+      'Module Select All button toggles all permissions for that specific module',
+      (tester) async {
+        tester.view.physicalSize = const Size(1200, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(_buildCreateUserApp(repository: repository));
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(Key('create_user_module_${CrmModule.leadManagement.name}')),
+        );
+        await tester.pumpAndSettle();
+
+        final selectAllLead = find.byKey(
+          Key('create_user_select_all_${CrmModule.leadManagement.name}'),
+        );
+        expect(selectAllLead, findsOneWidget);
+
+        // Tap Select All for Lead Management
+        await tester.tap(selectAllLead);
+        await tester.pumpAndSettle();
+
+        expect(
+          tester
+              .widget<CheckboxListTile>(
+                find.byKey(const Key('create_user_permission_lead.view_assigned')),
+              )
+              .value,
+          isTrue,
+        );
+        expect(
+          tester
+              .widget<CheckboxListTile>(
+                find.byKey(const Key('create_user_permission_lead.update')),
+              )
+              .value,
+          isTrue,
+        );
+
+        // Tap Deselect All for Lead Management
+        await tester.tap(selectAllLead);
+        await tester.pumpAndSettle();
+
+        expect(
+          tester
+              .widget<CheckboxListTile>(
+                find.byKey(const Key('create_user_permission_lead.view_assigned')),
+              )
+              .value,
+          isFalse,
+        );
+      },
+    );
   });
 }
